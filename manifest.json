@@ -1,0 +1,15 @@
+{
+  "display_name": "玩伴小屋",
+  "loading_order": 50,
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Gloria",
+  "version": "1.0.0",
+  "homePage": "",
+  "auto_update": false,
+  "minimum_client_version": "1.12.0",
+  "hooks": {
+    "enable": "onEnable",
+    "activate": "onActivate"
+  }
+}
