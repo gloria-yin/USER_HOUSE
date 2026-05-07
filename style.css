@@ -135,13 +135,14 @@
 .wb-oldmaid-card.back { cursor:pointer; color:#fff; background:linear-gradient(135deg, #3a8f91, #235f61); }
 .wb-oldmaid-card.back:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 5px 14px rgba(15,23,42,.22); }
 .wb-oldmaid-card.back:disabled { opacity:.55; cursor:default; }
-.wb-oldmaid-card.joker { color:#fff; background:#1f2937; border-color:#111827; }
+.wb-oldmaid-card.joker { color:transparent; background:url('assets/game-icons/oldmaid-card.jpg') center / 100% 100% no-repeat, #1f2937; border-color:#111827; overflow:hidden; }
 .wb-oldmaid-log { min-height:34px; max-height:64px; overflow:auto; padding:7px 9px; border:1px solid var(--wb-border); color:var(--wb-muted); background:var(--wb-panel); font-size:12px; line-height:1.45; }
 .wb-text-segments { white-space:normal; line-height:1.75; }
 .wb-text-seg { margin:0 0 12px; }
 .wb-text-seg:last-child { margin-bottom:0; }
 .wb-watermelon-canvas { aspect-ratio:4 / 5; max-height:min(100%, 100cqh); background:#f7efe3; }
-.wb-ludo { width:min(500px, 100%, 100cqh); aspect-ratio:1; display:grid; grid-template-columns:repeat(11,minmax(0,1fr)); grid-template-rows:repeat(11,minmax(0,1fr)); gap:2px; background:var(--wb-soft); padding:7px; border:1px solid var(--wb-border); contain:layout size; }
+.wb-ludo-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0, 1fr); gap:6px; place-items:center; overflow:hidden; }
+.wb-ludo { width:min(500px, 100%, 100cqw, calc(100cqh - 48px)); max-height:100%; aspect-ratio:1; display:grid; grid-template-columns:repeat(11,minmax(0,1fr)); grid-template-rows:repeat(11,minmax(0,1fr)); gap:2px; background:var(--wb-soft); padding:7px; border:1px solid var(--wb-border); contain:layout size; }
 .wb-ludo-cell { position:relative; border:1px solid rgba(0,0,0,.12); background:var(--wb-panel); min-width:0; min-height:0; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:1px; font-size:10px; overflow:hidden; }
 .wb-ludo-cell.path { background:#fff8e8; }
 .wb-ludo-cell.home-red { background:#ffe1dc; }
@@ -150,7 +151,7 @@
 .wb-ludo-piece.red { background:#d84b42; }
 .wb-ludo-piece.blue { background:#2773c8; }
 .wb-ludo-piece.can { outline:2px solid var(--wb-accent); outline-offset:2px; }
-.wb-ludo-info { display:flex; gap:6px; align-items:center; justify-content:center; flex-wrap:wrap; margin-bottom:8px; }
+.wb-ludo-info { display:flex; gap:6px; align-items:center; justify-content:center; flex-wrap:wrap; margin:0; }
 .wb-gcell { border:0; border-radius:50%; background:#d7b37c; cursor:pointer; min-width:0; min-height:0; aspect-ratio:1; overflow:hidden; }
 .wb-gcell.black { background:#222; box-shadow:inset 0 0 0 2px #000; }
 .wb-gcell.white { background:#f7f2e9; box-shadow:inset 0 0 0 2px #ddd; }
@@ -164,10 +165,11 @@
 .wb-memory-back::after { content:'?'; color:var(--wb-accent); font-size:clamp(24px,5vh,38px); font-weight:900; }
 .wb-memory-front { background:var(--wb-panel); transform:rotateY(180deg); box-shadow:inset 0 0 0 2px var(--wb-accent2), 0 4px 10px rgba(0,0,0,.12); }
 .wb-memory-img { width:100%; height:100%; object-fit:contain; display:block; background:#000; }
-.wb-guess-panel { width:min(560px,100%); display:grid; gap:10px; align-content:start; }
+.wb-guess-panel { width:min(560px,100%); max-height:100%; min-height:0; display:grid; gap:10px; align-content:start; overflow:hidden; }
+.wb-number-guess { grid-template-rows:auto auto auto auto minmax(0, 1fr); }
 .wb-guess-title { font-size:18px; font-weight:900; color:var(--wb-accent); }
 .wb-guess-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-.wb-guess-history { max-height:min(260px, calc(100dvh - 360px)); overflow-y:auto; display:grid; gap:6px; padding:8px; background:var(--wb-soft); border:1px solid var(--wb-border); }
+.wb-guess-history { min-height:0; max-height:min(260px, calc(100dvh - 360px)); overflow-y:auto; display:grid; gap:6px; padding:8px; background:var(--wb-soft); border:1px solid var(--wb-border); }
 .wb-guess-item { background:var(--wb-panel); border:1px solid var(--wb-border); padding:7px 9px; font-size:13px; }
 .wb-clue-box { white-space:pre-wrap; min-height:72px; max-height:min(260px, calc(100dvh - 360px)); overflow-y:auto; }
 .wb-companion { display:none; flex-shrink:0; margin-top:10px; background:var(--wb-panel); border:1px solid var(--wb-border); border-left:3px solid var(--wb-accent2); border-radius:0; padding:10px; max-height:92px; overflow:hidden; }
@@ -511,13 +513,7 @@
   .wb-record-table tr { margin-bottom:8px; padding:8px; border:1px solid var(--wb-border); border-radius:8px; background:var(--wb-panel); box-shadow:0 6px 14px rgba(0,0,0,.08); }
   .wb-record-table td { border:0; padding:3px 0; display:grid; grid-template-columns:58px minmax(0,1fr); gap:6px; white-space:normal; overflow:visible; text-overflow:clip; align-items:start; }
   .wb-record-table td::before { color:var(--wb-accent); font-weight:800; font-size:11px; }
-  .wb-record-table td:nth-child(1)::before { content:'时间'; }
-  .wb-record-table td:nth-child(2)::before { content:'用时'; }
-  .wb-record-table td:nth-child(3)::before { content:'结果'; }
-  .wb-record-table td:nth-child(4)::before { content:'分数'; }
-  .wb-record-table td:nth-child(5)::before { content:'陪伴'; }
-  .wb-record-table td:nth-child(6)::before { content:'日志'; }
-  .wb-record-table td:nth-child(7)::before { content:'操作'; }
+  .wb-record-table td::before { content:attr(data-label); }
   .wb-record-table td.wb-rec-empty { display:none; }
   .wb-record-table .wb-actions { justify-content:flex-start; gap:6px; }
   .wb-grid2048, .wb-board3, .wb-memory { width:min(100%, 50dvh, 340px); }
