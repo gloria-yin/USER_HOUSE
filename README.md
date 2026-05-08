@@ -3,7 +3,7 @@
 一个可以在 SillyTavern 里打开的小小游戏屋。等正文生成、等回复、想摸鱼的时候，都可以顺手来一把。
 
 <p align="center">
-  <img src="./pic/01-home.jpg" width="600">
+  <img src="./pic/01-home.jpeg" width="600">
 </p>
 
 ## 目录
@@ -44,7 +44,7 @@
 #### 俄罗斯方块
 
 <p align="center">
-  <img src="./pic/02-tetris.jpg" width="600">
+  <img src="./pic/02-tetris.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -58,7 +58,7 @@
 #### 贪吃蛇
 
 <p align="center">
-  <img src="./pic/03-snake.jpg" width="600">
+  <img src="./pic/03-snake.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -72,7 +72,7 @@
 #### 2048
 
 <p align="center">
-  <img src="./pic/04-2048.jpg" width="600">
+  <img src="./pic/04-2048.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -86,7 +86,7 @@
 #### 合成大西瓜
 
 <p align="center">
-  <img src="./pic/05-watermelon.jpg" width="600">
+  <img src="./pic/05-watermelon.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -100,7 +100,7 @@
 #### 翻牌记忆
 
 <p align="center">
-  <img src="./pic/06-memory.jpg" width="600">
+  <img src="./pic/06-memory.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -114,7 +114,7 @@
 #### 跳一跳
 
 <p align="center">
-  <img src="./pic/07-jump.jpg" width="600">
+  <img src="./pic/07-jump.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -128,7 +128,7 @@
 #### 搭木板
 
 <p align="center">
-  <img src="./pic/08-plank.jpg" width="600">
+  <img src="./pic/08-plank.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -142,7 +142,7 @@
 #### 数独
 
 <p align="center">
-  <img src="./pic/09-sudoku.jpg" width="600">
+  <img src="./pic/09-sudoku.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -160,7 +160,7 @@
 #### 双人飞行棋
 
 <p align="center">
-  <img src="./pic/10-ludo.jpg" width="600">
+  <img src="./pic/10-ludo.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -174,7 +174,7 @@
 #### 猜数字
 
 <p align="center">
-  <img src="./pic/11-guessnumber.jpg" width="600">
+  <img src="./pic/11-guessnumber.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -188,7 +188,7 @@
 #### 我说你猜
 
 <p align="center">
-  <img src="./pic/12-wordguess.jpg" width="600">
+  <img src="./pic/12-wordguess.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -204,7 +204,7 @@
 #### 井字棋
 
 <p align="center">
-  <img src="./pic/13-tictactoe.jpg" width="600">
+  <img src="./pic/13-tictactoe.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -218,7 +218,7 @@
 #### 五子棋
 
 <p align="center">
-  <img src="./pic/14-gomoku.jpg" width="600">
+  <img src="./pic/14-gomoku.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -232,7 +232,7 @@
 #### 电子围地盘
 
 <p align="center">
-  <img src="./pic/15-territory.jpg" width="600">
+  <img src="./pic/15-territory.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -246,7 +246,7 @@
 #### 抽鬼牌
 
 <p align="center">
-  <img src="./pic/16-oldmaid.jpg" width="600">
+  <img src="./pic/16-oldmaid.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -260,7 +260,7 @@
 #### 翻转棋
 
 <p align="center">
-  <img src="./pic/17-reversi.jpg" width="600">
+  <img src="./pic/17-reversi.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -274,7 +274,7 @@
 #### 数字炸弹
 
 <p align="center">
-  <img src="./pic/18-bombnumber.jpg" width="600">
+  <img src="./pic/18-bombnumber.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -288,7 +288,7 @@
 #### 立体四子棋
 
 <p align="center">
-  <img src="./pic/19-connect4d.jpg" width="600">
+  <img src="./pic/19-connect4d.jpeg" width="600">
 </p>
 
 规则和流程：
@@ -302,7 +302,7 @@
 ### 亲密互动
 
 <p align="center">
-  <img src="./pic/20-intimacy.jpg" width="600">
+  <img src="./pic/20-intimacy.jpeg" width="600">
 </p>
 
 亲密互动目前还没有正式生成，想做成一个强互动专题。
@@ -389,7 +389,7 @@ char 的语录和日志可以结合这些内容定制：
 3. 日志可以手动生成，也可以打开「自动记录日志」。
 
 <p align="center">
-  <img src="./pic/22-settings-basic.jpg" width="600">
+  <img src="./pic/22-settings-basic.jpeg" width="600">
 </p>
 
 4. 设置 API。常用 API 建议选便宜好用的 flash 类模型，语录和日志一般够用了。
@@ -417,25 +417,25 @@ char 的语录和日志可以结合这些内容定制：
 5. 点击生成并覆盖。
 
 <p align="center">
-  <img src="./pic/24-help2.jpg" width="600">
+  <img src="./pic/24-help2.jpeg" width="600">
 </p>
 
 也可以进入某个游戏后，点击游戏界面的「生成」按钮。这个入口不能单独设置 API，会使用主 API 配置生成。
 
 <p align="center">
-  <img src="./pic/24-help3.jpg" width="600">
+  <img src="./pic/24-help3.jpeg" width="600">
 </p>
 
 游戏结束后的「生成日志」按钮需要手动点击才会生成，除非你已经开启「自动记录日志」。生成后的日志可以在「记录」里查看。
 
 <p align="center">
-  <img src="./pic/24-help4.jpg" width="600">
+  <img src="./pic/24-help4.jpeg" width="600">
 </p>
 
 ### 游戏界面帮助
 
 <p align="center">
-  <img src="./pic/24-help3.jpg" width="600">
+  <img src="./pic/24-help3.jpeg" width="600">
 </p>
 
 游戏界面常用按钮：
