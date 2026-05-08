@@ -74,6 +74,7 @@ export async function initWanbanXiaowu() {
   const STORAGE_SCORES = SCRIPT_ID + '_scores_v1';
   const STORAGE_LINES = SCRIPT_ID + '_lines_v1';
   const STORAGE_ROLE_LINES = SCRIPT_ID + '_roleLines_v1';
+  const STORAGE_THEATERS = SCRIPT_ID + '_theaters_v1';
   const STORAGE_LINE_PRESET_SELECTION = SCRIPT_ID + '_linePresetSelection_v1';
   const STORAGE_API_PRESETS = SCRIPT_ID + '_apiPresets_v1';
   const STORAGE_WORLD_PRESETS = SCRIPT_ID + '_worldPresets_v1';
@@ -108,7 +109,7 @@ export async function initWanbanXiaowu() {
   let currentRoundRecord = false;
   let currentRoundLineEvents = [];
   let currentRoundTheaterInfo = null;
-  let theaterCache = {};
+  let theaterCache = loadJSON(STORAGE_THEATERS, {});
   let lastMenuOpenAt = 0;
   let lineGenerationBusy = false;
   let lineGenerationStatus = '当前状态：空闲';
@@ -284,6 +285,7 @@ export async function initWanbanXiaowu() {
   function presetNamesForGame(game) { const scope = roleLines()[roleLineScope(game)] || {}; const names = Object.keys(scope).filter(Boolean); const current = normalizePresetName(companionName()); if (!names.includes(current)) names.unshift(current); return names; }
   function saveRoleLineSet(game, preset, data) { const all = roleLines(); const scopeKey = roleLineScope(game); if (!all[scopeKey]) all[scopeKey] = {}; all[scopeKey][normalizePresetName(preset)] = data; saveRoleLines(all); }
   function saveRoleLineSetForName(game, roleName, preset, data) { const all = roleLines(); const scopeKey = roleLineScopeForName(game, roleName); if (!all[scopeKey]) all[scopeKey] = {}; all[scopeKey][normalizePresetName(preset || roleName)] = data; saveRoleLines(all); }
+  function saveTheaterCache() { saveJSON(STORAGE_THEATERS, theaterCache || {}); }
   function roleNamesForLineStorage() { const names = [companionName()]; Object.keys(roleLines()).forEach(k => { const name = String(k).split('::')[0]; if (name) names.push(name); }); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
   function validLineSet(game, set) {
     if (!set || typeof set !== 'object' || Array.isArray(set)) return false;
@@ -1001,7 +1003,7 @@ export async function initWanbanXiaowu() {
       canvas.style.height = Math.floor(rawH * scale) + 'px';
       return;
     }
-    const square = qs('.wb-grid2048, .wb-board3, .wb-gomoku, .wb-ludo', box);
+    const square = qs('.wb-ludo', box);
     if (square) {
       const isLudo = square.classList.contains('wb-ludo');
       const mobile = getHostWindow().matchMedia && getHostWindow().matchMedia('(max-width: 700px)').matches;
@@ -1010,7 +1012,7 @@ export async function initWanbanXiaowu() {
       const limitedH = isLudo ? Math.max(0, maxH - (ludoInfoRect ? ludoInfoRect.height + 12 : 0)) : maxH;
       const side = Math.floor(Math.min(maxW - (isLudo && mobile ? 12 : 0), limitedH, isLudo ? (mobile ? 310 : 460) : Infinity));
       square.style.width = side + 'px';
-      if (isLudo || square.classList.contains('wb-grid2048') || square.classList.contains('wb-board3') || square.classList.contains('wb-gomoku')) {
+      if (isLudo) {
         square.style.height = side + 'px';
       }
     }
@@ -1141,11 +1143,14 @@ export async function initWanbanXiaowu() {
       .wb-tetris-shell { width:100%; height:100%; min-width:0; min-height:0; display:flex; align-items:center; justify-content:center; gap:8px; }
       .wb-tetris-controls { display:none; flex:0 0 auto; gap:6px; }
       .wb-tetris-controls .wb-btn { writing-mode:vertical-rl; min-width:34px; min-height:74px; padding:8px 5px; letter-spacing:1px; }
-      .wb-grid2048 { width:min(350px, 100%, 82cqh); max-height:82cqh; aspect-ratio:1; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); grid-template-rows:repeat(4,minmax(0,1fr)); gap:8px; background:#b8a89f; padding:8px; border-radius:0; contain:layout size; }
+      .wb-2048-panel { width:100%; height:100%; min-height:0; display:grid; place-items:center; overflow:hidden; }
+      .wb-grid2048 { width:min(430px, 100%, 82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); grid-template-rows:repeat(4,minmax(0,1fr)); gap:8px; background:#b8a89f; padding:8px; border-radius:0; box-sizing:border-box; }
       .wb-tile { display:grid; place-items:center; border-radius:0; background:#cdc0b6; font-weight:900; font-size:clamp(16px, 3.2vh, 26px); color:#4f4039; min-width:0; min-height:0; aspect-ratio:1; overflow:hidden; line-height:1; }
-      .wb-board3 { width:min(330px, 100%, 100cqh); aspect-ratio:1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(3,minmax(0,1fr)); gap:8px; contain:layout size; }
+      .wb-board3-panel { width:100%; height:100%; min-height:0; display:grid; place-items:center; overflow:hidden; }
+      .wb-board3 { width:min(430px, 100%, 82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(3,minmax(0,1fr)); gap:8px; box-sizing:border-box; }
       .wb-cell { border:1px solid var(--wb-border); border-radius:0; background:var(--wb-panel); color:var(--wb-text); font-size:clamp(30px, 6vh, 48px); font-weight:900; cursor:pointer; min-width:0; min-height:0; aspect-ratio:1; line-height:1; overflow:hidden; }
-      .wb-gomoku { width:min(500px, 100%, 100cqh); aspect-ratio:1; display:grid; grid-template-columns:repeat(15,minmax(0,1fr)); grid-template-rows:repeat(15,minmax(0,1fr)); gap:2px; background:#ba9362; padding:7px; border-radius:0; contain:layout size; }
+      .wb-gomoku-panel { width:100%; height:100%; min-height:0; display:grid; place-items:center; overflow:hidden; }
+      .wb-gomoku { width:min(500px, 100%, 82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(15,minmax(0,1fr)); grid-template-rows:repeat(15,minmax(0,1fr)); gap:2px; background:#ba9362; padding:7px; border-radius:0; box-sizing:border-box; }
       .wb-territory-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0, 1fr); gap:10px; place-items:center; }
       .wb-territory-info { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; align-items:center; }
       .wb-territory-board { width:min(520px, 100%, 100cqh); max-height:100%; aspect-ratio:1; display:grid; grid-template-columns:repeat(11,minmax(0,1fr)); grid-template-rows:repeat(11,minmax(0,1fr)); gap:0; padding:8px; background:#f5f7fb; border:1px solid var(--wb-border); contain:layout size; }
@@ -2026,7 +2031,7 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-api-status" id="wb-summary-preview">' + esc(summaryPreview(cfg.summaryId)) + '</div>'
       + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">注入预设</div>'
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-world-preset">' + injOptions + '</select><button class="wb-btn" id="wb-load-world-preset">载入</button><button class="wb-btn" id="wb-restore-world-preset">恢复</button><button class="wb-btn" id="wb-del-world-preset">删</button></div>'
-      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色卡配置</button></div>'
+      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色卡配置</button><button class="wb-btn" id="wb-reset-current-world-default" style="flex:1;">恢复当前角色卡默认</button></div>'
       + '</div>'
 	      + '<div class="wb-panel"><div class="wb-section-title">游戏语录设置</div>'
 	      + '<div class="wb-preset-row"><select class="wb-select" id="wb-line-view-role">' + lineRoleOptions + '</select><select class="wb-select" id="wb-line-view-game">' + lineGameOptions + '</select><select class="wb-select" id="wb-line-view-kind"><option value="lines">语录</option><option value="theater">小剧场</option></select></div>'
@@ -2096,6 +2101,7 @@ export async function initWanbanXiaowu() {
     const bp = qs('#wb-break-limit-prompt'); if (bp) bp.oninput = debounceAutoSaveInjection;
     qs('#wb-manage-summary').onclick = openSummaryManager;
     qs('#wb-save-world-preset').onclick = saveWorldPresetFromUI;
+    qs('#wb-reset-current-world-default').onclick = resetCurrentWorldDefaultFromUI;
     qs('#wb-load-world-preset').onclick = loadWorldPresetFromUI;
     qs('#wb-restore-world-preset').onclick = loadCurrentWorldPresetFromUI;
     qs('#wb-del-world-preset').onclick = deleteWorldPresetFromUI;
@@ -2183,6 +2189,7 @@ export async function initWanbanXiaowu() {
       STORAGE_SCORES,
       STORAGE_LINES,
       STORAGE_ROLE_LINES,
+      STORAGE_THEATERS,
       STORAGE_LINE_PRESET_SELECTION,
       STORAGE_WORLD_PRESETS,
       STORAGE_SUMMARIES,
@@ -2228,7 +2235,7 @@ export async function initWanbanXiaowu() {
         const data = JSON.parse(String(reader.result || '{}'));
         const items = data.items || data;
         const st = qs('#wb-import-export-status'); if (st) st.textContent = '已读取备份：' + (file.name || '备份文件') + '，等待确认导入。';
-        showConfirm('导入备份', '导入后会覆盖当前本地的设置、语录、世界观预设、大总结、游戏记录、进度和题库等备份内包含的数据。当前 API 配置和 API 预设会保留，不会被覆盖。确定要继续导入吗？', () => {
+        showConfirm('导入备份', '导入后会覆盖当前本地的设置、语录、小剧场、世界观预设、大总结、游戏记录、进度和题库等备份内包含的数据。当前 API 配置和 API 预设会保留，不会被覆盖。确定要继续导入吗？', () => {
           const currentApi = ((cfg) => ({ apiUrl: cfg.apiUrl || '', apiKey: cfg.apiKey || '', apiModel: cfg.apiModel || '' }))(settings());
           exportDataKeys().forEach(key => {
             if (!Object.prototype.hasOwnProperty.call(items, key)) return;
@@ -2236,6 +2243,7 @@ export async function initWanbanXiaowu() {
             else if (key === STORAGE_SUMMARY_REQ) localStorage.setItem(key, String(items[key] || ''));
             else saveJSON(key, items[key]);
           });
+          theaterCache = loadJSON(STORAGE_THEATERS, {});
           const doneStatus = qs('#wb-import-export-status'); if (doneStatus) doneStatus.textContent = '已导入：' + (file.name || '备份文件') + '。API 配置和 API 预设已保留。';
           toast('导入完成，API 配置和 API 预设未被覆盖');
           renderSettings();
@@ -3594,6 +3602,26 @@ export async function initWanbanXiaowu() {
     toast('已保存当前角色卡配置：' + name);
     renderSettings();
   }
+  function resetCurrentWorldDefaultFromUI() {
+    const name = normalizePresetName(companionName());
+    showConfirm('恢复当前角色卡默认', '确定将当前世界观注入设置恢复为“' + name + '”的角色卡默认内容吗？已保存的注入预设不会被删除，前置提示词 / 破限词会保留。', () => {
+      const keepBreak = qs('#wb-break-limit-prompt') ? qs('#wb-break-limit-prompt').value.trim() : (settings().breakLimitPrompt || '');
+      setSettings({
+        injectCharDesc: true,
+        charDescMode: 'auto',
+        manualCharPersona: '',
+        charName: '{{char}}',
+        charDescriptionSnapshot: '',
+        avatarUrl: '',
+        summaryId: '',
+        summarySnapshot: null,
+        selectedWorldEntries: [],
+        breakLimitPrompt: keepBreak
+      });
+      renderSettings();
+      toast('已恢复当前角色卡默认配置');
+    });
+  }
   async function loadWorldPresetFromUI() {
     const idx = parseInt(qs('#wb-world-preset').value, 10);
     const pr = worldPresets()[idx];
@@ -4015,6 +4043,7 @@ function showGameRecords(game, page) {
   function clearTheaterCacheForGame(game, roleName) {
     const prefix = normalizePresetName(roleName || companionName()) + '::' + game + '::';
     Object.keys(theaterCache).forEach(k => { if (k.indexOf(prefix) === 0) delete theaterCache[k]; });
+    saveTheaterCache();
   }
   async function preGenerateTheaters(game, cfgOverride, onAiCall, roleName, options) {
     const targetRole = normalizePresetName(roleName || companionName());
@@ -4037,6 +4066,7 @@ function showGameRecords(game, page) {
       if (options && options.skipOnApiFailure) return { skipped:true, reason:apiFailed, output:rawOutput || apiFailed, debug:apiDebug };
     }
     jobs.forEach(([outcome, special]) => { theaterCache[theaterCacheKeyForName(targetRole, game, outcome, special === 'normal' ? '' : special)] = pack[theaterPackKey(outcome, special)]; });
+    saveTheaterCache();
     return { ok:true, output:rawOutput || JSON.stringify(pack, null, 2), saved:JSON.stringify(pack, null, 2), source:rawOutput ? 'api' : 'fallback', debug:apiDebug };
   }
 
@@ -4362,7 +4392,7 @@ function showGameRecords(game, page) {
 
   function start2048(state) {
     const box = qs('#wb-gamebox');
-    box.innerHTML = '<div class="wb-grid2048" id="wb-2048"></div>';
+    box.innerHTML = '<div class="wb-2048-panel"><div class="wb-grid2048" id="wb-2048"></div></div>';
     let board = Array.isArray(state?.board) && state.board.length === 16 ? state.board : Array(16).fill(0), score = state?.score || 0, seen = state?.seen || {};
     if (!state?.board) { add(); add(); }
     draw(); save();
@@ -4381,7 +4411,7 @@ function showGameRecords(game, page) {
     const box = qs('#wb-gamebox');
     let b = Array.isArray(state?.b) && state.b.length === 9 ? state.b : Array(9).fill(''), over=false;
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
-    box.innerHTML = '<div class="wb-board3">' + b.map((_,i)=>'<button class="wb-cell" data-i="'+i+'"></button>').join('') + '</div>';
+    box.innerHTML = '<div class="wb-board3-panel"><div class="wb-board3">' + b.map((_,i)=>'<button class="wb-cell" data-i="'+i+'"></button>').join('') + '</div></div>';
     if (!state?.b && state?.firstMover) speakFirstMover('tictactoe', state.firstMover);
     if (!state?.b && state?.firstMover === 'ta') ai();
     draw(); save();
@@ -4399,7 +4429,7 @@ function showGameRecords(game, page) {
     const box = qs('#wb-gamebox'), n=15;
     let b = Array.isArray(state?.b) && state.b.length === n*n ? state.b : Array(n*n).fill(''), over=false;
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
-    box.innerHTML = '<div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div>';
+    box.innerHTML = '<div class="wb-gomoku-panel"><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
     if (!state?.b && state?.firstMover) speakFirstMover('gomoku', state.firstMover);
     if (!state?.b && state?.firstMover === 'ta') { const first = bestGomoku(b,n); if(first>=0){ maybeCharNext(); b[first]='W'; } }
     draw(); save();
