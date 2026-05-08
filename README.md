@@ -3,7 +3,7 @@
 一个可以在 SillyTavern 里打开的小小游戏屋。等正文生成、等回复、想摸鱼的时候，都可以顺手来一把。
 
 <p align="center">
-  <img src="./pic/01-home.jpeg" width="600">
+  <img src="./pic/01-home.jpeg" width="800">
 </p>
 
 ## 目录
@@ -44,7 +44,7 @@
 #### 俄罗斯方块
 
 <p align="center">
-  <img src="./pic/02-tetris.jpeg" width="600">
+  <img src="./pic/02-tetris.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -58,7 +58,7 @@
 #### 贪吃蛇
 
 <p align="center">
-  <img src="./pic/03-snake.jpeg" width="600">
+  <img src="./pic/03-snake.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -72,7 +72,7 @@
 #### 2048
 
 <p align="center">
-  <img src="./pic/04-2048.jpeg" width="600">
+  <img src="./pic/04-2048.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -86,7 +86,7 @@
 #### 合成大西瓜
 
 <p align="center">
-  <img src="./pic/05-watermelon.jpeg" width="600">
+  <img src="./pic/05-watermelon.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -100,7 +100,7 @@
 #### 翻牌记忆
 
 <p align="center">
-  <img src="./pic/06-memory.jpeg" width="600">
+  <img src="./pic/06-memory.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -114,7 +114,7 @@
 #### 跳一跳
 
 <p align="center">
-  <img src="./pic/07-jump.jpeg" width="600">
+  <img src="./pic/07-jump.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -128,7 +128,7 @@
 #### 搭木板
 
 <p align="center">
-  <img src="./pic/08-plank.jpeg" width="600">
+  <img src="./pic/08-plank.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -142,7 +142,7 @@
 #### 数独
 
 <p align="center">
-  <img src="./pic/09-sudoku.jpeg" width="600">
+  <img src="./pic/09-sudoku.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -160,7 +160,7 @@
 #### 双人飞行棋
 
 <p align="center">
-  <img src="./pic/10-ludo.jpeg" width="600">
+  <img src="./pic/10-ludo.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -174,7 +174,7 @@
 #### 猜数字
 
 <p align="center">
-  <img src="./pic/11-guessnumber.jpeg" width="600">
+  <img src="./pic/11-guessnumber.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -188,7 +188,7 @@
 #### 我说你猜
 
 <p align="center">
-  <img src="./pic/12-wordguess.jpeg" width="600">
+  <img src="./pic/12-wordguess.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -204,7 +204,7 @@
 #### 井字棋
 
 <p align="center">
-  <img src="./pic/13-tictactoe.jpeg" width="600">
+  <img src="./pic/13-tictactoe.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -218,7 +218,7 @@
 #### 五子棋
 
 <p align="center">
-  <img src="./pic/14-gomoku.jpeg" width="600">
+  <img src="./pic/14-gomoku.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -232,7 +232,7 @@
 #### 电子围地盘
 
 <p align="center">
-  <img src="./pic/15-territory.jpeg" width="600">
+  <img src="./pic/15-territory.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -246,7 +246,7 @@
 #### 抽鬼牌
 
 <p align="center">
-  <img src="./pic/16-oldmaid.jpeg" width="600">
+  <img src="./pic/16-oldmaid.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -260,7 +260,7 @@
 #### 翻转棋
 
 <p align="center">
-  <img src="./pic/17-reversi.jpeg" width="600">
+  <img src="./pic/17-reversi.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -274,7 +274,7 @@
 #### 数字炸弹
 
 <p align="center">
-  <img src="./pic/18-bombnumber.jpeg" width="600">
+  <img src="./pic/18-bombnumber.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -288,7 +288,7 @@
 #### 立体四子棋
 
 <p align="center">
-  <img src="./pic/19-connect4d.jpeg" width="600">
+  <img src="./pic/19-connect4d.jpeg" width="800">
 </p>
 
 规则和流程：
@@ -302,7 +302,7 @@
 ### 亲密互动
 
 <p align="center">
-  <img src="./pic/20-intimacy.jpeg" width="600">
+  <img src="./pic/20-intimacy.jpeg" width="800">
 </p>
 
 亲密互动目前还没有正式生成，想做成一个强互动专题。
@@ -435,7 +435,7 @@ char 的语录和日志可以结合这些内容定制：
 ### 游戏界面帮助
 
 <p align="center">
-  <img src="./pic/24-help3.jpeg" width="600">
+  <img src="./pic/24-help3.jpeg" width="800">
 </p>
 
 游戏界面常用按钮：
