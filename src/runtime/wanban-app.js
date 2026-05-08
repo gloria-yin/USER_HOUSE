@@ -787,6 +787,7 @@ export async function initWanbanXiaowu() {
   }
   let messageNotifyBound = false;
   let messageNotifyLastSignature = null;
+  let messageNotifyRecent = { key:'', at:0 };
   let messageNotifyPollTimer = null;
   function pauseGameForMessageNotify() {
     if (!gameStarted || !currentGame || gamePaused) return;
@@ -830,9 +831,13 @@ export async function initWanbanXiaowu() {
     const shell = qs('#' + SHELL_ID);
     if (!shell || !shell.classList.contains('wb-shell-visible') || !currentGame) return;
     const preview = extractTaggedBody(text) || 'RP正文已生成。';
+    const stableKey = preview.replace(/\s+/g, '').slice(0, 160);
+    const now = Date.now();
+    if (stableKey && messageNotifyRecent.key === stableKey && now - messageNotifyRecent.at < 8000) return;
     const signature = String(messageId == null ? 'latest' : messageId) + '::' + preview;
     if (signature === messageNotifyLastSignature) return;
     messageNotifyLastSignature = signature;
+    messageNotifyRecent = { key:stableKey, at:now };
     pauseGameForMessageNotify();
     notifyBeep();
     try { const nav = getHostWindow().navigator || navigator; if (nav && nav.vibrate) nav.vibrate([180, 80, 220]); } catch(e) {}
