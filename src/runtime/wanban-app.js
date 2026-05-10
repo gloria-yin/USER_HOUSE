@@ -3933,6 +3933,8 @@ export async function initWanbanXiaowu() {
   }
   function saveWorldPresetFromUI() {
     const name = roleNameFromWorldUI();
+    const nameInput = qs('#wb-char-name');
+    if (nameInput && !nameInput.value.trim()) nameInput.value = name;
     const arr = worldPresets().filter(x => normalizePresetName(x && x.name) !== name);
     arr.unshift(worldPresetSnapshotFromUI(name));
     saveWorldPresets(arr);
