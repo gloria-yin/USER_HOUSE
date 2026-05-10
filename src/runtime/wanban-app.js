@@ -69,6 +69,7 @@ export async function initWanbanXiaowu() {
   const POPUP_ID = SCRIPT_ID + '-popup';
   const SHELL_ID = SCRIPT_ID + '-shell';
   const MENU_ID = SCRIPT_ID + '-menu-item';
+  const FLOAT_ID = SCRIPT_ID + '-float-ball';
   const STYLE_ID = SCRIPT_ID + '-css';
   const STORAGE_SETTINGS = SCRIPT_ID + '_settings_v1';
   const STORAGE_SCORES = SCRIPT_ID + '_scores_v1';
@@ -114,6 +115,7 @@ export async function initWanbanXiaowu() {
   let currentRoundTheaterInfo = null;
   let theaterCache = loadJSON(STORAGE_THEATERS, {});
   let lastMenuOpenAt = 0;
+  let floatingBallResizeBound = false;
   let lineGenerationBusy = false;
   let lineGenerationStatus = '当前状态：空闲';
   let lineGenerationKind = '';
@@ -177,6 +179,9 @@ export async function initWanbanXiaowu() {
     charName: '{{char}}',
     userName: '{{user}}',
     rememberWindow: false,
+    floatingBallEnabled: false,
+    floatingBallX: 18,
+    floatingBallY: 180,
     messageNotify: false,
     messageNotifyTag: 'content',
     theaterEnabled: false,
@@ -1116,6 +1121,31 @@ export async function initWanbanXiaowu() {
         overscroll-behavior:contain;
       }
       #${SHELL_ID}.wb-shell-visible { display:flex; justify-content:center; align-items:stretch; padding:16px; }
+      #${FLOAT_ID} {
+        position:fixed;
+        left:18px;
+        top:180px;
+        width:54px;
+        height:54px;
+        z-index:999998;
+        border:1px solid rgba(255,255,255,.75);
+        border-radius:999px;
+        background:url('${APP_ICON_URL}') center / cover no-repeat, linear-gradient(135deg, #ff7aa8, #6bc8ff);
+        box-shadow:0 10px 26px rgba(0,0,0,.28), 0 0 0 3px rgba(255,255,255,.24);
+        cursor:grab;
+        touch-action:none;
+        padding:0;
+        outline:none;
+      }
+      #${FLOAT_ID}:hover { transform:translateY(-1px); box-shadow:0 14px 30px rgba(0,0,0,.32), 0 0 0 3px rgba(255,255,255,.32); }
+      #${FLOAT_ID}.dragging { cursor:grabbing; transform:scale(.98); }
+      @media (max-width: 768px) {
+        #${FLOAT_ID} {
+          width:36px;
+          height:36px;
+          box-shadow:0 8px 18px rgba(0,0,0,.26), 0 0 0 2px rgba(255,255,255,.24);
+        }
+      }
       #${POPUP_ID}, #${POPUP_ID} * { box-sizing: border-box; }
       #${POPUP_ID} {
         position: fixed;
@@ -1928,6 +1958,107 @@ export async function initWanbanXiaowu() {
       shell.style.setProperty('--wb-vvh', '100dvh');
     }
   }
+  function clampFloatingBallPosition(x, y) {
+    const win = getHostWindow();
+    const doc = getHostDocument();
+    const vw = win.innerWidth || doc.documentElement.clientWidth || 800;
+    const vh = win.innerHeight || doc.documentElement.clientHeight || 700;
+    const size = vw <= 768 ? 36 : 54;
+    const margin = 8;
+    const nx = Number.isFinite(Number(x)) ? Number(x) : DEFAULT_SETTINGS.floatingBallX;
+    const ny = Number.isFinite(Number(y)) ? Number(y) : DEFAULT_SETTINGS.floatingBallY;
+    return {
+      x: Math.max(margin, Math.min(nx, Math.max(margin, vw - size - margin))),
+      y: Math.max(margin, Math.min(ny, Math.max(margin, vh - size - margin)))
+    };
+  }
+  function placeFloatingBall(btn, x, y) {
+    if (!btn) return;
+    const pos = clampFloatingBallPosition(x, y);
+    btn.style.left = pos.x + 'px';
+    btn.style.top = pos.y + 'px';
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+  }
+  function bindFloatingBall(btn) {
+    if (!btn || btn.dataset.wbBound) return;
+    btn.dataset.wbBound = '1';
+    let dragging = false;
+    let moved = false;
+    let startX = 0;
+    let startY = 0;
+    let originX = 0;
+    let originY = 0;
+    btn.addEventListener('pointerdown', e => {
+      if (e.button != null && e.button !== 0) return;
+      const rect = btn.getBoundingClientRect();
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      originX = rect.left;
+      originY = rect.top;
+      btn.classList.add('dragging');
+      try { btn.setPointerCapture(e.pointerId); } catch(e2) {}
+      e.preventDefault();
+    });
+    btn.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+      placeFloatingBall(btn, originX + dx, originY + dy);
+      e.preventDefault();
+    });
+    const finish = e => {
+      if (!dragging) return;
+      dragging = false;
+      btn.classList.remove('dragging');
+      try { btn.releasePointerCapture(e.pointerId); } catch(e2) {}
+      const rect = btn.getBoundingClientRect();
+      const pos = clampFloatingBallPosition(rect.left, rect.top);
+      setSettings({ floatingBallX: pos.x, floatingBallY: pos.y });
+      placeFloatingBall(btn, pos.x, pos.y);
+      if (!moved) buildPopup();
+      e.preventDefault();
+    };
+    btn.addEventListener('pointerup', finish);
+    btn.addEventListener('pointercancel', e => {
+      if (!dragging) return;
+      dragging = false;
+      btn.classList.remove('dragging');
+      try { btn.releasePointerCapture(e.pointerId); } catch(e2) {}
+      e.preventDefault();
+    });
+  }
+  function syncFloatingBall() {
+    const doc = getHostDocument();
+    const cfg = settings();
+    let btn = qs('#' + FLOAT_ID, doc);
+    if (!cfg.floatingBallEnabled) {
+      if (btn) btn.remove();
+      return;
+    }
+    injectStyle();
+    if (!btn) {
+      btn = doc.createElement('button');
+      btn.id = FLOAT_ID;
+      btn.type = 'button';
+      btn.title = '玩伴小屋';
+      btn.setAttribute('aria-label', '打开玩伴小屋');
+      doc.body.appendChild(btn);
+      bindFloatingBall(btn);
+    }
+    placeFloatingBall(btn, cfg.floatingBallX, cfg.floatingBallY);
+    if (!floatingBallResizeBound) {
+      floatingBallResizeBound = true;
+      getHostWindow().addEventListener('resize', () => {
+        const latest = settings();
+        const existing = qs('#' + FLOAT_ID, getHostDocument());
+        if (existing) placeFloatingBall(existing, latest.floatingBallX, latest.floatingBallY);
+      });
+    }
+  }
 	  function buildPopup() {
 	    injectStyle();
 	    applySelectedFont();
@@ -2073,6 +2204,7 @@ export async function initWanbanXiaowu() {
       + '<label class="wb-switch"><input id="wb-auto-log-toggle" type="checkbox" ' + (cfg.autoLog ? 'checked' : '') + '>自动记录日志</label>'
       + '</div>'
       + '<label class="wb-switch"><input id="wb-remember-window" type="checkbox" ' + (cfg.rememberWindow ? 'checked' : '') + '>保留上一次窗口</label>'
+      + '<label class="wb-switch"><input id="wb-floating-ball" type="checkbox" ' + (cfg.floatingBallEnabled ? 'checked' : '') + '>开启悬浮球入口</label>'
       + '<label class="wb-switch"><input id="wb-message-notify" type="checkbox" ' + (cfg.messageNotify ? 'checked' : '') + '>RP正文完成提醒</label>'
       + '<div class="wb-muted" style="font-size:11px;margin-top:-10px;padding-left:24px;line-height:1;">防沉迷系统（不是）</div>'
       + '<div class="wb-preset-row"><span class="wb-muted" style="flex:1;">正文标签：&lt;' + esc(cfg.messageNotifyTag || 'content') + '&gt;...&lt;/' + esc(cfg.messageNotifyTag || 'content') + '&gt;</span><button class="wb-btn" id="wb-message-tag-btn">设置正文标签</button></div>'
@@ -2149,6 +2281,7 @@ export async function initWanbanXiaowu() {
     const theaterToggle = qs('#wb-theater-toggle'); if (theaterToggle) theaterToggle.onchange = autoSaveBasicSettingsFromUI;
     const autoLogToggle = qs('#wb-auto-log-toggle'); if (autoLogToggle) autoLogToggle.onchange = autoSaveBasicSettingsFromUI;
     const rememberWindowToggle = qs('#wb-remember-window'); if (rememberWindowToggle) rememberWindowToggle.onchange = autoSaveBasicSettingsFromUI;
+    const floatingBallToggle = qs('#wb-floating-ball'); if (floatingBallToggle) floatingBallToggle.onchange = autoSaveBasicSettingsFromUI;
     const messageNotifyToggle = qs('#wb-message-notify'); if (messageNotifyToggle) messageNotifyToggle.onchange = () => { autoSaveBasicSettingsFromUI(); bindMessageNotifyEvents(); };
     const messageTagBtn = qs('#wb-message-tag-btn'); if (messageTagBtn) messageTagBtn.onclick = () => { const next = prompt('正文标签名', settings().messageNotifyTag || 'content'); if (next == null) return; const tag = String(next || '').replace(/[<>/\s]/g, '').trim() || 'content'; setSettings({ messageNotifyTag: tag }); renderSettings(); toast('正文标签已设置为 <' + tag + '>'); };
 	    qs('#wb-theme').onchange = autoSaveBasicSettingsFromUI;
@@ -2208,14 +2341,16 @@ export async function initWanbanXiaowu() {
 	    const theme = qs('#wb-theme') ? qs('#wb-theme').value : settings().theme;
 	    const selectedFont = qs('#wb-font-select') ? qs('#wb-font-select').value : settings().selectedFont;
 	    const rememberWindow = !!(qs('#wb-remember-window') && qs('#wb-remember-window').checked);
+	    const floatingBallEnabled = !!(qs('#wb-floating-ball') && qs('#wb-floating-ball').checked);
 	    const messageNotify = !!(qs('#wb-message-notify') && qs('#wb-message-notify').checked);
 	    const theaterEnabled = companion && !!(qs('#wb-theater-toggle') && qs('#wb-theater-toggle').checked);
 	    const autoLog = companion && !!(qs('#wb-auto-log-toggle') && qs('#wb-auto-log-toggle').checked);
-	    const patch = { companion, theme, selectedFont, rememberWindow, messageNotify, theaterEnabled, autoLog };
+	    const patch = { companion, theme, selectedFont, rememberWindow, floatingBallEnabled, messageNotify, theaterEnabled, autoLog };
 	    if (rememberWindow) { patch.lastTab = currentTab || 'single'; patch.lastGame = currentGame || ''; }
 	    setSettings(patch);
 	    syncPopupModeClass();
 	    applySelectedFont();
+	    syncFloatingBall();
 	  }
 	  function editCustomFontFromUI() {
 	    const cfg = settings();
@@ -3665,7 +3800,7 @@ export async function initWanbanXiaowu() {
     } catch(e) {}
   }
 
-  function init() { addMenuItem(); bindMessageNotifyEvents(); }
+  function init() { addMenuItem(); bindMessageNotifyEvents(); syncFloatingBall(); }
 
   if (typeof window[FLAG] === 'undefined') {
     window[FLAG] = true;
