@@ -362,7 +362,7 @@ export async function initWanbanXiaowu() {
     const role = normalizePresetName(roleName || companionName());
     const pr = worldPresetForRole(role);
     const cfg = Object.assign({}, baseCfg || settings(), pr || {}, extra || {});
-    if (!cfg.charName || cfg.charName === '{{char}}') cfg.charName = role;
+    cfg.charName = role;
     return cfg;
   }
   function applyRoleToAllGames(roleName) {
@@ -3086,6 +3086,7 @@ export async function initWanbanXiaowu() {
       '平局规则：如果结果=平局或场景key包含draw，平局就是平局，不是user失败，也不是{{char}}失败。必须写双方打平后的反应，例如想再来一场、互相试探、嘴硬、不服气、松口气、谁也没赢的调侃，禁止写成失败安慰。',
       '亲密氛围模式：' + intimacyText,
       '游戏：' + ((GAME_META[game] || {}).name || game),
+      '当前角色姓名：' + (cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : '{{char}}'),
       '规则说明：如果结果里出现“{{char}}赢”，表示当前角色获胜，也就是原先的角色获胜。',
       '角色描述：' + currentCharDescription(cfg),
       '世界背景：' + (selectedWorldText(cfg) || '无'),
@@ -4317,6 +4318,10 @@ function showGameRecords(game, page) {
 	    const canFavorite = !!(meta && meta.game && meta.recordId);
 	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(title || '角色互动小剧场') + '</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + markdownTextHTML(text || '') + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;">' + (canFavorite ? '<button class="wb-btn" id="wb-theater-favorite" title="收藏">♡ 收藏</button>' : '') + '<button class="wb-btn" id="wb-text-close">关闭</button></div></div>';
 	    appendModalMask(mask);
+	    if (canFavorite) {
+	      const rec = (records()[meta.game] || []).find(r => r.id === meta.recordId);
+	      updateRecord(meta.game, meta.recordId, { theaterInfo: Object.assign({}, rec && rec.theaterInfo ? rec.theaterInfo : {}, { title: title || '角色互动小剧场', text }) });
+	    }
 	    const fav = qs('#wb-theater-favorite', mask);
 	    if (fav) fav.onclick = () => {
 	      updateRecord(meta.game, meta.recordId, { favoriteTheater: { title: title || '角色互动小剧场', text, savedAt: Date.now() } });
@@ -4334,7 +4339,8 @@ function showGameRecords(game, page) {
 	    const theaterInfo = rec.theaterInfo || {};
 	    const logCfg = rolePromptConfig(roleName, cfg);
 	    const normalizedScoreText = String(rec.scoreText || '').replace(new RegExp(String(roleName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '{{char}}').replace(new RegExp('TA' + '赢', 'g'), '{{char}}赢').replace(/TA/g, '{{char}}');
-	    const prompt = [...(promptTemplates().gameLog || PROMPT_TEMPLATES.gameLog),'游戏：' + ((GAME_META[game] || {}).name || game),'游戏情况（记录表字段，均为user视角）：' + gameLogSituation(game, rec), gameLogFieldRules(game, roleName),'原始结算文本：' + normalizedScoreText + '，结果：' + formatRecordResultForPrompt(rec.result) + '，用时：' + formatDuration(rec.durationMs),'本局触发过的角色语录（按触发顺序，包含触发条件解释和实际显示内容）：\n' + lineEventLogText(rec.lineEvents),'本局触发的小剧场主题：' + (theaterInfo.title || '角色互动小剧场'),'本局小剧场触发条件：' + (theaterInfo.condition || theaterConditionForSpecial(game, theaterInfo.special || '', roleName)),'当前游戏全部特殊小剧场规则：\n' + gameTheaterConditionRules(game, roleName),'规则说明：{{char}}赢表示当前角色获胜，也就是原先的角色获胜。胜负字段里的“胜/负/平”永远表示user的胜/负/平。','前几次同角色同游戏日志：\n' + (recentGameLogs(game, roleName) || '无'),'陪伴者：' + roleName,'角色描述：' + currentCharDescription(logCfg),'世界背景：' + (selectedWorldText(logCfg) || '无'),'大总结：' + (selectedSummaryText(logCfg) || '无')].join('\n');
+	    const theaterText = String(theaterInfo.text || (rec.favoriteTheater && rec.favoriteTheater.text) || '').trim();
+	    const prompt = [...(promptTemplates().gameLog || PROMPT_TEMPLATES.gameLog),'游戏：' + ((GAME_META[game] || {}).name || game),'游戏情况（记录表字段，均为user视角）：' + gameLogSituation(game, rec), gameLogFieldRules(game, roleName),'原始结算文本：' + normalizedScoreText + '，结果：' + formatRecordResultForPrompt(rec.result) + '，用时：' + formatDuration(rec.durationMs),'本局触发过的角色语录（按触发顺序，包含触发条件解释和实际显示内容）：\n' + lineEventLogText(rec.lineEvents),'本局触发的小剧场主题：' + (theaterInfo.title || '角色互动小剧场'),'本局小剧场触发条件：' + (theaterInfo.condition || theaterConditionForSpecial(game, theaterInfo.special || '', roleName)),'本局实际小剧场内容：\n' + (theaterText || '无'),'当前游戏全部特殊小剧场规则：\n' + gameTheaterConditionRules(game, roleName),'规则说明：{{char}}赢表示当前角色获胜，也就是原先的角色获胜。胜负字段里的“胜/负/平”永远表示user的胜/负/平。','前几次同角色同游戏日志：\n' + (recentGameLogs(game, roleName) || '无'),'陪伴者：' + roleName,'角色描述：' + currentCharDescription(logCfg),'世界背景：' + (selectedWorldText(logCfg) || '无'),'大总结：' + (selectedSummaryText(logCfg) || '无')].join('\n');
 	    let log = fallback; try { log = await callApiText(cfg, prompt, promptTemplates().systems.gameLog || PROMPT_TEMPLATES.systems.gameLog); } catch(e) { toast('日志生成失败，已使用本地日志'); } updateRecord(game, recordId, { log }); return log;
   }
   async function showGameOver(game, title, scoreText, result, meta) {
