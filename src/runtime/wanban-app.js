@@ -2304,7 +2304,7 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">导入大总结</div>'
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-summary-select">' + sumOptions + '</select><button class="wb-btn" id="wb-manage-summary">管理/导入</button></div>'
       + '<div class="wb-api-status" id="wb-summary-preview">' + esc(summaryPreview(cfg.summaryId)) + '</div>'
-      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色卡配置</button><button class="wb-btn" id="wb-reset-current-world-default" style="flex:1;">恢复当前角色卡默认</button></div>'
+      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色配置</button><button class="wb-btn" id="wb-reset-current-world-default" style="flex:1;">恢复当前角色卡默认</button></div>'
       + '</div>'
 	      + '</div>'
 	      + '<div class="wb-panel"><div class="wb-section-title">游戏语录设置</div>'
@@ -2446,6 +2446,10 @@ export async function initWanbanXiaowu() {
     const pr = worldPresets()[parseInt(sel.value, 10)];
     const name = String((pr && pr.name) || '').trim();
     return name ? normalizePresetName(name) : '';
+  }
+  function roleNameFromWorldUI() {
+    const typed = qs('#wb-char-name') ? qs('#wb-char-name').value.trim() : '';
+    return normalizePresetName(typed || companionName());
   }
   function autoSaveInjectionSettingsFromUI() {
     if (!qs('#wb-inject-user-desc')) return;
@@ -2835,7 +2839,7 @@ export async function initWanbanXiaowu() {
   }
   function worldPresetSnapshotFromUI(name) {
     const selected = selectedWorldEntriesFromUI();
-    const charName = (qs('#wb-char-name') && qs('#wb-char-name').value.trim()) || '{{char}}';
+    const charName = normalizePresetName(name || (qs('#wb-char-name') && qs('#wb-char-name').value.trim()) || companionName());
     const summaryId = qs('#wb-summary-select') ? (qs('#wb-summary-select').value || '') : '';
     const baseCfg = Object.assign(settings(), { charName, injectCharDesc: qs('#wb-inject-char-desc') ? qs('#wb-inject-char-desc').checked : true, charDescriptionSnapshot: '' });
     return {
@@ -3928,12 +3932,12 @@ export async function initWanbanXiaowu() {
     toast('注入设置已保存'); render();
   }
   function saveWorldPresetFromUI() {
-    const name = normalizePresetName(companionName());
-    const arr = worldPresets().filter(x => x.name !== name);
+    const name = roleNameFromWorldUI();
+    const arr = worldPresets().filter(x => normalizePresetName(x && x.name) !== name);
     arr.unshift(worldPresetSnapshotFromUI(name));
     saveWorldPresets(arr);
-    setSettings({ selectedWorldPresetName: name });
-    toast('已保存当前角色卡配置：' + name);
+    setSettings({ charName: name, selectedWorldPresetName: name });
+    toast('已保存当前角色配置：' + name);
     renderSettings();
   }
   function resetCurrentWorldDefaultFromUI() {
@@ -5781,9 +5785,42 @@ function showGameRecords(game, page) {
       if(wasHome) speak('ludo','user_takeoff');
       afterMove('red');
     }
-    function robot(){ if(over||gamePaused) return; animateDice('blue', 900, value=>{ turnCount++; rolled=true; busy=true; draw(); setTimeout(()=>{ const moves=legal(blue,value); if(moves.length){ const i=chooseRobot(moves); const wasHome=blue[i]<0; blue[i]=nextPos(blue[i],value); if(wasHome) speak('ludo','char_takeoff'); afterMove('blue'); } else endTurn(); },450); }); }
+    function robot(){ if(over||gamePaused) return; animateDice('blue', 900, value=>{ turnCount++; rolled=true; busy=true; draw(); setTimeout(()=>{ const moves=legal(blue,value); if(moves.length){ const i=chooseRobot(moves, value); const wasHome=blue[i]<0; blue[i]=nextPos(blue[i],value); if(wasHome) speak('ludo','char_takeoff'); afterMove('blue'); } else endTurn(); },450); }); }
     function globalPos(side,pos){ return pos>=0 && pos<40 ? (offset[side] + pos) % 40 : -1; }
-    function chooseRobot(moves){ let best=moves[0], val=-999; moves.forEach(i=>{ const p=nextPos(blue[i],dice); let s=p; const gp=globalPos('blue',p); if(gp>=0 && red.some(r=>globalPos('red',r)===gp)) s+=60; if(p>=FINAL_POS) s+=200; if(blue[i]<0) s+=20; if(s>val){ val=s; best=i; } }); return best; }
+    function canCaptureGlobal(side, arr, targetGp){
+      return targetGp >= 0 && arr.some(pos => {
+        for (let d=1; d<=6; d++) if (canMove(Number(pos), d) && globalPos(side, nextPos(Number(pos), d)) === targetGp) return true;
+        return false;
+      });
+    }
+    function ludoThreat(side, pos){
+      const gp = globalPos(side, pos);
+      if (gp < 0) return false;
+      return side === 'blue' ? canCaptureGlobal('red', red, gp) : canCaptureGlobal('blue', blue, gp);
+    }
+    function chooseRobot(moves, rollValue){
+      const n = Number(rollValue || dice) || 0;
+      const takeoff = n === 6 ? moves.filter(i => Number(blue[i]) < 0) : [];
+      if (takeoff.length) return takeoff[Math.floor(Math.random() * takeoff.length)];
+      const active = blue.map(Number).filter(p => p >= 0 && p < FINAL_POS);
+      const front = active.length ? Math.max(...active) : 0;
+      const scored = moves.map(i => {
+        const from = Number(blue[i]);
+        const to = nextPos(from, n);
+        const gp = globalPos('blue', to);
+        let s = to * 8 + Math.random();
+        if (to >= FINAL_POS) s += 5000;
+        if (gp >= 0 && red.some(r => globalPos('red', r) === gp)) s += 2400;
+        if (from >= 0 && ludoThreat('blue', from) && !ludoThreat('blue', to)) s += 750;
+        if (to >= 38 && to < FINAL_POS) s += 700 + (to - 38) * 80;
+        if (from >= 0 && from < front - 8) s += Math.min(900, (front - from) * 42);
+        if (gp >= 0 && ludoThreat('blue', to)) s -= 420;
+        if (blue.some((p, idx) => idx !== i && Number(p) === to)) s -= 180;
+        return { i, s };
+      }).sort((a,b) => b.s - a.s);
+      const top = scored.filter(x => x.s >= scored[0].s - 160);
+      return top[Math.floor(Math.random() * top.length)].i;
+    }
     function sideArr(side){ return side === 'red' ? red : blue; }
     function afterMove(side){ capture(side); if(sideArr(side).some(p=>p>=40&&p<FINAL_POS)) speak('ludo','near_finish'); draw(); save(); if(checkWin(side)) return; if(dice===6){ turn=side; rolled=false; busy=false; if(side==='blue') setTimeout(robot,650); else draw(); save(); } else endTurn(); }
     function capture(side){ const otherSide=side==='red'?'blue':'red', mine=sideArr(side), other=sideArr(otherSide); mine.forEach(p=>{ const gp=globalPos(side,p); if(gp<0) return; other.forEach((q,i)=>{ if(globalPos(otherSide,q)===gp){ other[i]=-1; speak('ludo', side==='red' ? 'user_capture' : 'char_capture'); } }); }); }
