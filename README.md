@@ -461,7 +461,7 @@ char 的语录和日志可以结合这些内容定制：
 生成的小剧场可以保存，记录里会保存记录好的日志和小剧场。
 
 <p align="center">
-  <img src="./pic/24-help6.jpeg" width="600">
+  <img src="./pic/24-help6.jpg" width="600">
 </p>
 
 <p align="center">
