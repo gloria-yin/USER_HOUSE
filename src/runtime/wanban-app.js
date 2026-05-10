@@ -2092,6 +2092,8 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">选择角色和世界观</div>'
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-world-preset">' + injOptions + '</select><button class="wb-btn" id="wb-load-world-preset">载入</button><button class="wb-btn" id="wb-restore-world-preset">恢复</button><button class="wb-btn" id="wb-del-world-preset">删</button></div>'
       + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色卡配置</button><button class="wb-btn" id="wb-reset-current-world-default" style="flex:1;">恢复当前角色卡默认</button></div>'
+      + '<button class="wb-btn" id="wb-injection-details-toggle" type="button">展开详细配置</button>'
+      + '<div id="wb-injection-details" style="display:none;gap:10px;">'
 	      + '<div class="wb-field"><label><input type="checkbox" id="wb-inject-user-desc" ' + (cfg.injectUserDesc !== false ? 'checked' : '') + '> 用户设定描述</label><textarea class="wb-textarea" id="wb-user-persona" placeholder="填写 user 的设定、性格、关系、偏好；留空则尝试读取当前 persona...">' + esc(cfg.userPersona) + '</textarea></div>'
       + '<label class="wb-switch"><input id="wb-inject-char-desc" type="checkbox" ' + (cfg.injectCharDesc !== false ? 'checked' : '') + '>角色描述</label>'
       + '<div class="wb-field"><label>角色描述来源</label><select class="wb-select" id="wb-char-desc-mode"><option value="auto">自动导入当前角色卡</option><option value="manual">手动添加</option></select></div>'
@@ -2108,6 +2110,7 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">导入大总结</div>'
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-summary-select">' + sumOptions + '</select><button class="wb-btn" id="wb-manage-summary">管理/导入</button></div>'
       + '<div class="wb-api-status" id="wb-summary-preview">' + esc(summaryPreview(cfg.summaryId)) + '</div>'
+      + '</div>'
 	      + '</div>'
 	      + '<div class="wb-panel"><div class="wb-section-title">游戏语录设置</div>'
 		      + '<details class="wb-line-view-details"><summary class="wb-btn" style="display:block;text-align:center;">查看语录 / 小剧场</summary><div style="display:grid;gap:8px;margin-top:8px;">'
@@ -2173,6 +2176,14 @@ export async function initWanbanXiaowu() {
 	    const lineKindSel = qs('#wb-line-view-kind'); if (lineKindSel) lineKindSel.onchange = refreshLineView;
 	    refreshLineView();
 	    updateLineGenerationStatusUI();
+    const injectionDetailsToggle = qs('#wb-injection-details-toggle');
+    if (injectionDetailsToggle) injectionDetailsToggle.onclick = () => {
+      const details = qs('#wb-injection-details');
+      if (!details) return;
+      const open = details.style.display === 'none';
+      details.style.display = open ? 'grid' : 'none';
+      injectionDetailsToggle.textContent = open ? '收起详细配置' : '展开详细配置';
+    };
     qs('#wb-refresh-worldbook').onclick = refreshWorldbookList;
     ['#wb-inject-user-desc','#wb-inject-char-desc','#wb-char-desc-mode','#wb-inject-chat','#wb-intimacy-mode','#wb-summary-select'].forEach(sel => { const el = qs(sel); if (el) el.onchange = () => { const pv = qs('#wb-summary-preview'); if (pv) pv.textContent = summaryPreview(qs('#wb-summary-select').value); const wrap = qs('#wb-manual-char-wrap'); if (wrap && qs('#wb-char-desc-mode')) wrap.style.display = qs('#wb-char-desc-mode').value === 'manual' ? '' : 'none'; autoSaveInjectionSettingsFromUI(); const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(settings()); }; });
     const up = qs('#wb-user-persona'); if (up) up.oninput = debounceAutoSaveInjection;
