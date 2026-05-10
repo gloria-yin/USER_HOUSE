@@ -403,7 +403,7 @@ char 的语录和日志可以结合这些内容定制：
 10. 下次进入其他角色卡，也可以载入对应角色信息。
 
 <p align="center">
-  <img src="./pic/23-help.jepg" width="600">
+  <img src="./pic/23-help.jpg" width="600">
 </p>
 
 ### 角色切换
