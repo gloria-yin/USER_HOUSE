@@ -109,6 +109,8 @@ export async function initWanbanXiaowu() {
   let gameActiveStartedAt = 0;
   let randomLineTimer = null;
   let lastDialogueAt = 0;
+  let singleDialogueQueue = null;
+  let singleDialogueTimer = null;
   let firstMoverAwaitingUserAction = false;
   let currentRoundRecord = false;
   let currentRoundLineEvents = [];
@@ -582,6 +584,44 @@ export async function initWanbanXiaowu() {
   function textSegmentsHTML(value) {
     return textSegments(value).map(x => '<p class="wb-text-seg">' + esc(x) + '</p>').join('');
   }
+  function inlineMarkdownHTML(text) {
+    let html = esc(text);
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+    return html;
+  }
+  function markdownTextHTML(text) {
+    const raw = displayCharText(text || '');
+    const lines = raw.split(/\r?\n/);
+    const out = [];
+    let inList = false;
+    let inCode = false;
+    let code = [];
+    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    const closeCode = () => { if (inCode) { out.push('<pre><code>' + esc(code.join('\n')) + '</code></pre>'); code = []; inCode = false; } };
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (/^```/.test(trimmed)) {
+        if (inCode) closeCode();
+        else { closeList(); inCode = true; code = []; }
+        return;
+      }
+      if (inCode) { code.push(line); return; }
+      if (!trimmed) { closeList(); return; }
+      const h = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (h) { closeList(); out.push('<h' + Math.min(6, h[1].length) + '>' + inlineMarkdownHTML(h[2]) + '</h' + Math.min(6, h[1].length) + '>'); return; }
+      const li = trimmed.match(/^[-*]\s+(.+)$/);
+      if (li) { if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + inlineMarkdownHTML(li[1]) + '</li>'); return; }
+      closeList();
+      out.push('<p class="wb-text-seg">' + inlineMarkdownHTML(trimmed) + '</p>');
+    });
+    closeList();
+    closeCode();
+    return out.join('');
+  }
 	  function normalizeTheaterItem(item) {
 	    if (Array.isArray(item)) return textSegments(item);
 	    if (item && typeof item === 'object') {
@@ -1040,7 +1080,7 @@ export async function initWanbanXiaowu() {
     }, 1200);
   }
 
-  function stopGame() { commitGameActiveDuration(true); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (randomLineTimer) clearInterval(randomLineTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = randomLineTimer = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
+  function stopGame() { commitGameActiveDuration(true); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (randomLineTimer) clearInterval(randomLineTimer); if (singleDialogueTimer) clearTimeout(singleDialogueTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = randomLineTimer = null; singleDialogueTimer = null; singleDialogueQueue = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
   function showGamePauseOverlay() {
     const box = qs('#wb-gamebox');
     if (!box || qs('#wb-pause-overlay', box)) return;
@@ -1303,6 +1343,14 @@ export async function initWanbanXiaowu() {
       .wb-text-segments { white-space:normal; line-height:1.75; }
       .wb-text-seg { margin:0 0 12px; }
       .wb-text-seg:last-child { margin-bottom:0; }
+      .wb-text-segments h1, .wb-text-segments h2, .wb-text-segments h3, .wb-text-segments h4, .wb-text-segments h5, .wb-text-segments h6 { margin:10px 0 8px; color:var(--wb-accent); line-height:1.35; letter-spacing:0; }
+      .wb-text-segments h1 { font-size:18px; }
+      .wb-text-segments h2 { font-size:16px; }
+      .wb-text-segments h3, .wb-text-segments h4, .wb-text-segments h5, .wb-text-segments h6 { font-size:14px; }
+      .wb-text-segments ul { margin:0 0 12px 18px; padding:0; }
+      .wb-text-segments li { margin:3px 0; }
+      .wb-text-segments code { padding:1px 4px; border-radius:4px; background:color-mix(in srgb, var(--wb-border) 18%, transparent 82%); font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.92em; }
+      .wb-text-segments pre { margin:0 0 12px; padding:9px 10px; border:1px solid var(--wb-border); border-radius:6px; background:color-mix(in srgb, var(--wb-soft) 80%, #000 20%); overflow:auto; white-space:pre-wrap; }
       .wb-watermelon-canvas { aspect-ratio:4 / 5; max-height:min(100%, 100cqh); background:#f7efe3; }
       .wb-ludo-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0, 1fr); gap:6px; place-items:center; overflow:hidden; }
       .wb-ludo { width:min(460px, 100%, calc(100cqh - 68px)); height:min(460px, 100%, calc(100cqh - 68px)); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(11,minmax(0,1fr)); grid-template-rows:repeat(11,minmax(0,1fr)); gap:2px; background:#f4c8d6; padding:7px; border:1px solid rgba(174,82,115,.28); contain:layout size; box-sizing:border-box; }
@@ -2162,12 +2210,7 @@ export async function initWanbanXiaowu() {
   }
 
   function markdownLiteHTML(text) {
-    return displayCharText(text).split(/\n+/).map(line => {
-      const s = line.trim();
-      if (!s) return '';
-      if (/^[-*]\s+/.test(s)) return '<p class="wb-text-seg">• ' + esc(s.replace(/^[-*]\s+/, '')) + '</p>';
-      return '<p class="wb-text-seg">' + esc(s.replace(/^#{1,6}\s*/, '')) + '</p>';
-    }).join('');
+    return markdownTextHTML(text);
   }
   function showGameRules(game) {
     const g = GAME_META[game] || { name:'游戏' };
@@ -2212,15 +2255,19 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-field"><label>全局字体</label><div class="wb-preset-row"><select class="wb-select" id="wb-font-select">' + fontOptions + '</select><button class="wb-btn" id="wb-font-edit" type="button">编辑</button></div></div>'
       + '</div>'
       + '<div class="wb-panel"><div class="wb-section-title">API 配置</div>'
+      + '<div class="wb-api-status" id="wb-current-api-model">当前模型：' + esc(cfg.apiModel || '未配置') + '</div>'
+      + '<div class="wb-section-title no-mark" style="font-size:12px;margin-top:8px;">API 预设</div>'
+      + '<div class="wb-preset-row"><select class="wb-select" id="wb-api-preset">' + apiOptions + '</select><button class="wb-btn" id="wb-load-api-preset">载入</button><button class="wb-btn" id="wb-del-api-preset">删</button></div>'
+      + '<button class="wb-btn" id="wb-api-details-toggle" type="button">展开配置预设模型</button>'
+      + '<div id="wb-api-details" style="display:none;gap:10px;">'
       + '<div class="wb-field"><label>API 基础 URL</label><input class="wb-input" type="url" id="wb-api-url" placeholder="https://api.example.com" value="' + esc(cfg.apiUrl) + '"></div>'
       + '<div class="wb-field"><label>API 密钥</label><input class="wb-input" type="password" id="wb-api-key" placeholder="sk-..." value="' + esc(cfg.apiKey) + '"></div>'
       + '<div class="wb-actions"><button class="wb-btn" id="wb-load-models-btn" style="flex:1;">加载模型列表</button></div>'
       + '<div class="wb-field"><label>选择模型</label><select class="wb-select" id="wb-api-model"><option value="">请先加载模型列表</option></select></div>'
       + '<div class="wb-api-status" id="wb-api-status">状态: 未配置</div>'
       + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-api-config" style="flex:1;">保存API配置</button><button class="wb-btn" id="wb-clear-api-config">清除</button></div>'
-      + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">API 预设</div>'
-      + '<div class="wb-preset-row"><select class="wb-select" id="wb-api-preset">' + apiOptions + '</select><button class="wb-btn" id="wb-load-api-preset">载入</button><button class="wb-btn" id="wb-del-api-preset">删</button></div>'
       + '<div class="wb-preset-save-row"><input class="wb-input" type="text" id="wb-api-preset-name" placeholder="命名并保存当前 API 配置..."><button class="wb-btn" id="wb-save-api-preset">保存</button></div>'
+      + '</div>'
       + '</div>'
 	      + '<div class="wb-panel"><div class="wb-section-title">世界观注入</div>'
       + '<div class="wb-section-title no-mark" style="font-size:12px;margin-top:4px;">当前默认角色设置</div>'
@@ -2249,7 +2296,7 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-panel"><div class="wb-section-title">游戏语录设置</div>'
 		      + '<details class="wb-line-view-details"><summary class="wb-btn" style="display:block;text-align:center;">查看语录 / 小剧场</summary><div style="display:grid;gap:8px;margin-top:8px;">'
 		      + '<div class="wb-preset-row"><select class="wb-select" id="wb-line-view-role">' + lineRoleOptions + '</select><select class="wb-select" id="wb-line-view-game">' + lineGameOptions + '</select><select class="wb-select" id="wb-line-view-kind"><option value="lines">语录</option><option value="theater">小剧场</option></select></div>'
-		      + '<textarea class="wb-textarea" id="wb-line-view-box" readonly style="min-height:180px;"></textarea></div></details>'
+		      + '<div class="wb-api-status wb-text-segments" id="wb-line-view-box" style="min-height:180px;max-height:260px;overflow:auto;"></div></div></details>'
 	      + '<div class="wb-api-status" id="wb-line-generation-status" style="margin-top:10px;">' + esc(lineGenerationStatus) + '</div>'
 	      + '<div class="wb-actions" style="margin-top:10px;"><button class="wb-btn primary" id="wb-batch-lines" style="flex:1;">批量生成角色数据</button><button class="wb-btn" id="wb-batch-debug-settings">调试</button></div>'
 	      + '</div>'
@@ -2287,10 +2334,19 @@ export async function initWanbanXiaowu() {
 	    qs('#wb-theme').onchange = autoSaveBasicSettingsFromUI;
 	    if (fontSelect) fontSelect.onchange = autoSaveBasicSettingsFromUI;
 	    const fontEdit = qs('#wb-font-edit'); if (fontEdit) fontEdit.onclick = editCustomFontFromUI;
+    const apiDetailsToggle = qs('#wb-api-details-toggle');
+    if (apiDetailsToggle) apiDetailsToggle.onclick = () => {
+      const details = qs('#wb-api-details');
+      if (!details) return;
+      const open = details.style.display === 'none';
+      details.style.display = open ? 'grid' : 'none';
+      apiDetailsToggle.textContent = open ? '收起配置预设模型' : '展开配置预设模型';
+    };
     const avatarInput = qs('#wb-avatar-url'); if (avatarInput) avatarInput.oninput = debounceAutoSaveInjection;
     const saveAvatarBtn = qs('#wb-save-current-avatar'); if (saveAvatarBtn) saveAvatarBtn.onclick = () => { const input = qs('#wb-avatar-url'); const typed = input ? input.value.trim() : ''; if (typed) { autoSaveInjectionSettingsFromUI(); toast('已保存头像 URL，优先使用该头像'); return; } const url = findCurrentCardAvatar(); if (!url) { toast('未读取到当前角色卡头像'); return; } if (input) input.value = url; autoSaveInjectionSettingsFromUI(); toast('已保存当前角色卡头像到世界观注入'); };
     const clearAvatarBtn = qs('#wb-clear-avatar'); if (clearAvatarBtn) clearAvatarBtn.onclick = () => { const input = qs('#wb-avatar-url'); if (input) input.value = ''; autoSaveInjectionSettingsFromUI(); toast('已清除世界观头像'); };
     qs('#wb-load-models-btn').onclick = loadModelsFromUI;
+    const apiModelSelect = qs('#wb-api-model'); if (apiModelSelect) apiModelSelect.onchange = updateApiStatusUI;
     qs('#wb-save-api-config').onclick = saveApiConfigFromUI;
     qs('#wb-clear-api-config').onclick = clearApiConfigFromUI;
     qs('#wb-save-api-preset').onclick = saveApiPresetFromUI;
@@ -2306,7 +2362,7 @@ export async function initWanbanXiaowu() {
 	      const game = qs('#wb-line-view-game')?.value || Object.keys(GAME_META)[0];
 	      const box = qs('#wb-line-view-box');
 	      const kind = qs('#wb-line-view-kind')?.value || 'lines';
-	      if (box) box.value = kind === 'theater' ? formatStoredTheaters(game, role) : formatStoredLineSet(game, storedLineSetForRoleGame(game, role));
+	      if (box) box.innerHTML = markdownTextHTML(kind === 'theater' ? formatStoredTheaters(game, role) : formatStoredLineSet(game, storedLineSetForRoleGame(game, role)));
 	    };
 	    const lineRoleSel = qs('#wb-line-view-role'); if (lineRoleSel) lineRoleSel.onchange = refreshLineView;
 	    const lineGameSel = qs('#wb-line-view-game'); if (lineGameSel) lineGameSel.onchange = refreshLineView;
@@ -2407,6 +2463,8 @@ export async function initWanbanXiaowu() {
     const url = qs('#wb-api-url') ? qs('#wb-api-url').value.trim() : settings().apiUrl;
     const model = qs('#wb-api-model') ? qs('#wb-api-model').value : settings().apiModel;
     s.innerHTML = (url && model) ? ('URL: ' + esc(url) + '<br>模型: ' + esc(model)) : (url ? '已配置URL，请加载并选择模型' : '状态: 未配置');
+    const current = qs('#wb-current-api-model');
+    if (current) current.textContent = '当前模型：' + (model || '未配置');
   }
   function modelListUrl(url) {
     let base = (url || '').trim(); if (!base) return '';
@@ -3115,7 +3173,7 @@ export async function initWanbanXiaowu() {
     const defaultLineTpl = promptTemplates().lineGeneration || PROMPT_TEMPLATES.lineGeneration || {};
     const defaultLinePromptText = [].concat(defaultLineTpl.header || [], defaultLineTpl.rules || [], defaultLineTpl.output || []).join('\n');
     const defaultTheaterPromptText = (promptTemplates().theater || PROMPT_TEMPLATES.theater).join('\n');
-	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">批量生成角色数据</div><label class="wb-field"><span>角色</span><select class="wb-select" id="wb-batch-role">' + roleOptions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('') + '</select></label><div class="wb-preset-row"><label class="wb-field" style="flex:1;margin:0;"><span>语录 API</span><select class="wb-select" id="wb-batch-lines-api">' + apiSelectOptions + '</select></label><label class="wb-field" style="flex:1;margin:0;"><span>小剧场 API</span><select class="wb-select" id="wb-batch-theater-api">' + apiSelectOptions + '</select></label></div><label class="wb-field"><span>生成次数</span><input class="wb-input" id="wb-batch-attempts" type="number" min="1" max="5" step="1" value="' + savedAttempts + '"><div class="wb-muted">每项数据最多生成的总次数；失败才会继续下一次，成功后停止。</div></label><div class="wb-actions" style="margin-bottom:8px;"><button class="wb-btn" id="wb-batch-all" type="button">全选</button><button class="wb-btn" id="wb-batch-missing" type="button">全选未生成</button><button class="wb-btn" id="wb-batch-clear" type="button">全部取消</button></div><div class="wb-worldbook-list" id="wb-batch-game-list" style="display:grid;grid-template-columns:1fr;max-height:360px;"></div><div class="wb-field" style="margin-top:10px;"><label>语录提示词</label><textarea class="wb-textarea" id="wb-batch-line-prompt" style="min-height:110px;">' + esc(cfg.batchLinePromptOverride || defaultLinePromptText) + '</textarea><button class="wb-btn" id="wb-batch-line-restore" type="button">恢复默认语录提示词</button></div><div class="wb-field"><label>小剧场提示词</label><textarea class="wb-textarea" id="wb-batch-theater-prompt" style="min-height:110px;">' + esc(cfg.batchTheaterPromptOverride || defaultTheaterPromptText) + '</textarea><button class="wb-btn" id="wb-batch-theater-restore" type="button">恢复默认小剧场提示词</button></div><div class="wb-api-status" id="wb-batch-info" style="margin-top:10px;">请选择要生成的数据。</div><div class="wb-actions wb-sticky-actions"><button class="wb-btn primary" id="wb-batch-start" style="flex:1;">生成并覆盖</button><button class="wb-btn" id="wb-batch-cancel">返回</button></div></div>';
+	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">批量生成角色数据</div><label class="wb-field"><span>角色</span><select class="wb-select" id="wb-batch-role">' + roleOptions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('') + '</select></label><div class="wb-preset-row"><label class="wb-field" style="flex:1;margin:0;"><span>语录 API</span><select class="wb-select" id="wb-batch-lines-api">' + apiSelectOptions + '</select></label><label class="wb-field" style="flex:1;margin:0;"><span>小剧场 API</span><select class="wb-select" id="wb-batch-theater-api">' + apiSelectOptions + '</select></label></div><label class="wb-field"><span>生成次数</span><input class="wb-input" id="wb-batch-attempts" type="number" min="1" max="5" step="1" value="' + savedAttempts + '"><div class="wb-muted">每项数据最多生成的总次数；失败才会继续下一次，成功后停止。</div></label><div class="wb-actions" style="margin-bottom:8px;"><button class="wb-btn" id="wb-batch-all" type="button">全选</button><button class="wb-btn" id="wb-batch-missing" type="button">全选未生成</button><button class="wb-btn" id="wb-batch-clear" type="button">全部取消</button></div><div class="wb-worldbook-list" id="wb-batch-game-list" style="display:grid;grid-template-columns:1fr;max-height:360px;"></div><div class="wb-field" style="margin-top:10px;"><label>语录提示词</label><textarea class="wb-textarea" id="wb-batch-line-prompt" style="min-height:110px;">' + esc(cfg.batchLinePromptOverride || defaultLinePromptText) + '</textarea><button class="wb-btn" id="wb-batch-line-restore" type="button">恢复默认语录提示词</button></div><div class="wb-field"><label>小剧场提示词</label><textarea class="wb-textarea" id="wb-batch-theater-prompt" style="min-height:110px;">' + esc(cfg.batchTheaterPromptOverride || defaultTheaterPromptText) + '</textarea><button class="wb-btn" id="wb-batch-theater-restore" type="button">恢复默认小剧场提示词</button></div><div class="wb-sticky-actions"><div class="wb-api-status" id="wb-batch-info">请选择要生成的数据。</div><div class="wb-actions" style="margin-top:8px;"><button class="wb-btn primary" id="wb-batch-start" style="flex:1;">生成并覆盖</button><button class="wb-btn" id="wb-batch-cancel">返回</button></div></div></div>';
 	    appendModalMask(mask);
 	    const linesApiSel = qs('#wb-batch-lines-api', mask);
 	    const theaterApiSel = qs('#wb-batch-theater-api', mask);
@@ -3376,7 +3434,7 @@ export async function initWanbanXiaowu() {
         ey,
         target: to
       };
-      if (!willMiss && !seen.jump) { seen.jump = 1; speak('jump', 'jump'); }
+      if (!willMiss && !seen.jump) { seen.jump = 1; }
       charge = 0;
       save();
     }
@@ -4018,6 +4076,43 @@ export async function initWanbanXiaowu() {
   function needsFirstMoverChoice(game) { return FIRST_MOVER_GAMES.includes(game); }
   function speakFirstMover(game, firstMover) { speak(game, firstMover === 'ta' ? 'char_first' : 'char_second'); }
   function markFirstMoverUserAction() { firstMoverAwaitingUserAction = false; }
+  function linePriority(game, event) {
+    if (event === 'random') return -1;
+    if (event === 'gameover' || event === 'record') return 100;
+    if (/^score_(?:20|30|40|50_plus|2000_plus|1500|500)$/.test(event)) return 90;
+    if (/^tile_(?:4096|2048|1024|512|256|128|64)$/.test(event)) return 85;
+    if (['watermelon','near_top','half','perfect_streak','many_hints','complete_error','nearly_done','danger','line_4','line_3','line_2','line_1'].includes(event)) return 80;
+    if (['perfect','land','jump','charge','move','rotate','soft_drop','aim','drop_edge','match','miss','combo','first_flip','first_fill','erase','hint','row_done','col_done','conflict'].includes(event)) return 40;
+    return 50;
+  }
+  function showSpeechLine(game, event, text) {
+    const sp = qs('#wb-speech');
+    if (!sp) return;
+    const cfg = settings();
+    const line = String(text || '').replace(/{{char}}/g, companionName()).replace(/{{user}}/g, cfg.userName);
+    sp.innerHTML = markdownTextHTML(line);
+    recordLineTrigger(game, event, line);
+    lastDialogueAt = Date.now();
+  }
+  function queueSingleDialogue(game, event, text) {
+    const item = { game, event, text, priority: linePriority(game, event) };
+    const flush = () => {
+      const q = singleDialogueQueue;
+      singleDialogueQueue = null;
+      singleDialogueTimer = null;
+      if (q) showSpeechLine(q.game, q.event, q.text);
+    };
+    if (!singleDialogueQueue) {
+      singleDialogueQueue = item;
+      singleDialogueTimer = setTimeout(flush, item.priority >= 100 ? 0 : 650);
+      return;
+    }
+    if (item.priority > singleDialogueQueue.priority || (item.priority === singleDialogueQueue.priority && Math.random() < 0.5)) singleDialogueQueue = item;
+    if (item.priority >= 100 && singleDialogueTimer) {
+      clearTimeout(singleDialogueTimer);
+      singleDialogueTimer = setTimeout(flush, 0);
+    }
+  }
   function showFirstMoverChoice(game, onPick) {
     const doc = getHostDocument();
     const old = qs('#wb-first-mask', doc); if (old) old.remove();
@@ -4096,19 +4191,22 @@ function showGameRecords(game, page) {
     qs('#wb-record-close', mask).onclick = () => mask.remove();
     qs('#wb-record-prev', mask).onclick = () => showGameRecords(game, page - 1);
     qs('#wb-record-next', mask).onclick = () => showGameRecords(game, page + 1);
-	    qsa('.wb-log-view', mask).forEach(b => b.onclick = () => { const r = (records()[game] || []).find(x => x.id === b.dataset.id); if (r) showRecordLogModal(r); });
+	    qsa('.wb-log-view', mask).forEach(b => b.onclick = () => { const r = (records()[game] || []).find(x => x.id === b.dataset.id); if (r) showRecordLogModal(r, game); });
 	    qsa('.wb-record-del', mask).forEach(b => b.onclick = () => showConfirm('删除游戏记录', '确定删除这条记录吗？', () => { deleteRecord(game, b.dataset.id); showGameRecords(game, page); }));
 	  }
 
-	    function showTextModal(title, text) { const doc = getHostDocument(); const old = qs('#wb-text-mask', doc); if (old) old.remove(); const mask = doc.createElement('div'); mask.className = modalMaskClass(); mask.id = 'wb-text-mask'; mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(title) + '</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + textSegmentsHTML(text || '') + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;"><button class="wb-btn" id="wb-text-close">关闭</button></div></div>'; appendModalMask(mask); qs('#wb-text-close', mask).onclick = () => mask.remove(); }
-	  function showRecordLogModal(r) {
+	    function showTextModal(title, text) { const doc = getHostDocument(); const old = qs('#wb-text-mask', doc); if (old) old.remove(); const mask = doc.createElement('div'); mask.className = modalMaskClass(); mask.id = 'wb-text-mask'; mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(title) + '</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + markdownTextHTML(text || '') + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;"><button class="wb-btn" id="wb-text-close">关闭</button></div></div>'; appendModalMask(mask); qs('#wb-text-close', mask).onclick = () => mask.remove(); }
+	  function showRecordLogModal(r, gameId) {
 	    const log = (r && r.log) || '无';
 	    const theater = recordFavoriteTheaterText(r);
 	    const title = r && r.favoriteTheater && r.favoriteTheater.title ? r.favoriteTheater.title : '收藏的小剧场';
-	    const body = '<div class="wb-section-title" style="font-size:12px;margin-bottom:6px;">游戏日志</div>' + textSegmentsHTML(log) + (theater ? '<div class="wb-section-title" style="font-size:12px;margin:12px 0 6px;">' + esc(title) + '</div>' + textSegmentsHTML(theater) : '');
+	    const regen = r && r.id && r.log ? '<button class="wb-btn wb-log-regen" id="wb-log-regen-in-modal" title="重新生成日志" style="min-height:24px;padding:2px 7px;">↻</button>' : '';
+	    const body = '<div class="wb-section-title" style="font-size:12px;margin-bottom:6px;display:flex;align-items:center;gap:6px;">游戏日志' + regen + '</div>' + markdownTextHTML(log) + (theater ? '<div class="wb-section-title" style="font-size:12px;margin:12px 0 6px;">' + esc(title) + '</div>' + markdownTextHTML(theater) : '');
 	    const doc = getHostDocument(); const old = qs('#wb-text-mask', doc); if (old) old.remove(); const mask = doc.createElement('div'); mask.className = modalMaskClass(); mask.id = 'wb-text-mask';
 	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">游戏日志</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + body + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;"><button class="wb-btn" id="wb-text-close">关闭</button></div></div>';
 	    appendModalMask(mask);
+	    const regenBtn = qs('#wb-log-regen-in-modal', mask);
+	    if (regenBtn) regenBtn.onclick = () => showConfirm('重新生成日志', '确定要重新生成这条游戏日志吗？原日志会被覆盖。', async () => { regenBtn.disabled = true; regenBtn.textContent = '...'; const id = gameId || Object.keys(GAME_META).find(k => GAME_META[k].name === r.game); await generateGameLog(id, r.id); const latest = (records()[id] || []).find(x => x.id === r.id); if (latest) showRecordLogModal(latest, id); });
 	    qs('#wb-text-close', mask).onclick = () => mask.remove();
 	  }
   function showBatchDebugModal(items) {
@@ -4186,7 +4284,7 @@ function showGameRecords(game, page) {
 	    mask.className = modalMaskClass();
 	    mask.id = 'wb-text-mask';
 	    const canFavorite = !!(meta && meta.game && meta.recordId);
-	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(title || '角色互动小剧场') + '</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + textSegmentsHTML(text || '') + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;">' + (canFavorite ? '<button class="wb-btn" id="wb-theater-favorite" title="收藏">♡ 收藏</button>' : '') + '<button class="wb-btn" id="wb-text-close">关闭</button></div></div>';
+	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(title || '角色互动小剧场') + '</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + markdownTextHTML(text || '') + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;">' + (canFavorite ? '<button class="wb-btn" id="wb-theater-favorite" title="收藏">♡ 收藏</button>' : '') + '<button class="wb-btn" id="wb-text-close">关闭</button></div></div>';
 	    appendModalMask(mask);
 	    const fav = qs('#wb-theater-favorite', mask);
 	    if (fav) fav.onclick = () => {
@@ -4248,7 +4346,7 @@ function showGameRecords(game, page) {
       const cachedTheater = theaterCache[theaterCacheKey(game, outcome, special)] || doubleTheaterFallback(game, outcome, special);
 	      showTheaterModal(special ? theaterTitleForSpecial(special) : '角色互动小剧场', cachedTheater, { game, recordId: rec.id });
     }
-    const logBtnHandler = async () => { const btn = qs('#wb-generate-log', mask); if (!btn) return; btn.disabled = true; btn.textContent = '生成中...'; await generateGameLog(game, rec.id); btn.disabled = false; btn.textContent = '查看日志'; btn.onclick = () => { const latest = (records()[game] || []).find(r => r.id === rec.id); if (latest) showRecordLogModal(latest); }; };
+    const logBtnHandler = async () => { const btn = qs('#wb-generate-log', mask); if (!btn) return; btn.disabled = true; btn.textContent = '生成中...'; await generateGameLog(game, rec.id); btn.disabled = false; btn.textContent = '查看日志'; btn.onclick = () => { const latest = (records()[game] || []).find(r => r.id === rec.id); if (latest) showRecordLogModal(latest, game); }; };
 	    const logBtn = qs('#wb-generate-log', mask); if (logBtn) logBtn.onclick = logBtnHandler;
     if (settings().companion && settings().autoLog) setTimeout(logBtnHandler, 80);
     qs('#wb-next-round', mask).onclick = () => { mask.remove(); renderGame(game); startCurrentGame(game); };
@@ -4274,7 +4372,7 @@ function showGameRecords(game, page) {
     const name = cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}');
     const avatar = findAvatar();
     const av = avatar ? '<img src="' + esc(avatar) + '" style="width:100%;height:100%;object-fit:cover">' : esc(name.slice(0,1));
-    return '<div class="wb-companion ' + (cfg.companion ? 'on' : '') + '" id="wb-comp"><div class="wb-comp-row"><div class="wb-avatar">' + av + '</div><div class="wb-comp-main"><div class="wb-comp-name">' + esc(name) + '</div><div class="wb-speech" id="wb-speech">...</div></div></div></div>';
+    return '<div class="wb-companion ' + (cfg.companion ? 'on' : '') + '" id="wb-comp"><div class="wb-comp-row"><div class="wb-avatar">' + av + '</div><div class="wb-comp-main"><div class="wb-comp-name">' + esc(name) + '</div><div class="wb-speech wb-text-segments" id="wb-speech">...</div></div></div></div>';
   }
   function findAvatar() {
     const fixed = (settings().avatarUrl || '').trim();
@@ -4292,22 +4390,14 @@ function showGameRecords(game, page) {
     if (firstMoverAwaitingUserAction && !['char_first','char_second','random'].includes(event)) return;
     const set = activeLineSet(game);
     const arr = set[event] || (DEFAULT_LINES[game] && DEFAULT_LINES[game][event]) || set.random || (DEFAULT_LINES[game] && DEFAULT_LINES[game].random) || ['我在。'];
-    const sp = qs('#wb-speech');
-    if (sp) {
-      sp.textContent = arr[Math.floor(Math.random() * arr.length)].replace(/{{char}}/g, companionName()).replace(/{{user}}/g, cfg.userName);
-      recordLineTrigger(game, event, sp.textContent);
-      lastDialogueAt = Date.now();
-    }
+    const text = arr[Math.floor(Math.random() * arr.length)] || '';
+    if ((GAME_META[game] || {}).mode === 'single' && event !== 'random') queueSingleDialogue(game, event, text);
+    else showSpeechLine(game, event, text);
   }
   function speakText(text) {
     const cfg = settings(); if (!cfg.companion) return;
-    const sp = qs('#wb-speech');
     const line = String(text || '').trim();
-    if (sp && line) {
-      sp.textContent = line.replace(/{{char}}/g, companionName()).replace(/{{user}}/g, cfg.userName);
-      recordLineTrigger(currentGame, 'custom', sp.textContent);
-      lastDialogueAt = Date.now();
-    }
+    if (line) showSpeechLine(currentGame, 'custom', line);
   }
 
   function theaterCacheKey(game, outcome, special) { return theaterCacheKeyForName(companionName(), game, outcome, special); }
