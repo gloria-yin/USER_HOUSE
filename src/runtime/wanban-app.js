@@ -2124,7 +2124,9 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-muted">一键导出除 API 配置和 API 预设以外的全部内容；导入不会覆盖 API URL、密钥、模型。</div>'
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
-	      + '</div></div>';
+	      + '</div>'
+	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.0<br>本游戏发布者：Gloria</div>'
+	      + '</div>';
 	    qs('#wb-theme').value = cfg.theme;
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
     const charMode = qs('#wb-char-desc-mode'); if (charMode) charMode.value = cfg.charDescMode === 'manual' ? 'manual' : 'auto';
