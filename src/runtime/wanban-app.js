@@ -1842,7 +1842,6 @@ export async function initWanbanXiaowu() {
         .wb-btn.primary { background:linear-gradient(135deg, var(--wb-accent), var(--wb-accent2)); box-shadow:0 6px 14px var(--wb-glow); }
         #wb-back { grid-column:1; grid-row:1; width:auto; min-width:40px; min-height:25px; padding:2px 7px; display:grid; place-items:center; font-size:12px; border-radius:2px; }
         #wb-generate-lines { min-width:44px; }
-        #wb-prompt-preview { width:25px; min-width:25px; height:25px; min-height:25px; padding:0; border-radius:50%; display:grid; place-items:center; font-size:12px; }
         .wb-pill { padding:3px 5px; font-size:10px; }
         .wb-record-table-wrap { width:100%; border:1px solid var(--wb-border); max-height:calc(100dvh - 104px); overflow-y:auto; overflow-x:hidden; }
         .wb-record-modal { width:100vw!important; max-width:100vw!important; height:calc(100dvh - 12px); max-height:calc(100dvh - 12px); padding:8px 4px; display:flex; flex-direction:column; box-sizing:border-box; }
@@ -2873,14 +2872,6 @@ export async function initWanbanXiaowu() {
 	    }
     return { cfg: promptCfg, preset };
   }
-	  function showLinePromptPreview(game) {
-	    const info = promptConfigForGame(game);
-	    const lineSystem = promptTemplates().systems.lineGeneration || PROMPT_TEMPLATES.systems.lineGeneration;
-	    const theaterJobs = theaterJobsForGame(game);
-	    const linePrompt = 'System\n' + lineSystem + '\n\nUser\n' + buildPrompt(game, info.cfg);
-	    const theaterPrompt = 'System\n' + theaterPackSystemPrompt(theaterJobs) + '\n\nUser\n' + buildTheaterPackPrompt(game, info.cfg, theaterJobs);
-	    showPromptModal(linePrompt, theaterPrompt);
-	  }
   function stripJsonFence(text) {
     let s = String(text || '').trim();
     const fence = String.fromCharCode(96) + String.fromCharCode(96) + String.fromCharCode(96);
@@ -3792,7 +3783,7 @@ export async function initWanbanXiaowu() {
     saveWindowState(currentTab, id);
     syncPopupModeClass();
     const g = GAME_META[id]; const cfg = settings(); const body = qs('#wb-body'); body.className = 'wb-body wb-game-mode';
-    const lineTools = cfg.companion ? '<div class="wb-line-tools"><select class="wb-select" id="wb-line-preset-select"></select><button class="wb-btn primary" id="wb-generate-lines">生成</button><button class="wb-btn" id="wb-prompt-preview" title="查看生成语录提示词">?</button></div>' : '';
+    const lineTools = cfg.companion ? '<div class="wb-line-tools"><select class="wb-select" id="wb-line-preset-select"></select><button class="wb-btn primary" id="wb-generate-lines">生成</button></div>' : '';
     const pauseBtn = g.mode === 'double' ? '' : '<button class="wb-btn" id="wb-pause">暂停</button>';
     const companionPanel = cfg.companion ? '<div class="wb-panel wb-side-companion">' + companionHTML() + '</div>' : '';
     body.innerHTML = '<div class="wb-layout ' + (cfg.companion ? '' : 'no-companion') + '"><div class="wb-panel"><div class="wb-toolbar"><button class="wb-btn" id="wb-back">返回</button><div class="wb-stat"><span class="wb-pill wb-title-row"><span class="wb-game-title-text">' + esc(g.name) + '</span><button class="wb-rule-btn" id="wb-game-rules" title="游戏介绍" aria-label="游戏介绍" type="button">💡</button></span><span class="wb-pill" id="wb-score">本局：0</span><span class="wb-pill" id="wb-high">' + esc(scoreDisplay(id)) + '</span></div><div class="wb-actions">' + lineTools + '<button class="wb-btn" id="wb-game-records">记录</button>' + pauseBtn + '<button class="wb-btn" id="wb-restart">重开</button></div></div><div class="wb-board-wrap wb-gamebox-' + esc(id) + '" id="wb-gamebox"><div class="wb-start-cover"><div>准备开始</div><button class="wb-btn primary" id="wb-start-cover-btn">开始游戏</button></div></div></div>' + companionPanel + '</div>';
@@ -3807,7 +3798,6 @@ export async function initWanbanXiaowu() {
     renderLinePresetSelect(id);
     const presetSelect = qs('#wb-line-preset-select'); if (presetSelect) presetSelect.onchange = () => applyLinePresetSelection(id, presetSelect.value);
     const genBtn = qs('#wb-generate-lines'); if (genBtn) genBtn.onclick = () => openSingleGenerateChoice(id);
-    const promptBtn = qs('#wb-prompt-preview'); if (promptBtn) promptBtn.onclick = () => showLinePromptPreview(id);
     updateLineGenerationStatusUI();
     if (!needsFirstMoverChoice(id) && DEFAULT_LINES[id] && DEFAULT_LINES[id].start) speak(id, 'start');
     setTimeout(() => { const saved = gameProgress(id); if (currentGame === id && saved && hasPlayableProgress(id, saved) && !gameStarted) showProgressChoice(id, saved); }, 60);
@@ -4002,16 +3992,6 @@ function showGameRecords(game, page) {
     mask.innerHTML = '<div class="wb-modal wb-summary-modal" style="width:min(960px,100%);"><div class="wb-modal-title">批量生成调试</div><textarea class="wb-textarea" readonly style="min-height:420px;font-family:monospace;white-space:pre;overflow:auto;">' + esc(text) + '</textarea><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;"><button class="wb-btn" id="wb-batch-debug-close">关闭</button></div></div>';
     appendModalMask(mask);
     qs('#wb-batch-debug-close', mask).onclick = () => mask.remove();
-  }
-  function showPromptModal(linePrompt, theaterPrompt) {
-    const doc = getHostDocument();
-    const old = qs('#wb-text-mask', doc); if (old) old.remove();
-    const mask = doc.createElement('div');
-    mask.className = modalMaskClass();
-    mask.id = 'wb-text-mask';
-    mask.innerHTML = '<div class="wb-modal wb-summary-modal" style="width:min(1040px,100%);"><div class="wb-modal-title">提示词</div><div style="display:grid;gap:12px;"><div><div class="wb-section-title" style="font-size:12px;margin-bottom:6px;">语录提示词</div><textarea class="wb-textarea" readonly style="min-height:300px;white-space:pre;overflow:auto;">' + esc(linePrompt || '') + '</textarea></div><div><div class="wb-section-title" style="font-size:12px;margin-bottom:6px;">小剧场提示词</div><textarea class="wb-textarea" readonly style="min-height:300px;white-space:pre;overflow:auto;">' + esc(theaterPrompt || '') + '</textarea></div></div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;"><button class="wb-btn" id="wb-text-close">关闭</button></div></div>';
-    appendModalMask(mask);
-    qs('#wb-text-close', mask).onclick = () => mask.remove();
   }
   function showProgressChoice(game, state) {
     const doc = getHostDocument();
