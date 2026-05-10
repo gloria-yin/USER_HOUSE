@@ -1,6 +1,6 @@
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 
-// Runtime migrated from 益智小游戏/玩伴小屋V1.0.0.json.
+// Runtime migrated from 益智小游戏/玩伴小屋V1.0.1.json.
 // Keep this file behavior-compatible with the original script; split new code into src/* modules when extending.
 let runtimeStarted = false;
 let activePromptTemplates = PROMPT_TEMPLATES;
@@ -83,7 +83,7 @@ export async function initWanbanXiaowu() {
   const STORAGE_PROGRESS = SCRIPT_ID + '_progress_v1';
   const STORAGE_RECORDS = SCRIPT_ID + '_records_v1';
   const STORAGE_WORD_GUESS_BANK = SCRIPT_ID + '_wordGuessBank_v1';
-  const FLAG = SCRIPT_ID + '_Loaded_v1_0_0';
+  const FLAG = SCRIPT_ID + '_Loaded_v1_0_1';
   const MENU_SELECTORS = [
     '#extensionsMenu',
     '#extensionMenuItems',
@@ -108,6 +108,7 @@ export async function initWanbanXiaowu() {
   let gameActiveStartedAt = 0;
   let randomLineTimer = null;
   let lastDialogueAt = 0;
+  let firstMoverAwaitingUserAction = false;
   let currentRoundRecord = false;
   let currentRoundLineEvents = [];
   let currentRoundTheaterInfo = null;
@@ -1034,7 +1035,7 @@ export async function initWanbanXiaowu() {
     }, 1200);
   }
 
-  function stopGame() { commitGameActiveDuration(true); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (randomLineTimer) clearInterval(randomLineTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = randomLineTimer = null; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
+  function stopGame() { commitGameActiveDuration(true); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (randomLineTimer) clearInterval(randomLineTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = randomLineTimer = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
   function showGamePauseOverlay() {
     const box = qs('#wb-gamebox');
     if (!box || qs('#wb-pause-overlay', box)) return;
@@ -2125,7 +2126,7 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
 	      + '</div>'
-	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.0<br>本游戏发布者：Gloria</div>'
+	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.1<br>本游戏发布者：Gloria</div>'
 	      + '</div>';
 	    qs('#wb-theme').value = cfg.theme;
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
@@ -2322,7 +2323,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.0', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.1', exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -3821,6 +3822,7 @@ export async function initWanbanXiaowu() {
     if (!resumeState) clearProgress(id);
     gameStarted = true;
     gamePaused = false;
+    firstMoverAwaitingUserAction = !!(needsFirstMoverChoice(id) && savedState && savedState.firstMover && !storedState && !savedState.userActed);
     gameAccumulatedMs = Math.max(0, Number(resumeState?.durationMs || 0));
     gameActiveStartedAt = Date.now();
     hideGamePauseOverlay();
@@ -3880,6 +3882,7 @@ export async function initWanbanXiaowu() {
 
   function needsFirstMoverChoice(game) { return FIRST_MOVER_GAMES.includes(game); }
   function speakFirstMover(game, firstMover) { speak(game, firstMover === 'ta' ? 'char_first' : 'char_second'); }
+  function markFirstMoverUserAction() { firstMoverAwaitingUserAction = false; }
   function showFirstMoverChoice(game, onPick) {
     const doc = getHostDocument();
     const old = qs('#wb-first-mask', doc); if (old) old.remove();
@@ -4151,6 +4154,7 @@ function showGameRecords(game, page) {
   }
   function speak(game, event) {
     const cfg = settings(); if (!cfg.companion) return;
+    if (firstMoverAwaitingUserAction && !['char_first','char_second','random'].includes(event)) return;
     const set = activeLineSet(game);
     const arr = set[event] || (DEFAULT_LINES[game] && DEFAULT_LINES[game][event]) || set.random || (DEFAULT_LINES[game] && DEFAULT_LINES[game].random) || ['我在。'];
     const sp = qs('#wb-speech');
@@ -4552,10 +4556,10 @@ function showGameRecords(game, page) {
     if (!state?.b && state?.firstMover) speakFirstMover('tictactoe', state.firstMover);
     if (!state?.b && state?.firstMover === 'ta') ai();
     draw(); save();
-    qsa('.wb-cell', box).forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; b[i]='X'; if(i===4) speak('tictactoe','user_center'); else if([0,2,6,8].includes(i)) speak('tictactoe','user_corner'); draw(); if(done()) return; ai(); draw(); if(!done()) save(); });
+    qsa('.wb-cell', box).forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; markFirstMoverUserAction(); b[i]='X'; const userSpoke = i===4 || [0,2,6,8].includes(i); if(i===4) speak('tictactoe','user_center'); else if([0,2,6,8].includes(i)) speak('tictactoe','user_corner'); draw(); if(done()) return; ai(userSpoke); draw(); if(!done()) save(); });
     function save(){ saveProgress('tictactoe', { b, taMoves, nextCharLineAt }); }
-    function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('tictactoe','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); } }
-    function ai(){ const i = bestTic(b,'O') ?? bestTic(b,'X') ?? [4,0,2,6,8,1,3,5,7].find(i=>!b[i]); if(i!=null){ maybeCharNext(); if(bestTic(b,'X')===i) speak('tictactoe','ai_block'); b[i]='O'; } }
+    function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); speak('tictactoe','char_next'); return true; } return false; }
+    function ai(skipLine){ const i = bestTic(b,'O') ?? bestTic(b,'X') ?? [4,0,2,6,8,1,3,5,7].find(i=>!b[i]); if(i!=null){ const block = bestTic(b,'X')===i; let spoke = !!skipLine; if(!spoke && block && Math.random()<.5){ spoke = true; speak('tictactoe','ai_block'); } b[i]='O'; if(!spoke) maybeCharNext(); } }
     function done(){ const w=winner3(b); if(w||b.every(Boolean)){ over=true; const rounds=b.filter(Boolean).length, meta={ lastMoveWin:rounds>=8 }; if(w==='X'){ { const curScore = scores().tictactoe; setScore('tictactoe', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('tictactoe','user_win'); showGameOver('tictactoe', '你赢了', '本局分数：1胜，回合数：'+rounds, 'user_win', meta); } else if(w==='O') { speak('tictactoe','user_lose'); showGameOver('tictactoe', '游戏结束', '本局分数：0胜（失败），回合数：'+rounds, 'ta_win', meta); } else { speak('tictactoe','draw'); showGameOver('tictactoe', '平局', '本局分数：0胜（平局），回合数：'+rounds, 'draw', meta); } return true; } return false; }
     function draw(){ qsa('.wb-cell', box).forEach((c,i)=>c.textContent=b[i]); }
   }
@@ -4568,15 +4572,15 @@ function showGameRecords(game, page) {
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     box.innerHTML = '<div class="wb-gomoku-panel"><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
     if (!state?.b && state?.firstMover) speakFirstMover('gomoku', state.firstMover);
-    if (!state?.b && state?.firstMover === 'ta') { const first = bestGomoku(b,n); if(first>=0){ maybeCharNext(); b[first]='W'; } }
+    if (!state?.b && state?.firstMover === 'ta') { const first = bestGomoku(b,n,true); if(first>=0){ b[first]='W'; maybeCharNext(); } }
     draw(); save();
-    qsa('.wb-gcell', box).forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; b[i]='B'; const pat=gomokuPattern(b,n,i,'B'); if(pat) speak('gomoku', pat); else if(lineScore(b,n,i,'B')>=125) speak('gomoku','user_three'); draw(); if(done('B')) return; const ai=bestGomoku(b,n); if(ai>=0){ maybeCharNext(); b[ai]='W'; if(lineScore(b,n,ai,'W')>=80) speak('gomoku','ai_threat'); draw(); if(!done('W')) save(); } });
+    qsa('.wb-gcell', box).forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; markFirstMoverUserAction(); b[i]='B'; const pat=gomokuPattern(b,n,i,'B'); let userEvent = ''; if(pat) userEvent = pat; else if(lineScore(b,n,i,'B')>=125) userEvent = 'user_three'; const userSpoke = !!userEvent && Math.random()<.5; if(userSpoke) speak('gomoku', userEvent); draw(); if(done('B')) return; const ai=bestGomoku(b,n,userSpoke); const aiSpoke = !!bestGomoku.lastSpoke; if(ai>=0){ b[ai]='W'; if(!userSpoke && !aiSpoke){ const threat = lineScore(b,n,ai,'W')>=80; if(threat) speak('gomoku','ai_threat'); else maybeCharNext(); } draw(); if(!done('W')) save(); } });
     function save(){ saveProgress('gomoku', { b, taMoves, nextCharLineAt }); }
-    function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('gomoku','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); } }
+    function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('gomoku','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function done(m){ const rounds=b.filter(Boolean).length; if(winG(b,n,m)){ over=true; if(m==='B'){ { const curScore = scores().gomoku; setScore('gomoku', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('gomoku','user_win'); showGameOver('gomoku', '你赢了', '回合数：' + rounds, 'user_win'); } else { speak('gomoku','user_lose'); showGameOver('gomoku', '游戏结束', '回合数：' + rounds + '（失败）', 'ta_win'); } return true; } if(b.every(Boolean)){ over=true; speak('gomoku','draw'); showGameOver('gomoku', '平局', '回合数：' + rounds + '（平局）', 'draw'); return true; } return false; }
     function draw(){ qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':''); }); }
   }
-  function bestGomoku(b,n){ const empty=b.map((v,i)=>v?'':i).filter(v=>v!==''); if(empty.length===n*n){ const c=Math.floor(n/2); return c*n+c; } const win=empty.find(i=>gomokuMoveWins(b,n,i,'W')); if(win!=null) return win; const block=empty.find(i=>gomokuMoveWins(b,n,i,'B')); if(block!=null){ speak('gomoku','ai_block'); return block; } let best=-1, bestScore=-1; for(const i of empty){ let score=gomokuMoveScore(b,n,i,'W')*1.12 + gomokuMoveScore(b,n,i,'B')*.96 + gomokuCenterScore(n,i); if(score>bestScore){ bestScore=score; best=i; } } if(bestScore>=180) speak('gomoku','ai_block'); return best; }
+  function bestGomoku(b,n,silent){ bestGomoku.lastSpoke = false; const empty=b.map((v,i)=>v?'':i).filter(v=>v!==''); if(empty.length===n*n){ const c=Math.floor(n/2); return c*n+c; } const win=empty.find(i=>gomokuMoveWins(b,n,i,'W')); if(win!=null) return win; const block=empty.find(i=>gomokuMoveWins(b,n,i,'B')); if(block!=null){ if(!silent){ bestGomoku.lastSpoke = true; speak('gomoku','ai_block'); } return block; } let best=-1, bestScore=-1; for(const i of empty){ let score=gomokuMoveScore(b,n,i,'W')*1.12 + gomokuMoveScore(b,n,i,'B')*.96 + gomokuCenterScore(n,i); if(score>bestScore){ bestScore=score; best=i; } } if(bestScore>=180 && !silent){ bestGomoku.lastSpoke = true; speak('gomoku','ai_block'); } return best; }
   function gomokuMoveWins(b,n,i,m){ b[i]=m; const ok=winG(b,n,m); b[i]=''; return ok; }
   function gomokuCenterScore(n,i){ const x=i%n,y=Math.floor(i/n), c=(n-1)/2; return Math.max(0, 18 - (Math.abs(x-c)+Math.abs(y-c))*2); }
   function gomokuMoveScore(b,n,i,m){
@@ -4623,7 +4627,7 @@ function showGameRecords(game, page) {
     if (!state?.turn && state?.firstMover) speakFirstMover('territory', state.firstMover);
     if(turn === 'ta') setTimeout(robot, 500);
     function save(){ if(!over) saveProgress('territory', { h, v, owner, turn, userScore, taScore, noSafeSpoken, taMoves, nextCharLineAt }); }
-    function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('territory','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); } }
+    function shouldCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function sideCount(x,y){ return (h[y][x]?1:0) + (h[y+1][x]?1:0) + (v[y][x]?1:0) + (v[y][x+1]?1:0); }
     function cellsFor(kind,r,c){ const arr=[]; if(kind==='h'){ if(r>0) arr.push([c,r-1]); if(r<N) arr.push([c,r]); } else { if(c>0) arr.push([c-1,r]); if(c<N) arr.push([c,r]); } return arr; }
     function allEdges(){ const out=[]; for(let y=0;y<=N;y++) for(let x=0;x<N;x++) if(!h[y][x]) out.push(['h',y,x]); for(let y=0;y<N;y++) for(let x=0;x<=N;x++) if(!v[y][x]) out.push(['v',y,x]); return out; }
@@ -4635,9 +4639,9 @@ function showGameRecords(game, page) {
     function wouldComplete(e){ return cellsFor(e[0],e[1],e[2]).some(([x,y]) => !owner[y][x] && sideCount(x,y) === 3); }
     function isSafe(e){ return cellsFor(e[0],e[1],e[2]).every(([x,y]) => owner[y][x] || sideCount(x,y) < 2); }
     function applyEdge(kind,r,c, who){ if(kind==='h'){ if(h[r][c]) return 0; h[r][c]=who; } else { if(v[r][c]) return 0; v[r][c]=who; } let gained=0; cellsFor(kind,r,c).forEach(([x,y]) => { if(!owner[y][x] && sideCount(x,y) === 4){ owner[y][x]=who; gained++; } }); if(gained){ if(who==='user') userScore += gained; else taScore += gained; } return gained; }
-    function checkNoSafe(){ if(!noSafeSpoken && legalEdges().length && !legalEdges().some(isSafe)){ noSafeSpoken=true; speak('territory','no_safe_edge'); } }
-    function human(kind,r,c){ if(over||busy||turn!=='user') return; if(!isLegalEdge(kind,r,c)){ toast('要贴着已有线继续画'); return; } if(cellsFor(kind,r,c).some(([x,y]) => !owner[y][x] && sideCount(x,y) === 2)) speak('territory','danger'); const gained=applyEdge(kind,r,c,'user'); if(gained){ chain += gained; speak('territory', chain > 1 ? 'chain' : 'capture'); } else { chain = 0; speak('territory','edge'); turn='ta'; } checkNoSafe(); draw(); save(); if(done()) return; if(turn==='ta'){ busy=true; setTimeout(robot, 520); } }
-    function robot(){ if(over||turn!=='ta'||currentGame!=='territory') return; const edges=legalEdges(); if(!edges.length){ done(); return; } const completions=edges.filter(wouldComplete), safe=edges.filter(isSafe); const pool=completions.length ? completions : (safe.length ? safe : edges); const e=pool[Math.floor(Math.random()*pool.length)]; maybeCharNext(); const gained=applyEdge(e[0],e[1],e[2],'ta'); checkNoSafe(); if(gained){ speak('territory','ta_capture'); draw(); save(); if(done()) return; setTimeout(robot, 520); return; } turn='user'; chain=0; speak('territory','user_turn'); busy=false; draw(); save(); done(); }
+    function checkNoSafe(skipLine){ if(!noSafeSpoken && legalEdges().length && !legalEdges().some(isSafe)){ noSafeSpoken=true; if(!skipLine){ speak('territory','no_safe_edge'); return true; } } return false; }
+    function human(kind,r,c){ if(over||busy||turn!=='user') return; if(!isLegalEdge(kind,r,c)){ toast('要贴着已有线继续画'); return; } markFirstMoverUserAction(); let userEvent = cellsFor(kind,r,c).some(([x,y]) => !owner[y][x] && sideCount(x,y) === 2) ? 'danger' : ''; const gained=applyEdge(kind,r,c,'user'); if(gained){ chain += gained; if(!userEvent) userEvent = chain > 1 ? 'chain' : 'capture'; } else { chain = 0; if(!userEvent) userEvent = 'edge'; turn='ta'; } let spoke = !!userEvent && Math.random()<.5; if(spoke) speak('territory', userEvent); if(checkNoSafe(spoke)) spoke = true; draw(); save(); if(done()) return; if(turn==='ta'){ busy=true; setTimeout(() => robot(spoke), 520); } }
+    function robot(skipLine){ if(over||turn!=='ta'||currentGame!=='territory') return; const edges=legalEdges(); if(!edges.length){ done(); return; } const completions=edges.filter(wouldComplete), safe=edges.filter(isSafe); const pool=completions.length ? completions : (safe.length ? safe : edges); const e=pool[Math.floor(Math.random()*pool.length)]; const charNext = shouldCharNext(); let spoke = !!skipLine; const gained=applyEdge(e[0],e[1],e[2],'ta'); if(checkNoSafe(spoke)) spoke = true; if(gained){ if(!spoke){ spoke = true; speak('territory','ta_capture'); } draw(); save(); if(done()) return; setTimeout(() => robot(spoke), 520); return; } turn='user'; chain=0; if(!spoke) speak('territory', charNext ? 'char_next' : 'user_turn'); busy=false; draw(); save(); done(); }
     function done(){ if(allEdges().length) return false; over=true; clearProgress('territory'); const charLabel=settings().companion ? companionName() : 'TA'; const rounds=claimedEdges().length, text='本局：你 '+userScore+' 格，'+charLabel+' '+taScore+' 格，回合数：'+rounds, meta={ userScore, taScore }; if(userScore>taScore){ const cur=scores().territory; setScore('territory', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('territory','user_win'); showGameOver('territory','你赢了',text,'user_win',meta); } else if(taScore>userScore){ addTaWin('territory'); speak('territory','user_lose'); showGameOver('territory','游戏结束',text,'ta_win',meta); } else { speak('territory','draw'); showGameOver('territory','平局',text,'draw',meta); } return true; }
     function draw(){ const charLabel=settings().companion ? companionName() : 'TA'; const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userScore + '/' + charLabel + taScore; const t=qs('#wb-territory-turn'); if(t) t.textContent=(turn==='user'?'你的回合':charLabel+'的回合') + (claimedEdges().length ? '，贴着已有线' : ''); const s=qs('#wb-territory-score'); if(s) s.textContent='你 '+userScore+' / '+charLabel+' '+taScore; const board=qs('#wb-territory-board'); if(!board) return; const cells=[]; for(let gy=0;gy<N*2+1;gy++) for(let gx=0;gx<N*2+1;gx++){ if(gy%2===0&&gx%2===0) cells.push('<div class="wb-territory-dot"></div>'); else if(gy%2===0){ const r=gy/2,c=(gx-1)/2,val=h[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('h',r,c); cells.push('<button class="wb-territory-edge h'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="h" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else if(gx%2===0){ const r=(gy-1)/2,c=gx/2,val=v[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('v',r,c); cells.push('<button class="wb-territory-edge v'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="v" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else { const x=(gx-1)/2,y=(gy-1)/2,o=owner[y][x]; cells.push('<div class="wb-territory-cell '+(o||'')+'">'+(o==='user'?'你':o==='ta'?charLabel:'')+'</div>'); } } board.innerHTML=cells.join(''); qsa('.wb-territory-edge', board).forEach(btn => btn.onclick = () => human(btn.dataset.k, +btn.dataset.r, +btn.dataset.c)); }
   }
@@ -4660,10 +4664,10 @@ function showGameRecords(game, page) {
     function save(){ if(!over) saveProgress('oldmaid', { userHand, taHand, turn, phase, pending, log, userTurns, taTurns }); }
     function addLog(text){ log.unshift(text); if(log.length>6) log.pop(); }
     function drawCard(from, to, i){ const card = from.splice(i, 1)[0]; to.push(card); return card; }
-    function human(i){ if(over||busy||turn!=='user'||phase!=='user_pick'||i<0||i>=taHand.length) return; userTurns++; const card=drawCard(taHand,userHand,i); pending={ actor:'user', card }; phase='user_review'; addLog('你抽到了 ' + label(card)); speak('oldmaid', card==='JOKER' ? 'joker' : 'draw'); draw(); save(); }
-    function continueUser(){ if(over||phase!=='user_review') return; const pairs=removePairs(userHand); if(pairs){ addLog('你丢掉了 ' + pairs + ' 对牌'); speak('oldmaid','pair'); } pending=null; if(done()) return; turn='ta'; phase='ta_thinking'; busy=true; draw(); save(); setTimeout(robot, 900); }
+    function human(i){ if(over||busy||turn!=='user'||phase!=='user_pick'||i<0||i>=taHand.length) return; markFirstMoverUserAction(); userTurns++; const card=drawCard(taHand,userHand,i); pending={ actor:'user', card }; phase='user_review'; addLog('你抽到了 ' + label(card)); speak('oldmaid', card==='JOKER' ? 'joker' : 'draw'); draw(); save(); }
+    function continueUser(){ if(over||phase!=='user_review') return; markFirstMoverUserAction(); const pairs=removePairs(userHand); if(pairs){ addLog('你丢掉了 ' + pairs + ' 对牌'); speak('oldmaid','pair'); } pending=null; if(done()) return; turn='ta'; phase='ta_thinking'; busy=true; draw(); save(); setTimeout(robot, 900); }
     function robot(){ if(over||turn!=='ta'||currentGame!=='oldmaid') return; if(!userHand.length){ done(); return; } taTurns++; const card=drawCard(userHand,taHand,Math.floor(Math.random()*userHand.length)); pending={ actor:'ta', card }; phase='ta_review'; busy=false; addLog(displayCharName() + '抽走了 ' + label(card)); speak('oldmaid', card==='JOKER' ? 'joker' : 'ta_draw'); draw(); save(); }
-    function continueTa(){ if(over||phase!=='ta_review') return; const pairs=removePairs(taHand); if(pairs){ addLog(displayCharName() + '丢掉了 ' + pairs + ' 对牌'); speak('oldmaid','ta_pair'); } pending=null; if(done()) return; turn='user'; phase='user_pick'; busy=false; draw(); save(); }
+    function continueTa(){ if(over||phase!=='ta_review') return; markFirstMoverUserAction(); const pairs=removePairs(taHand); if(pairs){ addLog(displayCharName() + '丢掉了 ' + pairs + ' 对牌'); speak('oldmaid','ta_pair'); } pending=null; if(done()) return; turn='user'; phase='user_pick'; busy=false; draw(); save(); }
     function done(){ if(userHand.length && taHand.length) return false; over=true; clearProgress('oldmaid'); const userWon = userHand.length === 0, meta={ userTurns, taTurns }; if(userWon){ const cur=scores().oldmaid; setScore('oldmaid', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('oldmaid','user_win'); showGameOver('oldmaid','你赢了','本局：你先清空手牌','user_win', meta); } else { addTaWin('oldmaid'); speak('oldmaid','user_lose'); showGameOver('oldmaid','游戏结束','本局：你留下了鬼牌','ta_win', meta); } return true; }
     function drawCardHTML(c, extra){ return '<div class="wb-oldmaid-card '+(c==='JOKER'?'joker':'')+' '+(extra||'')+'">'+esc(label(c))+'</div>'; }
     function draw(){ const charLabel=displayCharName(); const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; const st=qs('#wb-oldmaid-status'); if(st) st.textContent=(phase==='user_pick'?'你的回合：从' + charLabel + '手里抽一张':phase==='user_review'?'看清抽到的牌，然后手动丢对子':phase==='ta_review'?charLabel + '抽走了这张牌，确认后继续':charLabel + '正在抽牌') + ' · 你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; const reveal=qs('#wb-oldmaid-reveal'); if(reveal){ reveal.innerHTML=pending ? '<div class="wb-oldmaid-reveal-text">'+(pending.actor==='user'?'你抽到':charLabel + '抽走')+'</div>'+drawCardHTML(pending.card,'big')+'<button class="wb-btn primary" id="wb-oldmaid-next">'+(pending.actor==='user'?'丢对子并让' + charLabel + '抽':'知道了，继续')+'</button>' : ''; const nb=qs('#wb-oldmaid-next', reveal); if(nb) nb.onclick=pending.actor==='user'?continueUser:continueTa; } const ta=qs('#wb-oldmaid-ta'); if(ta){ ta.innerHTML=taHand.map((_,i)=>'<button class="wb-oldmaid-card back" data-i="'+i+'" '+(phase!=='user_pick'||turn!=='user'||busy?'disabled':'')+'>?</button>').join(''); qsa('.wb-oldmaid-card',ta).forEach(btn=>btn.onclick=()=>human(+btn.dataset.i)); } const user=qs('#wb-oldmaid-user'); if(user) user.innerHTML=userHand.map(c=>drawCardHTML(c)).join(''); const lg=qs('#wb-oldmaid-log'); if(lg) lg.innerHTML=log.map(esc).join('<br>'); }
@@ -4682,26 +4686,31 @@ function showGameRecords(game, page) {
     function legal(side){ return board.map((_,i)=>flips(side,i).length?i:-1).filter(i=>i>=0); }
     function save(){ if(!over) saveProgress('reversi',{board,turn,taMoves,nextCharLineAt,seen}); }
     function count(side){ return board.filter(x=>x===side).length; }
-    function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('reversi','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); } }
-    function place(side,i){
+    function shouldCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
+    function place(side,i,skipLine){
       const f=flips(side,i); if(!f.length) return false;
+      if(side==='user') markFirstMoverUserAction();
       const beforeUser=count('user'), beforeTa=count('ta');
-      if(side==='ta') maybeCharNext();
+      let spoke = !!skipLine;
+      const charNext = side === 'ta' ? shouldCharNext() : false;
       board[i]=side; f.forEach(k=>board[k]=side);
       const afterUser=count('user'), afterTa=count('ta');
-      if(side==='ta' && f.length>5) speak('reversi','char_big_flip');
-      if(side==='user' && f.length>5) speak('reversi','user_big_flip');
+      if(side==='ta' && f.length>5 && !spoke){ spoke = true; speak('reversi','char_big_flip'); }
+      if(side==='user' && f.length>5 && Math.random()<.5){ spoke = true; speak('reversi','user_big_flip'); }
       if(side==='user' && beforeUser * 2 < beforeTa && f.length>7) seen.comeback = 1;
-      if(!seen.charDouble && afterTa > afterUser * 2 && afterUser > 0){ seen.charDouble=1; speak('reversi','char_double'); }
-      if(!seen.userDouble && afterUser > afterTa * 2 && afterTa > 0){ seen.userDouble=1; speak('reversi','user_double'); }
-      if([0,7,56,63].includes(i)) speak('reversi','corner');
+      if(!seen.charDouble && afterTa > afterUser * 2 && afterUser > 0){ seen.charDouble=1; if(!spoke){ spoke = true; speak('reversi','char_double'); } }
+      if(!seen.userDouble && afterUser > afterTa * 2 && afterTa > 0){ seen.userDouble=1; if(!spoke && Math.random()<.5){ spoke = true; speak('reversi','user_double'); } }
+      if([0,7,56,63].includes(i) && !spoke && (side === 'ta' || Math.random()<.5)){ spoke = true; speak('reversi','corner'); }
       if(!seen.endLine && board.filter(x=>!x).length===1){
         seen.endLine=1;
-        speak('reversi', afterUser>afterTa ? 'user_win' : (afterTa>afterUser ? 'user_lose' : 'draw'));
+        if(!spoke) speak('reversi', afterUser>afterTa ? 'user_win' : (afterTa>afterUser ? 'user_lose' : 'draw'));
+      } else if(side==='ta' && charNext && !spoke) {
+        spoke = true;
+        speak('reversi','char_next');
       }
       const other=side==='user'?'ta':'user';
       if(legal(other).length){ turn=other; } else if(legal(side).length){ turn=side; } else return done();
-      draw(); save(); if(turn==='ta') setTimeout(ai,700); return true;
+      draw(); save(); if(turn==='ta') setTimeout(() => ai(spoke),700); return true;
     }
     function isCorner(i){ return [0,7,56,63].includes(i); }
     function isXSquare(i){ return [9,14,49,54].includes(i); }
@@ -4741,7 +4750,7 @@ function showGameRecords(game, page) {
         return weights[i] + corner + edge + mobility + parity + taCorners*120 - userCorners*220 + stableEdgeScore('ta') - stableEdgeScore('user')*.8 - danger;
       });
     }
-    function ai(){ if(over||gamePaused||turn!=='ta') return; const moves=legal('ta'); if(!moves.length){ turn='user'; draw(); save(); return; } moves.sort((a,b)=>moveScore(b)-moveScore(a)); if(isCorner(moves[0])) speak('reversi','corner'); place('ta', moves[0]); }
+    function ai(skipLine){ if(over||gamePaused||turn!=='ta') return; const moves=legal('ta'); if(!moves.length){ turn='user'; draw(); save(); return; } moves.sort((a,b)=>moveScore(b)-moveScore(a)); const spoke = !skipLine && isCorner(moves[0]); if(spoke) speak('reversi','corner'); place('ta', moves[0], skipLine || spoke); }
     function done(){ over=true; clearProgress('reversi'); const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length, rounds=Math.max(0,u+t-4); const res=u>t?'user_win':(t>u?'ta_win':'draw'); if(!seen.endLine) speak('reversi', res==='ta_win' ? 'user_lose' : res); if(res==='user_win'){ const cur=scores().reversi; setScore('reversi',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); } else if(res==='ta_win') addTaWin('reversi'); showGameOver('reversi',res==='user_win'?'你赢了':(res==='draw'?'平局':'游戏结束'),'你'+u+'格 / '+displayCharName()+t+'格，回合数：'+rounds,res,{userScore:u,taScore:t,comeback:!!seen.comeback}); return true; }
     function draw(){ const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length; qs('#wb-score').textContent='本局：你'+u+' / '+displayCharName()+t; qs('#wb-reversi-info').textContent=(turn==='user'?'你的回合':displayCharName()+'思考中')+' · 你'+u+' / '+displayCharName()+t; const leg=new Set(legal('user')); qs('#wb-reversi-board').innerHTML=board.map((v,i)=>'<button class="wb-reversi-cell '+v+(leg.has(i)&&turn==='user'?' legal':'')+'" data-i="'+i+'">'+(v?'<span></span>':'')+'</button>').join(''); qsa('.wb-reversi-cell',box).forEach(b=>b.onclick=()=>{ if(turn==='user'&&!busy) place('user',+b.dataset.i); }); }
   }
@@ -4753,7 +4762,7 @@ function showGameRecords(game, page) {
     function choices(){ return Array.from({length:100},(_,i)=>i+1).filter(n=>n>=low&&n<=high); }
     function rangeEvent(){ const len=choices().length; if(len===1) return 'doomed'; if(len>=80) return 'range_100_80'; if(len>=60) return 'range_80_60'; if(len>=40) return 'range_60_40'; if(len>=20) return 'range_40_20'; return 'range_20_0'; }
     function save(){ if(!over) saveProgress('bombnumber',{bomb,low,high,turn,log,luckyShrink,userDoomed,charDoomed,turnCount}); }
-    function pick(side,n){ if(over||busy||n<low||n>high) return; const before=choices().length; busy=true; turnCount++; chosen={side,n}; log.unshift((side==='user'?'你':displayCharName())+'选择了 '+n); draw(); setTimeout(()=>resolvePick(side,n,before),680); }
+    function pick(side,n){ if(over||busy||n<low||n>high) return; if(side==='user') markFirstMoverUserAction(); const before=choices().length; busy=true; turnCount++; chosen={side,n}; log.unshift((side==='user'?'你':displayCharName())+'选择了 '+n); draw(); setTimeout(()=>resolvePick(side,n,before),680); }
     function resolvePick(side,n,before){
       if(over) return;
       if(n===bomb){
@@ -4788,9 +4797,9 @@ function showGameRecords(game, page) {
     function landingRow(x){ for(let y=S-1;y>=0;y--) if(!grid[id(x,y)]) return y; return -1; }
     function legal(){ const a=[]; for(let x=0;x<S;x++) if(landingRow(x)>=0) a.push(x); return a; }
     function save(){ if(!over) saveProgress('connect4d',{grid,turn,taMoves,nextCharLineAt}); }
-    function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('connect4d','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); } }
+    function shouldCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function winner(side){ for(let y=0;y<S;y++) for(let x=0;x<S;x++) if(grid[id(x,y)]===side){ for(const d of dirs){ let ok=true; for(let k=1;k<4;k++){ const nx=x+d[0]*k,ny=y+d[1]*k; if(!inside(nx,ny)||grid[id(nx,ny)]!==side){ ok=false; break; } } if(ok) return true; } } return false; }
-    function place(side,x,aimPct){ const y=landingRow(x); if(y<0||over||gamePaused||dropping) return; aimCol=-1; dropping={x,y,side,t:0,aimX:aimPct}; if(side==='ta') maybeCharNext(); animateDrop(()=>{ grid[id(x,y)]=side; dropping=null; const rounds=grid.filter(Boolean).length; if(winner(side)){ over=true; clearProgress('connect4d'); const res=side==='user'?'user_win':'ta_win'; if(res==='user_win'){ const cur=scores().connect4d; setScore('connect4d',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('connect4d','user_win'); } else { addTaWin('connect4d'); speak('connect4d','user_lose'); } showGameOver('connect4d',res==='user_win'?'你赢了':'游戏结束','本局：'+(res==='user_win'?'你连成四子':displayCharName()+'连成四子')+'，回合数：'+rounds,res); return; } if(!legal().length){ over=true; clearProgress('connect4d'); speak('connect4d','draw'); showGameOver('connect4d','平局','棋盘填满，回合数：'+rounds,'draw'); return; } turn=side==='user'?'ta':'user'; draw(); save(); if(turn==='ta') setTimeout(ai,700); }); }
+    function place(side,x,aimPct,skipLine){ const y=landingRow(x); if(y<0||over||gamePaused||dropping) return; if(side==='user') markFirstMoverUserAction(); aimCol=-1; dropping={x,y,side,t:0,aimX:aimPct}; const charNext = side === 'ta' ? shouldCharNext() : false; animateDrop(()=>{ grid[id(x,y)]=side; dropping=null; const rounds=grid.filter(Boolean).length; if(winner(side)){ over=true; clearProgress('connect4d'); const res=side==='user'?'user_win':'ta_win'; if(res==='user_win'){ const cur=scores().connect4d; setScore('connect4d',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('connect4d','user_win'); } else { addTaWin('connect4d'); speak('connect4d','user_lose'); } showGameOver('connect4d',res==='user_win'?'你赢了':'游戏结束','本局：'+(res==='user_win'?'你连成四子':displayCharName()+'连成四子')+'，回合数：'+rounds,res); return; } if(!legal().length){ over=true; clearProgress('connect4d'); speak('connect4d','draw'); showGameOver('connect4d','平局','棋盘填满，回合数：'+rounds,'draw'); return; } if(side==='ta' && charNext && !skipLine) speak('connect4d','char_next'); turn=side==='user'?'ta':'user'; draw(); save(); if(turn==='ta') setTimeout(ai,700); }); }
     function animateDrop(done){ let n=0; const step=()=>{ n++; if(dropping) dropping.t=n/16; draw(); if(n<16) setTimeout(step,24); else done(); }; step(); }
     function supportedEmpty(x,y){ return inside(x,y) && !grid[id(x,y)] && landingRow(x) === y; }
     function lineScore(side,x,y){
@@ -4849,11 +4858,11 @@ function showGameRecords(game, page) {
     function ai(){
       const m=legal(); if(!m.length) return;
       const userWins=immediateWins('user');
-      if(userWins.length){ speak('connect4d','ai_block'); place('ta', userWins[0]); return; }
+      if(userWins.length){ const blockTalk = Math.random()<.5; if(blockTalk) speak('connect4d','ai_block'); place('ta', userWins[0], null, blockTalk); return; }
       const taWins=immediateWins('ta');
       if(taWins.length){ place('ta', taWins[0]); return; }
       const userThreats=m.map(x=>({x, n:createsNextThreat('user',x)})).filter(o=>o.n>0).sort((a,b)=>b.n-a.n);
-      if(userThreats.length){ speak('connect4d','ai_block'); place('ta', userThreats[0].x); return; }
+      if(userThreats.length){ const blockTalk = Math.random()<.5; if(blockTalk) speak('connect4d','ai_block'); place('ta', userThreats[0].x, null, blockTalk); return; }
       const taThreats=m.map(x=>({x, n:createsNextThreat('ta',x)})).filter(o=>o.n>0).sort((a,b)=>b.n-a.n);
       if(taThreats.length){ place('ta', taThreats[0].x); return; }
       const scored=m.map(x=>({x, s:evaluateMove(x,'ta')})).sort((a,b)=>b.s-a.s);
