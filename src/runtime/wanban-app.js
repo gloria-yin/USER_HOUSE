@@ -1793,6 +1793,7 @@ export async function initWanbanXiaowu() {
         text-shadow:0 0 18px var(--wb-glow);
       }
       .wb-section-title::before { content:'◇ '; color:var(--wb-accent); }
+      .wb-section-title.no-mark::before { content:''; }
       .wb-modal {
         border-radius:8px;
         background:linear-gradient(180deg, var(--wb-panel), var(--wb-bg));
@@ -2057,7 +2058,7 @@ export async function initWanbanXiaowu() {
     const sums = summaries();
     const apiOptions = '<option value="">— 选择预设载入 —</option>' + apis.map((x,i) => '<option value="' + i + '">' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
 	    const activeWorldIndex = injPresets.findIndex(x => normalizePresetName(x && x.name) === normalizePresetName(companionName()));
-		    const injOptions = '<option value="">— 选择角色和世界观 —</option>' + injPresets.map((x,i) => '<option value="' + i + '"' + (i === activeWorldIndex ? ' selected' : '') + '>' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
+		    const injOptions = '<option value="">— 当前角色 —</option>' + injPresets.map((x,i) => '<option value="' + i + '"' + (i === activeWorldIndex ? ' selected' : '') + '>' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
 	    const sumOptions = '<option value="">— 不注入 —</option>' + sums.map(x => '<option value="' + esc(x.id) + '">' + esc(x.name || '大总结') + '</option>').join('');
 		    const lineRoleOptions = roleNamesForLineStorage().map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
 		    const lineGameOptions = Object.values(GAME_META).map(g => '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>').join('');
@@ -2089,9 +2090,8 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-preset-save-row"><input class="wb-input" type="text" id="wb-api-preset-name" placeholder="命名并保存当前 API 配置..."><button class="wb-btn" id="wb-save-api-preset">保存</button></div>'
       + '</div>'
 	      + '<div class="wb-panel"><div class="wb-section-title">世界观注入</div>'
-      + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">选择角色和世界观</div>'
-      + '<div class="wb-preset-row"><select class="wb-select" id="wb-world-preset">' + injOptions + '</select><button class="wb-btn" id="wb-load-world-preset">载入</button><button class="wb-btn" id="wb-restore-world-preset">恢复</button><button class="wb-btn" id="wb-del-world-preset">删</button></div>'
-      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色卡配置</button><button class="wb-btn" id="wb-reset-current-world-default" style="flex:1;">恢复当前角色卡默认</button></div>'
+      + '<div class="wb-section-title no-mark" style="font-size:12px;margin-top:4px;">当前默认角色设置</div>'
+      + '<div class="wb-preset-row"><select class="wb-select" id="wb-world-preset">' + injOptions + '</select><button class="wb-btn" id="wb-load-world-preset">载入</button><button class="wb-btn" id="wb-del-world-preset">删</button></div>'
       + '<button class="wb-btn" id="wb-injection-details-toggle" type="button">展开详细配置</button>'
       + '<div id="wb-injection-details" style="display:none;gap:10px;">'
 	      + '<div class="wb-field"><label><input type="checkbox" id="wb-inject-user-desc" ' + (cfg.injectUserDesc !== false ? 'checked' : '') + '> 用户设定描述</label><textarea class="wb-textarea" id="wb-user-persona" placeholder="填写 user 的设定、性格、关系、偏好；留空则尝试读取当前 persona...">' + esc(cfg.userPersona) + '</textarea></div>'
@@ -2110,6 +2110,7 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">导入大总结</div>'
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-summary-select">' + sumOptions + '</select><button class="wb-btn" id="wb-manage-summary">管理/导入</button></div>'
       + '<div class="wb-api-status" id="wb-summary-preview">' + esc(summaryPreview(cfg.summaryId)) + '</div>'
+      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色卡配置</button><button class="wb-btn" id="wb-reset-current-world-default" style="flex:1;">恢复当前角色卡默认</button></div>'
       + '</div>'
 	      + '</div>'
 	      + '<div class="wb-panel"><div class="wb-section-title">游戏语录设置</div>'
@@ -2195,7 +2196,6 @@ export async function initWanbanXiaowu() {
     qs('#wb-reset-current-world-default').onclick = resetCurrentWorldDefaultFromUI;
     const worldPresetSelect = qs('#wb-world-preset'); if (worldPresetSelect) worldPresetSelect.onchange = loadWorldPresetFromUI;
     qs('#wb-load-world-preset').onclick = loadWorldPresetFromUI;
-    qs('#wb-restore-world-preset').onclick = loadCurrentWorldPresetFromUI;
     qs('#wb-del-world-preset').onclick = deleteWorldPresetFromUI;
   }
 
@@ -3775,14 +3775,6 @@ export async function initWanbanXiaowu() {
     applyRoleToAllGames(normalizePresetName(pr.name || qs('#wb-char-name')?.value || companionName()));
     const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(settings());
     toast('角色和世界观已按保存快照载入');
-  }
-  async function loadCurrentWorldPresetFromUI() {
-    const name = normalizePresetName(companionName());
-    const arr = worldPresets();
-    const idx = arr.findIndex(x => normalizePresetName(x.name) === name);
-    if (idx < 0) { toast('没有找到当前角色卡配置：' + name); return; }
-    const sel = qs('#wb-world-preset'); if (sel) sel.value = String(idx);
-    await loadWorldPresetFromUI();
   }
   function deleteWorldPresetFromUI() { const idx=parseInt(qs('#wb-world-preset').value,10); const arr=worldPresets(); if(!arr[idx]) return; showConfirm('删除角色和世界观','确定删除这个角色和世界观预设吗？',()=>{ arr.splice(idx,1); saveWorldPresets(arr); renderSettings(); }); }
 
