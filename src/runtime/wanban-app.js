@@ -104,6 +104,8 @@ export async function initWanbanXiaowu() {
   let gameStarted = false;
   let gamePaused = true;
   let gameStartAt = 0;
+  let gameAccumulatedMs = 0;
+  let gameActiveStartedAt = 0;
   let randomLineTimer = null;
   let lastDialogueAt = 0;
   let currentRoundRecord = false;
@@ -178,11 +180,16 @@ export async function initWanbanXiaowu() {
     messageNotifyTag: 'content',
     theaterEnabled: false,
     autoLog: false,
-    batchLinePromptOverride: '',
-    batchTheaterPromptOverride: '',
-    lastTab: 'single',
-    lastGame: ''
-  };
+	    batchLinePromptOverride: '',
+	    batchTheaterPromptOverride: '',
+	    batchAttempts: 1,
+	    batchLinesApiChoice: 'default',
+	    batchTheaterApiChoice: 'default',
+	    customFonts: [],
+	    selectedFont: '',
+	    lastTab: 'single',
+	    lastGame: ''
+	  };
 
   const GAME_RULES = {
     tetris: '控制方块左右移动、旋转和下落，凑满一整行即可消除得分。方块堆到顶部时游戏结束。',
@@ -208,20 +215,20 @@ export async function initWanbanXiaowu() {
   const EVENT_DESCRIPTIONS = {
     tetris: { start:'俄罗斯方块开局，玩家准备开始下落方块。', move:'玩家左右移动方块，调整落点。', rotate:'玩家旋转当前方块。', soft_drop:'玩家主动加速下落。', line_1:'俄罗斯方块消除1行。', line_2:'俄罗斯方块一次消除2行。', line_3:'俄罗斯方块一次消除3行。', line_4:'俄罗斯方块一次消除4行。', danger:'方块堆叠接近顶部，局面危险。', score_500:'俄罗斯方块本局分数达到500分。', score_1500:'俄罗斯方块本局分数达到1500分。', score_2000_plus:'俄罗斯方块本局分数达到2000分以上，之后每隔500分触发一次；角色对不同分数的惊讶、兴奋和投入程度应逐渐递增。', record:'单人游戏刷新历史最高分。', gameover:'俄罗斯方块方块堆到顶部，本局结束。', random:'观看俄罗斯方块时的碎碎念。' },
     snake: { start:'贪吃蛇开局。', turn:'贪吃蛇转向。', close_call:'蛇头接近墙体或自身，差点失败。', speed_up:'贪吃蛇吃到更多食物后速度提高；分数越高，蛇移动越快，对话可以提到速度越来越快、反应时间变短、转向更紧张。', eat_1:'贪吃蛇吃到第1个食物。', eat_5:'贪吃蛇累计吃到5个食物，蛇身变长，速度开始更有压力。', eat_10:'贪吃蛇累计吃到10个食物，分数升高，蛇速明显更快。', eat_20:'贪吃蛇累计吃到20个食物，高分阶段蛇速很快，路线和反应都更紧张。', record:'单人游戏刷新历史最高分。', gameover:'贪吃蛇撞墙或撞到自己，本局结束。', random:'观看贪吃蛇时的碎碎念。' },
-    game2048: { start:'2048开局。', move:'玩家滑动并移动数字块。', stuck:'棋盘空位很少，局面拥挤。', tile_64:'棋盘首次合成64数字块。', tile_128:'棋盘首次合成128数字块。', tile_256:'棋盘首次合成256数字块。', tile_512:'棋盘首次合成512数字块。', tile_1024:'棋盘首次合成1024数字块；从1024开始角色应明显惊讶。', tile_2048:'棋盘首次合成2048数字块；角色比1024更惊讶、更兴奋。', tile_4096:'棋盘首次合成4096数字块；角色惊讶程度必须比1024和2048继续递增。', record:'单人游戏刷新历史最高分。', gameover:'2048棋盘无可移动格子，本局结束。', random:'观看2048时的碎碎念。' },
-    watermelon: { start:'合成大西瓜开局。', aim:'玩家长按瞄准水果落点。', drop_edge:'水果贴近边缘落下。', merge_2:'合成到较小水果。', merge_4:'合成到中级水果。', merge_6:'合成到偏大的水果。', merge_7:'合成到接近大西瓜的大水果。', near_top:'水果堆接近顶部警戒线。', watermelon:'成功合成大西瓜。', record:'单人游戏刷新历史最高分。', gameover:'水果堆超过警戒线，本局结束。', random:'观看合成大西瓜时的碎碎念。' },
-    memory: { start:'翻牌记忆开局，4×4牌面扣住。', first_flip:'玩家翻开本局第一张牌。', match:'玩家翻开的两张牌成功配对并消除。', miss:'玩家翻开的两张牌没有配对。', combo:'玩家连续成功配对。', half:'玩家已经完成一半配对。', record:'玩家以更少步数或更高分刷新记录。', gameover:'全部卡牌配对完成。', random:'观看翻牌记忆时的碎碎念。' },
-    jump: { start:'跳一跳开局，玩家站在第一个平台上。', charge:'玩家按住屏幕开始蓄力。', jump:'玩家松手起跳。', perfect:'玩家落在平台中心附近。', land:'玩家成功落到下一个平台。', score_10:'跳一跳达到10分。', score_20:'跳一跳达到20分。', score_30:'跳一跳达到30分。', score_40:'跳一跳达到40分。', score_50_plus:'跳一跳达到50分，且50分以上每10分触发一次。', record:'跳一跳刷新历史最高分。', gameover:'玩家没有落在平台上，本局结束。', random:'观看跳一跳时的碎碎念。' },
-    plank: { start:'搭木板开局，玩家站在第一根柱子上。', perfect:'木板长度刚好落在柱子中心附近。', perfect_streak:'玩家连续3次以上完美搭到中心附近。', score_10:'搭木板达到10分。', score_20:'搭木板达到20分。', score_30:'搭木板达到30分。', score_40:'搭木板达到40分。', score_50_plus:'搭木板达到50分，且50分以上每10分触发一次。', record:'搭木板刷新历史最高分。', gameover:'木板太长或太短，玩家掉下去。', random:'观看搭木板时的碎碎念。' },
-    sudoku: { start:'数独开局，玩家开始解唯一解题目。', first_fill:'玩家填入第一个数字。', erase:'玩家擦除一个已填数字。', hint:'玩家请求一次求助。', many_hints:'玩家求助超过5次。', row_done:'玩家填好一整行。', col_done:'玩家填好一整列。', nearly_done:'数独快要填完。', conflict:'玩家填入的数字在同一行、同一列或同一宫里造成重复。', complete_error:'玩家全部填完但仍有错误格，需要继续修改。', gameover:'数独完成并结算。', random:'观看数独时的碎碎念。' },
+    game2048: { start:'2048开局。', move:'玩家滑动并移动数字块。', stuck:'棋盘空位很少，局面拥挤。', tile_64:'棋盘首次合成64数字块。', tile_128:'棋盘首次合成128数字块。', tile_256:'棋盘首次合成256数字块。', tile_512:'棋盘首次合成512数字块。', tile_1024:'棋盘首次合成1024数字块；从1024开始角色应明显惊讶。', tile_2048:'棋盘首次合成2048数字块；角色比1024更惊讶、更兴奋。', tile_4096:'棋盘首次合成4096数字块；角色惊讶程度必须比1024和2048继续递增。', record:'单人游戏刷新历史最高分。', gameover:'2048棋盘刚被数字块占满。', random:'观看2048时的碎碎念。' },
+    watermelon: { start:'合成大西瓜开局。', aim:'玩家长按瞄准水果落点。', drop_edge:'水果贴近边缘落下。', merge_2:'合成到较小水果。', merge_4:'合成到中级水果。', merge_6:'合成到偏大的水果。', merge_7:'合成到接近大西瓜的大水果。', near_top:'水果堆接近顶部警戒线。', watermelon:'成功合成大西瓜。', record:'单人游戏刷新历史最高分。', gameover:'水果堆快要超过顶部警戒线。', random:'观看合成大西瓜时的碎碎念。' },
+    memory: { start:'翻牌记忆开局，4×4牌面扣住。', first_flip:'玩家翻开本局第一张牌。', match:'玩家翻开的两张牌成功配对并消除。', miss:'玩家翻开的两张牌没有配对。', combo:'玩家连续成功配对。', half:'玩家已经完成一半配对。', record:'玩家以更少步数或更高分刷新记录。', gameover:'翻牌记忆只剩最后一对牌未配对。', random:'观看翻牌记忆时的碎碎念。' },
+    jump: { start:'跳一跳开局，玩家站在第一个平台上。', charge:'玩家按住屏幕开始蓄力。', jump:'玩家松手起跳。', perfect:'玩家落在平台中心附近。', land:'玩家成功落到下一个平台。', score_10:'跳一跳达到10分。', score_20:'跳一跳达到20分。', score_30:'跳一跳达到30分。', score_40:'跳一跳达到40分。', score_50_plus:'跳一跳达到50分，且50分以上每10分触发一次。', record:'跳一跳刷新历史最高分。', gameover:'玩家松手时就能判断本次不会落上平台，起跳前触发。', random:'观看跳一跳时的碎碎念。' },
+    plank: { start:'搭木板开局，玩家站在第一根柱子上。', perfect:'木板长度刚好落在柱子中心附近。', perfect_streak:'玩家连续3次以上完美搭到中心附近。', score_10:'搭木板达到10分。', score_20:'搭木板达到20分。', score_30:'搭木板达到30分。', score_40:'搭木板达到40分。', score_50_plus:'搭木板达到50分，且50分以上每10分触发一次。', record:'搭木板刷新历史最高分。', gameover:'玩家松手时木板已经确定太长或太短。', random:'观看搭木板时的碎碎念。' },
+    sudoku: { start:'数独开局，玩家开始解唯一解题目。', first_fill:'玩家填入第一个数字。', erase:'玩家擦除一个已填数字。', hint:'玩家请求一次求助。', many_hints:'玩家求助超过5次。', row_done:'玩家填好一整行。', col_done:'玩家填好一整列。', nearly_done:'数独快要填完。', conflict:'玩家填入的数字在同一行、同一列或同一宫里造成重复。', complete_error:'玩家全部填完但仍有错误格，需要继续修改。', gameover:'数独只剩最后一个空格，或只剩一个错误格需要修改。', random:'观看数独时的碎碎念。' },
     tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'TA阻挡了玩家即将连线的一步。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'TA在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
     gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，TA知道自己这把基本必输了。', ai_block:'TA阻挡玩家形成强威胁。', ai_threat:'TA形成强威胁，玩家需要防守。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'TA五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
     territory: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', edge:'玩家画下一条边。', no_safe_edge:'场面没有普通边了，之后每条边都可能送分。', capture:'玩家围住某个方格最后一条边并占领得分。', chain:'玩家连续占领多个方格。', ta_capture:'TA围住某个方格并占领得分。', user_turn:'TA的回合结束，轮到玩家。', danger:'玩家选择可能送给TA得分机会的边。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'所有边画完后玩家得分更高。', user_lose:'所有边画完后TA得分更高。', draw:'所有边画完后双方平分。', random:'和user玩电子围地盘时的碎碎念。' },
     oldmaid: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', draw:'玩家从TA手里随机抽走一张牌。', pair:'玩家抽牌后凑成对子并消去。', ta_draw:'TA从玩家手里随机抽走一张牌。', ta_pair:'TA抽牌后凑成对子并消去。', joker:'鬼牌在双方之间转移。', user_win:'玩家先清空手牌，没有留下鬼牌。', user_lose:'玩家最后留下鬼牌，TA获胜。', random:'和user玩抽鬼牌时的碎碎念。' },
-    ludo: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', roll_6:'玩家掷出6点。', no_move:'玩家本回合没有可移动棋子。', takeoff:'玩家掷出可起飞点数，飞机起飞。', user_capture:'玩家把{{char}}的棋子撞回家，{{char}}会懊恼或不甘。', char_capture:'{{char}}把玩家的棋子撞回家，{{char}}会得意或调侃。', capture:'一方棋子撞回另一方棋子。', near_finish:'玩家棋子接近终点。', user_win:'玩家率先到达终点获胜。', user_lose:'TA率先到达终点，玩家失败。', random:'和user玩双人飞行棋时的碎碎念。' },
+    ludo: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', roll_6:'玩家掷出6点。', no_move:'玩家本回合没有可移动棋子。', user_takeoff:'玩家掷出可起飞点数，玩家飞机起飞。', char_takeoff:'{{char}}掷出可起飞点数，{{char}}飞机起飞。', user_capture:'玩家把{{char}}的棋子撞回家，{{char}}会懊恼或不甘。', char_capture:'{{char}}把玩家的棋子撞回家，{{char}}会得意或调侃。', near_finish:'玩家棋子接近终点。', user_win:'玩家率先到达终点获胜。', user_lose:'TA率先到达终点，玩家失败。', random:'和user玩双人飞行棋时的碎碎念。' },
     guessnumber: { start:'角色想好一个四位数。', guess:'用户提交了一次四位数猜测。', miss:'本次猜测几乎没有命中。', close:'本次猜测数字或位置命中较多。', very_close:'本次猜测非常接近答案。', many_tries:'用户已经尝试多次仍未猜中。', user_win:'用户猜中完整四位数。', random:'猜测间隙的随机角色互动。' },
-    wordguess: { random:'猜词间隙的随机角色互动。' }
-    ,reversi: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', corner:'玩家占据角落。', char_big_flip:'{{char}}一次翻转玩家超过5个棋子。', user_big_flip:'玩家一次翻转{{char}}超过5个棋子。', char_double:'棋盘上{{char}}棋子数量超过user的一倍。', user_double:'棋盘上user棋子数量超过{{char}}的一倍。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', random:'和user玩翻转棋时的碎碎念。' }
+    wordguess: { random:'猜词间隙的随机角色互动。', user_win:'我说你猜中，玩家猜中第3题时触发；{{char}}知道这一把user已经赢定了。', user_lose:'我说你猜中，玩家第3次没猜中或揭晓答案时触发；{{char}}知道这一把自己已经赢定，user已经输了。' }
+    ,reversi: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', corner:'玩家占据角落。', char_big_flip:'{{char}}一次翻转玩家超过5个棋子。', user_big_flip:'玩家一次翻转{{char}}超过5个棋子。', char_double:'棋盘上{{char}}棋子数量超过user的一倍。', user_double:'棋盘上user棋子数量超过{{char}}的一倍。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'翻转棋只剩最后一个空位时，玩家棋子数领先，基本确认玩家会获胜。', user_lose:'翻转棋只剩最后一个空位时，{{char}}棋子数领先，玩家基本会失败。', draw:'翻转棋只剩最后一个空位时，双方棋子数相同，局面接近平局。', random:'和user玩翻转棋时的碎碎念。' }
     ,bombnumber: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', range_100_80:'可选范围还剩80到100个数字，氛围轻松。', range_80_60:'可选范围还剩60到80个数字，仍然稍微轻松。', range_60_40:'可选范围还剩40到60个数字，开始有点紧张。', range_40_20:'可选范围还剩20到40个数字，开始认真，可能想诈一下玩家。', range_20_0:'可选范围小于20个数字，马上就要炸了。', doomed:'可选范围只剩1个安全选择，局面像已经结束。', user_win:'玩家没有点中炸弹，{{char}}点中炸弹失败。', user_lose:'玩家点中炸弹失败。', random:'和user玩数字炸弹时的碎碎念。' }
     ,connect4d: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_four:'玩家已经形成四连获胜。', ai_block:'{{char}}阻挡玩家的威胁。', ai_threat:'{{char}}形成强威胁。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在7×7棋盘横向、纵向或斜向连成四子。', user_lose:'{{char}}在7×7棋盘横向、纵向或斜向连成四子。', draw:'棋盘填满无人连成四子。', random:'和user玩立体四子棋时的碎碎念。' }
   };
@@ -279,14 +286,14 @@ export async function initWanbanXiaowu() {
   function roleLineScope(game) { return roleLineScopeForName(game, companionName()); }
   function currentLinePreset(game) { const sel = linePresetSelection(); return normalizePresetName(sel[roleLineScope(game)] || companionName()); }
   function setCurrentLinePreset(game, name) { const sel = linePresetSelection(); sel[roleLineScope(game)] = normalizePresetName(name); saveLinePresetSelection(sel); }
-  function roleLineSet(game, preset) { const all = roleLines(); const scope = all[roleLineScope(game)] || {}; return scope[normalizePresetName(preset || currentLinePreset(game))] || null; }
+  function roleLineSet(game, preset) { const all = roleLines(); const name = normalizePresetName(preset || currentLinePreset(game)); const scope = all[roleLineScope(game)] || {}; const direct = scope[name]; if (direct) return direct; const roleScope = all[roleLineScopeForName(game, name)] || {}; return roleScope[name] || Object.keys(roleScope).map(k => roleScope[k]).find(v => validLineSet(game, v)) || null; }
   function roleLineSetForName(game, roleName, preset) { const all = roleLines(); const scope = all[roleLineScopeForName(game, roleName)] || {}; return scope[normalizePresetName(preset || roleName)] || null; }
   function activeLineSet(game) { return roleLineSet(game) || (lines()[game] || DEFAULT_LINES[game] || {}); }
-  function presetNamesForGame(game) { const scope = roleLines()[roleLineScope(game)] || {}; const names = Object.keys(scope).filter(Boolean); const current = normalizePresetName(companionName()); if (!names.includes(current)) names.unshift(current); return names; }
+  function presetNamesForGame(game) { const scope = roleLines()[roleLineScope(game)] || {}; const names = Object.keys(scope).filter(Boolean).concat(roleNamesForLineStorage()); const current = normalizePresetName(companionName()); if (!names.includes(current)) names.unshift(current); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
   function saveRoleLineSet(game, preset, data) { const all = roleLines(); const scopeKey = roleLineScope(game); if (!all[scopeKey]) all[scopeKey] = {}; all[scopeKey][normalizePresetName(preset)] = data; saveRoleLines(all); }
   function saveRoleLineSetForName(game, roleName, preset, data) { const all = roleLines(); const scopeKey = roleLineScopeForName(game, roleName); if (!all[scopeKey]) all[scopeKey] = {}; all[scopeKey][normalizePresetName(preset || roleName)] = data; saveRoleLines(all); }
   function saveTheaterCache() { saveJSON(STORAGE_THEATERS, theaterCache || {}); }
-  function roleNamesForLineStorage() { const names = [companionName()]; Object.keys(roleLines()).forEach(k => { const name = String(k).split('::')[0]; if (name) names.push(name); }); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
+  function roleNamesForLineStorage() { const names = [companionName()]; worldPresets().forEach(x => { if (x && x.name) names.push(x.name); }); Object.keys(roleLines()).forEach(k => { const name = String(k).split('::')[0]; if (name) names.push(name); }); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
   function validLineSet(game, set) {
     if (!set || typeof set !== 'object' || Array.isArray(set)) return false;
     const keys = Object.keys(DEFAULT_LINES[game] || {});
@@ -337,18 +344,51 @@ export async function initWanbanXiaowu() {
   function saveApiPresets(v) { saveJSON(STORAGE_API_PRESETS, v); }
   function worldPresets() { return loadJSON(STORAGE_WORLD_PRESETS, []); }
   function saveWorldPresets(v) { saveJSON(STORAGE_WORLD_PRESETS, v); }
+  function worldPresetForRole(roleName) {
+    const name = normalizePresetName(roleName || companionName());
+    return worldPresets().find(x => normalizePresetName(x && x.name) === name) || null;
+  }
+  function rolePromptConfig(roleName, baseCfg, extra) {
+    const role = normalizePresetName(roleName || companionName());
+    const pr = worldPresetForRole(role);
+    const cfg = Object.assign({}, baseCfg || settings(), pr || {}, extra || {});
+    if (!cfg.charName || cfg.charName === '{{char}}') cfg.charName = role;
+    return cfg;
+  }
+  function applyRoleToAllGames(roleName) {
+    const role = normalizePresetName(roleName || companionName());
+    Object.keys(GAME_META).forEach(game => setCurrentLinePreset(game, role));
+  }
   function summaries() { return loadJSON(STORAGE_SUMMARIES, []); }
   function saveSummaries(v) { saveJSON(STORAGE_SUMMARIES, v); }
   function summaryReq() { return localStorage.getItem(STORAGE_SUMMARY_REQ) || ''; }
   function saveSummaryReq(v) { try { localStorage.setItem(STORAGE_SUMMARY_REQ, String(v || '')); } catch(e) {} }
   function progress() { return loadJSON(STORAGE_PROGRESS, {}); }
   function gameProgress(game) { const p = progress()[game]; return p && p.savedAt ? p : null; }
+  function currentGameDurationMs() {
+    const active = gameStarted && !gamePaused && gameActiveStartedAt ? Math.max(0, Date.now() - gameActiveStartedAt) : 0;
+    return Math.max(0, (gameAccumulatedMs || 0) + active);
+  }
+  function commitGameActiveDuration(updateStored) {
+    if (gameStarted && !gamePaused && gameActiveStartedAt) {
+      gameAccumulatedMs += Math.max(0, Date.now() - gameActiveStartedAt);
+      gameActiveStartedAt = Date.now();
+    }
+    if (updateStored && currentGame) {
+      const p = progress();
+      if (p[currentGame]) {
+        p[currentGame].durationMs = Math.max(Number(p[currentGame].durationMs || 0), gameAccumulatedMs || 0);
+        saveJSON(STORAGE_PROGRESS, p);
+      }
+    }
+  }
   function saveProgress(game, state) {
     const p = progress();
     const prev = p[game] || {};
     const startedAt = (state && state.startedAt) || prev.startedAt || gameStartAt || Date.now();
     const extra = game === currentGame ? { lineEvents: currentRoundLineEvents.slice(-120) } : {};
-    p[game] = Object.assign({ savedAt: Date.now(), startedAt }, extra, state || {});
+    const durationMs = game === currentGame ? currentGameDurationMs() : (state && state.durationMs) || prev.durationMs || 0;
+    p[game] = Object.assign({ savedAt: Date.now(), startedAt }, extra, state || {}, { durationMs });
     saveJSON(STORAGE_PROGRESS, p);
   }
   function clearProgress(game) { const p = progress(); delete p[game]; saveJSON(STORAGE_PROGRESS, p); }
@@ -443,8 +483,9 @@ export async function initWanbanXiaowu() {
   }
   function inferResult(game, title, scoreText) { const t = String((title || '') + ' ' + (scoreText || '')); const g = GAME_META[game] || {}; if (g.mode === 'double') { if (/你赢|1胜/.test(t) && !/平局/.test(t)) return 'user_win'; if (/TA获胜|失败|0胜/.test(t) && !/平局/.test(t)) return 'ta_win'; if (/平局/.test(t)) return 'draw'; return 'finished'; } const m = t.match(/(\d+)\s*分/); return { outcome: 'score', score: m ? parseInt(m[1], 10) : 0 }; }
   function recordGameResult(game, title, scoreText, explicitResult) {
-    const all = records(); const g = GAME_META[game] || { name: game, mode: 'single' }; const result = explicitResult || inferResult(game, title, scoreText); const started = gameStartAt || Date.now();
-    const item = { id:'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), playedAt: new Date().toLocaleString(), savedAt: Date.now(), durationMs: Math.max(0, Date.now() - started), game: g.name, result, scoreText: displayCharText(scoreText || ''), companion: displayCharName(), log: '' };
+    commitGameActiveDuration(false);
+    const all = records(); const g = GAME_META[game] || { name: game, mode: 'single' }; const result = explicitResult || inferResult(game, title, scoreText);
+    const item = { id:'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), playedAt: new Date().toLocaleString(), savedAt: Date.now(), durationMs: currentGameDurationMs(), game: g.name, result, scoreText: displayCharText(scoreText || ''), companion: displayCharName(), log: '' };
     if (!all[game]) all[game] = []; all[game].unshift(item); all[game] = all[game].slice(0, 100); saveRecords(all); return item;
   }
   function formatDuration(ms) { const sec = Math.max(0, Math.round((ms || 0) / 1000)); const m = Math.floor(sec / 60), s = sec % 60; return (m ? m + '分' : '') + s + '秒'; }
@@ -491,7 +532,7 @@ export async function initWanbanXiaowu() {
   }
   function isRoundCountGame(game) { return ['tictactoe','gomoku','territory','ludo','reversi','bombnumber','connect4d'].includes(game); }
   function recordRoundCount(r) { return String(extractNumber(r?.scoreText || '', /回合数[：:]\s*(\d+)/, 0)); }
-  function recordCompanionDisplay(r) { return settings().companion ? (r.companion || companionName()) : 'TA'; }
+	  function recordCompanionDisplay(r) { return r && r.companion ? r.companion : (settings().companion ? companionName() : 'TA'); }
   function recordTableHeaders(game) {
     if (game === 'territory') return ['时间','用时','胜负','回合数','格子数','陪伴者','日志','操作'];
     if (game === 'reversi') return ['时间','用时','胜负','回合数','格子数','陪伴者','日志','操作'];
@@ -535,15 +576,21 @@ export async function initWanbanXiaowu() {
   function textSegmentsHTML(value) {
     return textSegments(value).map(x => '<p class="wb-text-seg">' + esc(x) + '</p>').join('');
   }
-  function normalizeTheaterItem(item) {
-    if (Array.isArray(item)) return textSegments(item);
-    if (item && typeof item === 'object') {
-      const parts = item.segments || item.paragraphs || item.parts || item.text;
-      return Array.isArray(parts) ? textSegments(parts) : textSegments(parts || JSON.stringify(item));
-    }
-    return textSegments(item);
-  }
-  function updateRecord(game, id, patch) { const all = records(); const arr = all[game] || []; const idx = arr.findIndex(r => r.id === id); if (idx < 0) return null; arr[idx] = Object.assign({}, arr[idx], patch || {}); all[game] = arr; saveRecords(all); return arr[idx]; }
+	  function normalizeTheaterItem(item) {
+	    if (Array.isArray(item)) return textSegments(item);
+	    if (item && typeof item === 'object') {
+	      const parts = item.segments || item.paragraphs || item.parts || item.text;
+	      return Array.isArray(parts) ? textSegments(parts) : textSegments(parts || JSON.stringify(item));
+	    }
+	    return textSegments(item);
+	  }
+	  function normalizeTheaterText(item) { return normalizeTheaterItem(item).join('\n'); }
+	  function recordFavoriteTheaterText(r) {
+	    if (!r || !r.favoriteTheater) return '';
+	    const t = r.favoriteTheater;
+	    return normalizeTheaterText(t.text || t.lines || t);
+	  }
+	  function updateRecord(game, id, patch) { const all = records(); const arr = all[game] || []; const idx = arr.findIndex(r => r.id === id); if (idx < 0) return null; arr[idx] = Object.assign({}, arr[idx], patch || {}); all[game] = arr; saveRecords(all); return arr[idx]; }
   function deleteRecord(game, id) { const all = records(); all[game] = (all[game] || []).filter(r => r.id !== id); saveRecords(all); }
   function recentGameLogs(game, companion) {
     const who = companion || companionName();
@@ -737,11 +784,33 @@ export async function initWanbanXiaowu() {
     const nav = win.navigator || navigator;
     return (win.innerWidth || 800) <= 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(nav.userAgent || '') || (nav.maxTouchPoints || 0) > 1;
   }
-  function themeClass(value) {
-    const t = value || settings().theme || 'day';
-    return ({ day:'wb-day', night:'wb-night', spring:'wb-spring', cyber:'wb-cyber' })[t] || 'wb-day';
-  }
-  function isNightTheme(value) {
+	  function themeClass(value) {
+	    const t = value || settings().theme || 'day';
+	    return ({ day:'wb-day', night:'wb-night', spring:'wb-spring', cyber:'wb-cyber' })[t] || 'wb-day';
+	  }
+	  function customFonts() {
+	    const cfg = settings();
+	    return Array.isArray(cfg.customFonts) ? cfg.customFonts.filter(x => x && x.name && x.url) : [];
+	  }
+	  function selectedFontConfig(cfgOverride) {
+	    const cfg = cfgOverride || settings();
+	    const name = String(cfg.selectedFont || '').trim();
+	    if (!name) return null;
+	    return (Array.isArray(cfg.customFonts) ? cfg.customFonts : []).find(x => x && x.name === name && x.url) || null;
+	  }
+	  function applySelectedFont() {
+	    const doc = getHostDocument();
+	    const old = qs('#' + SCRIPT_ID + '-font-css', doc);
+	    const font = selectedFontConfig();
+	    if (!font) { if (old) old.remove(); return; }
+	    const safeFamily = 'WanbanCustomFont_' + String(font.name).replace(/[^\w-]/g, '_');
+	    const cssText = "@font-face{font-family:'" + safeFamily + "';src:url('" + String(font.url).replace(/['\\]/g, '') + "');font-display:swap;}#" + POPUP_ID + ",.wb-modal-mask{font-family:'" + safeFamily + "','Microsoft YaHei',system-ui,sans-serif!important;}";
+	    const style = old || doc.createElement('style');
+	    style.id = SCRIPT_ID + '-font-css';
+	    style.textContent = cssText;
+	    if (!old) doc.head.appendChild(style);
+	  }
+	  function isNightTheme(value) {
     const t = value || settings().theme || 'day';
     return t === 'night' || t === 'cyber';
   }
@@ -754,10 +823,11 @@ export async function initWanbanXiaowu() {
   }
 
   function modalMaskClass() { return 'wb-modal-mask ' + themeClass(); }
-  function appendModalMask(mask) {
-    const doc = getHostDocument();
-    const win = getHostWindow();
-    const shell = qs('#' + SHELL_ID, doc);
+	  function appendModalMask(mask) {
+	    const doc = getHostDocument();
+	    const win = getHostWindow();
+	    applySelectedFont();
+	    const shell = qs('#' + SHELL_ID, doc);
     const popup = qs('#' + POPUP_ID, doc);
     const mobile = (win.innerWidth || 800) <= 768;
     if (mobile && shell) {
@@ -828,6 +898,7 @@ export async function initWanbanXiaowu() {
   function pauseGameForMessageNotify() {
     if (!gameStarted || !currentGame || gamePaused) return;
     if ((GAME_META[currentGame] || {}).mode === 'double') return;
+    commitGameActiveDuration(true);
     gamePaused = true;
     showGamePauseOverlay();
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
@@ -963,7 +1034,7 @@ export async function initWanbanXiaowu() {
     }, 1200);
   }
 
-  function stopGame() { if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (randomLineTimer) clearInterval(randomLineTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = randomLineTimer = null; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; }
+  function stopGame() { commitGameActiveDuration(true); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (randomLineTimer) clearInterval(randomLineTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = randomLineTimer = null; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
   function showGamePauseOverlay() {
     const box = qs('#wb-gamebox');
     if (!box || qs('#wb-pause-overlay', box)) return;
@@ -1856,8 +1927,9 @@ export async function initWanbanXiaowu() {
       shell.style.setProperty('--wb-vvh', '100dvh');
     }
   }
-  function buildPopup() {
-    injectStyle();
+	  function buildPopup() {
+	    injectStyle();
+	    applySelectedFont();
     const doc = getHostDocument();
     let shell = qs('#' + SHELL_ID, doc);
     if (!shell) {
@@ -1893,10 +1965,11 @@ export async function initWanbanXiaowu() {
     const p = qs('#' + POPUP_ID, doc);
     if (p) p.style.display = 'none';
   }
-  function syncPopupModeClass() {
-    const p = qs('#' + POPUP_ID);
-    if (!p) return;
-    const theme = themeClass();
+	  function syncPopupModeClass() {
+	    const p = qs('#' + POPUP_ID);
+	    if (!p) return;
+	    applySelectedFont();
+	    const theme = themeClass();
     p.className = theme + (currentGame ? ' wb-playing' : '');
   }
   function render() {
@@ -1984,11 +2057,13 @@ export async function initWanbanXiaowu() {
     const injPresets = worldPresets();
     const sums = summaries();
     const apiOptions = '<option value="">— 选择预设载入 —</option>' + apis.map((x,i) => '<option value="' + i + '">' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
-	    const injOptions = '<option value="">— 选择预设载入 —</option>' + injPresets.map((x,i) => '<option value="' + i + '">' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
+	    const activeWorldIndex = injPresets.findIndex(x => normalizePresetName(x && x.name) === normalizePresetName(companionName()));
+		    const injOptions = '<option value="">— 选择角色和世界观 —</option>' + injPresets.map((x,i) => '<option value="' + i + '"' + (i === activeWorldIndex ? ' selected' : '') + '>' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
 	    const sumOptions = '<option value="">— 不注入 —</option>' + sums.map(x => '<option value="' + esc(x.id) + '">' + esc(x.name || '大总结') + '</option>').join('');
-	    const lineRoleOptions = roleNamesForLineStorage().map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
-	    const lineGameOptions = Object.values(GAME_META).map(g => '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>').join('');
-	    const charPreview = currentCharDescription(Object.assign({}, cfg, { injectCharDesc: true }));
+		    const lineRoleOptions = roleNamesForLineStorage().map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
+		    const lineGameOptions = Object.values(GAME_META).map(g => '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>').join('');
+		    const fontOptions = '<option value="">默认字体</option>' + customFonts().map(f => '<option value="' + esc(f.name) + '">' + esc(f.name) + '</option>').join('');
+		    const charPreview = currentCharDescription(Object.assign({}, cfg, { injectCharDesc: true }));
     body.innerHTML = '<div class="wb-settings-grid">'
       + '<div class="wb-panel"><div class="wb-section-title">基础设置</div>'
       + '<label class="wb-switch"><input id="wb-companion-toggle" type="checkbox" ' + (cfg.companion ? 'checked' : '') + '>开启陪伴模式</label>'
@@ -1999,7 +2074,8 @@ export async function initWanbanXiaowu() {
       + '<label class="wb-switch"><input id="wb-remember-window" type="checkbox" ' + (cfg.rememberWindow ? 'checked' : '') + '>保留上一次窗口</label>'
       + '<label class="wb-switch"><input id="wb-message-notify" type="checkbox" ' + (cfg.messageNotify ? 'checked' : '') + '>RP正文完成提醒</label>'
       + '<div class="wb-preset-row"><span class="wb-muted" style="flex:1;">正文标签：&lt;' + esc(cfg.messageNotifyTag || 'content') + '&gt;...&lt;/' + esc(cfg.messageNotifyTag || 'content') + '&gt;</span><button class="wb-btn" id="wb-message-tag-btn">设置正文标签</button></div>'
-      + '<div class="wb-field"><label>美化主题</label><select class="wb-select" id="wb-theme"><option value="day">【日】梦幻掌机</option><option value="spring">【日】春野物语</option><option value="night">【夜】霓虹游戏舱</option><option value="cyber">【夜】赛博街机</option></select></div>'
+	      + '<div class="wb-field"><label>美化主题</label><select class="wb-select" id="wb-theme"><option value="day">【日】梦幻掌机</option><option value="spring">【日】春野物语</option><option value="night">【夜】霓虹游戏舱</option><option value="cyber">【夜】赛博街机</option></select></div>'
+	      + '<div class="wb-field"><label>全局字体</label><div class="wb-preset-row"><select class="wb-select" id="wb-font-select">' + fontOptions + '</select><button class="wb-btn" id="wb-font-edit" type="button">编辑</button></div></div>'
       + '</div>'
       + '<div class="wb-panel"><div class="wb-section-title">API 配置</div>'
       + '<div class="wb-field"><label>API 基础 URL</label><input class="wb-input" type="url" id="wb-api-url" placeholder="https://api.example.com" value="' + esc(cfg.apiUrl) + '"></div>'
@@ -2012,8 +2088,11 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-api-preset">' + apiOptions + '</select><button class="wb-btn" id="wb-load-api-preset">载入</button><button class="wb-btn" id="wb-del-api-preset">删</button></div>'
       + '<div class="wb-preset-save-row"><input class="wb-input" type="text" id="wb-api-preset-name" placeholder="命名并保存当前 API 配置..."><button class="wb-btn" id="wb-save-api-preset">保存</button></div>'
       + '</div>'
-      + '<div class="wb-panel"><div class="wb-section-title">世界观注入</div>'
-      + '<div class="wb-field"><label><input type="checkbox" id="wb-inject-user-desc" ' + (cfg.injectUserDesc !== false ? 'checked' : '') + '> 用户设定描述</label><textarea class="wb-textarea" id="wb-user-persona" placeholder="填写 user 的设定、性格、关系、偏好；留空则尝试读取当前 persona...">' + esc(cfg.userPersona) + '</textarea></div>'
+	      + '<div class="wb-panel"><div class="wb-section-title">世界观注入</div>'
+      + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">选择角色和世界观</div>'
+      + '<div class="wb-preset-row"><select class="wb-select" id="wb-world-preset">' + injOptions + '</select><button class="wb-btn" id="wb-load-world-preset">载入</button><button class="wb-btn" id="wb-restore-world-preset">恢复</button><button class="wb-btn" id="wb-del-world-preset">删</button></div>'
+      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色卡配置</button><button class="wb-btn" id="wb-reset-current-world-default" style="flex:1;">恢复当前角色卡默认</button></div>'
+	      + '<div class="wb-field"><label><input type="checkbox" id="wb-inject-user-desc" ' + (cfg.injectUserDesc !== false ? 'checked' : '') + '> 用户设定描述</label><textarea class="wb-textarea" id="wb-user-persona" placeholder="填写 user 的设定、性格、关系、偏好；留空则尝试读取当前 persona...">' + esc(cfg.userPersona) + '</textarea></div>'
       + '<label class="wb-switch"><input id="wb-inject-char-desc" type="checkbox" ' + (cfg.injectCharDesc !== false ? 'checked' : '') + '>角色描述</label>'
       + '<div class="wb-field"><label>角色描述来源</label><select class="wb-select" id="wb-char-desc-mode"><option value="auto">自动导入当前角色卡</option><option value="manual">手动添加</option></select></div>'
       + '<div class="wb-field"><label>角色姓名（可选）</label><input class="wb-input" id="wb-char-name" placeholder="留空则读取当前角色卡姓名" value="' + esc(cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : '') + '"></div>'
@@ -2029,13 +2108,11 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">导入大总结</div>'
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-summary-select">' + sumOptions + '</select><button class="wb-btn" id="wb-manage-summary">管理/导入</button></div>'
       + '<div class="wb-api-status" id="wb-summary-preview">' + esc(summaryPreview(cfg.summaryId)) + '</div>'
-      + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">注入预设</div>'
-      + '<div class="wb-preset-row"><select class="wb-select" id="wb-world-preset">' + injOptions + '</select><button class="wb-btn" id="wb-load-world-preset">载入</button><button class="wb-btn" id="wb-restore-world-preset">恢复</button><button class="wb-btn" id="wb-del-world-preset">删</button></div>'
-      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-save-world-preset" style="flex:1;">保存为当前角色卡配置</button><button class="wb-btn" id="wb-reset-current-world-default" style="flex:1;">恢复当前角色卡默认</button></div>'
-      + '</div>'
+	      + '</div>'
 	      + '<div class="wb-panel"><div class="wb-section-title">游戏语录设置</div>'
-	      + '<div class="wb-preset-row"><select class="wb-select" id="wb-line-view-role">' + lineRoleOptions + '</select><select class="wb-select" id="wb-line-view-game">' + lineGameOptions + '</select><select class="wb-select" id="wb-line-view-kind"><option value="lines">语录</option><option value="theater">小剧场</option></select></div>'
-	      + '<textarea class="wb-textarea" id="wb-line-view-box" readonly style="min-height:180px;"></textarea>'
+		      + '<details class="wb-line-view-details"><summary class="wb-btn" style="display:block;text-align:center;">查看语录 / 小剧场</summary><div style="display:grid;gap:8px;margin-top:8px;">'
+		      + '<div class="wb-preset-row"><select class="wb-select" id="wb-line-view-role">' + lineRoleOptions + '</select><select class="wb-select" id="wb-line-view-game">' + lineGameOptions + '</select><select class="wb-select" id="wb-line-view-kind"><option value="lines">语录</option><option value="theater">小剧场</option></select></div>'
+		      + '<textarea class="wb-textarea" id="wb-line-view-box" readonly style="min-height:180px;"></textarea></div></details>'
 	      + '<div class="wb-api-status" id="wb-line-generation-status" style="margin-top:10px;">' + esc(lineGenerationStatus) + '</div>'
 	      + '<div class="wb-actions" style="margin-top:10px;"><button class="wb-btn primary" id="wb-batch-lines" style="flex:1;">批量生成角色数据</button><button class="wb-btn" id="wb-batch-debug-settings">调试</button></div>'
 	      + '</div>'
@@ -2044,7 +2121,8 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
 	      + '</div></div>';
-    qs('#wb-theme').value = cfg.theme;
+	    qs('#wb-theme').value = cfg.theme;
+	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
     const charMode = qs('#wb-char-desc-mode'); if (charMode) charMode.value = cfg.charDescMode === 'manual' ? 'manual' : 'auto';
     const manualWrap = qs('#wb-manual-char-wrap'); if (manualWrap) manualWrap.style.display = cfg.charDescMode === 'manual' ? '' : 'none';
     qs('#wb-summary-select').value = cfg.summaryId || '';
@@ -2066,7 +2144,9 @@ export async function initWanbanXiaowu() {
     const rememberWindowToggle = qs('#wb-remember-window'); if (rememberWindowToggle) rememberWindowToggle.onchange = autoSaveBasicSettingsFromUI;
     const messageNotifyToggle = qs('#wb-message-notify'); if (messageNotifyToggle) messageNotifyToggle.onchange = () => { autoSaveBasicSettingsFromUI(); bindMessageNotifyEvents(); };
     const messageTagBtn = qs('#wb-message-tag-btn'); if (messageTagBtn) messageTagBtn.onclick = () => { const next = prompt('正文标签名', settings().messageNotifyTag || 'content'); if (next == null) return; const tag = String(next || '').replace(/[<>/\s]/g, '').trim() || 'content'; setSettings({ messageNotifyTag: tag }); renderSettings(); toast('正文标签已设置为 <' + tag + '>'); };
-    qs('#wb-theme').onchange = autoSaveBasicSettingsFromUI;
+	    qs('#wb-theme').onchange = autoSaveBasicSettingsFromUI;
+	    if (fontSelect) fontSelect.onchange = autoSaveBasicSettingsFromUI;
+	    const fontEdit = qs('#wb-font-edit'); if (fontEdit) fontEdit.onclick = editCustomFontFromUI;
     const avatarInput = qs('#wb-avatar-url'); if (avatarInput) avatarInput.oninput = debounceAutoSaveInjection;
     const saveAvatarBtn = qs('#wb-save-current-avatar'); if (saveAvatarBtn) saveAvatarBtn.onclick = () => { const input = qs('#wb-avatar-url'); const typed = input ? input.value.trim() : ''; if (typed) { autoSaveInjectionSettingsFromUI(); toast('已保存头像 URL，优先使用该头像'); return; } const url = findCurrentCardAvatar(); if (!url) { toast('未读取到当前角色卡头像'); return; } if (input) input.value = url; autoSaveInjectionSettingsFromUI(); toast('已保存当前角色卡头像到世界观注入'); };
     const clearAvatarBtn = qs('#wb-clear-avatar'); if (clearAvatarBtn) clearAvatarBtn.onclick = () => { const input = qs('#wb-avatar-url'); if (input) input.value = ''; autoSaveInjectionSettingsFromUI(); toast('已清除世界观头像'); };
@@ -2102,24 +2182,45 @@ export async function initWanbanXiaowu() {
     qs('#wb-manage-summary').onclick = openSummaryManager;
     qs('#wb-save-world-preset').onclick = saveWorldPresetFromUI;
     qs('#wb-reset-current-world-default').onclick = resetCurrentWorldDefaultFromUI;
+    const worldPresetSelect = qs('#wb-world-preset'); if (worldPresetSelect) worldPresetSelect.onchange = loadWorldPresetFromUI;
     qs('#wb-load-world-preset').onclick = loadWorldPresetFromUI;
     qs('#wb-restore-world-preset').onclick = loadCurrentWorldPresetFromUI;
     qs('#wb-del-world-preset').onclick = deleteWorldPresetFromUI;
   }
 
   let wbAutoSaveTimer = null;
-  function autoSaveBasicSettingsFromUI() {
-    const companion = !!(qs('#wb-companion-toggle') && qs('#wb-companion-toggle').checked);
-    const theme = qs('#wb-theme') ? qs('#wb-theme').value : settings().theme;
-    const rememberWindow = !!(qs('#wb-remember-window') && qs('#wb-remember-window').checked);
-    const messageNotify = !!(qs('#wb-message-notify') && qs('#wb-message-notify').checked);
-    const theaterEnabled = companion && !!(qs('#wb-theater-toggle') && qs('#wb-theater-toggle').checked);
-    const autoLog = companion && !!(qs('#wb-auto-log-toggle') && qs('#wb-auto-log-toggle').checked);
-    const patch = { companion, theme, rememberWindow, messageNotify, theaterEnabled, autoLog };
-    if (rememberWindow) { patch.lastTab = currentTab || 'single'; patch.lastGame = currentGame || ''; }
-    setSettings(patch);
-    syncPopupModeClass();
-  }
+	  function autoSaveBasicSettingsFromUI() {
+	    const companion = !!(qs('#wb-companion-toggle') && qs('#wb-companion-toggle').checked);
+	    const theme = qs('#wb-theme') ? qs('#wb-theme').value : settings().theme;
+	    const selectedFont = qs('#wb-font-select') ? qs('#wb-font-select').value : settings().selectedFont;
+	    const rememberWindow = !!(qs('#wb-remember-window') && qs('#wb-remember-window').checked);
+	    const messageNotify = !!(qs('#wb-message-notify') && qs('#wb-message-notify').checked);
+	    const theaterEnabled = companion && !!(qs('#wb-theater-toggle') && qs('#wb-theater-toggle').checked);
+	    const autoLog = companion && !!(qs('#wb-auto-log-toggle') && qs('#wb-auto-log-toggle').checked);
+	    const patch = { companion, theme, selectedFont, rememberWindow, messageNotify, theaterEnabled, autoLog };
+	    if (rememberWindow) { patch.lastTab = currentTab || 'single'; patch.lastGame = currentGame || ''; }
+	    setSettings(patch);
+	    syncPopupModeClass();
+	    applySelectedFont();
+	  }
+	  function editCustomFontFromUI() {
+	    const cfg = settings();
+	    const current = selectedFontConfig(cfg);
+	    const name = prompt('字体名称', current ? current.name : '');
+	    if (name == null) return;
+	    const cleanName = String(name || '').trim();
+	    if (!cleanName) { toast('请输入字体名称'); return; }
+	    const url = prompt('字体 URL', current ? current.url : '');
+	    if (url == null) return;
+	    const cleanUrl = String(url || '').trim();
+	    if (!cleanUrl) { toast('请输入字体 URL'); return; }
+	    const fonts = customFonts().filter(f => f.name !== cleanName);
+	    fonts.unshift({ name: cleanName, url: cleanUrl });
+	    setSettings({ customFonts: fonts, selectedFont: cleanName });
+	    applySelectedFont();
+	    renderSettings();
+	    toast('字体已保存并应用');
+	  }
   function autoSaveInjectionSettingsFromUI() {
     if (!qs('#wb-inject-user-desc')) return;
     setSettings({
@@ -2563,12 +2664,13 @@ export async function initWanbanXiaowu() {
       toast('已切换世界观/语录预设：' + name);
       return;
     }
-    const name = normalizePresetName(value.replace(/^line::/, ''));
-    const pr = worldPresets().find(x => normalizePresetName(x.name) === name);
-    if (pr) await applyWorldPresetToGame(pr);
-    setCurrentLinePreset(game, name);
-    toast(pr ? ('已切换语录并同步设定：' + name) : ('已切换语录：' + name));
-  }
+	    const name = normalizePresetName(value.replace(/^line::/, ''));
+	    const pr = worldPresets().find(x => normalizePresetName(x.name) === name);
+	    if (pr) await applyWorldPresetToGame(pr);
+	    else { setSettings({ charName: name, charDescriptionSnapshot: '', avatarUrl: '' }); refreshGameCompanionPanel(); }
+	    setCurrentLinePreset(game, name);
+	    toast(pr ? ('已切换语录并同步设定：' + name) : ('已切换语录：' + name));
+	  }
 
   function startContinueCountdown(mask, game, state) {
     const modal = qs('.wb-modal', mask) || mask;
@@ -2607,6 +2709,7 @@ export async function initWanbanXiaowu() {
       if (mask && mask.parentNode) mask.remove();
       if (!gameStarted || !currentGame) return;
       gamePaused = false;
+      gameActiveStartedAt = Date.now();
       hideGamePauseOverlay();
       const btn = qs('#wb-pause'); if (btn) btn.textContent = '暂停';
     };
@@ -2641,9 +2744,9 @@ export async function initWanbanXiaowu() {
     return jobs;
   }
   function theaterPackKey(outcome, special) { return outcome + '__' + (special || 'normal'); }
-  function theaterPackFallback(game, jobs) {
+  function theaterPackFallback(game, jobs, roleName) {
     const out = {};
-    jobs.forEach(([outcome, special]) => { out[theaterPackKey(outcome, special)] = doubleTheaterFallback(game, outcome, special === 'normal' ? '' : special); });
+    jobs.forEach(([outcome, special]) => { out[theaterPackKey(outcome, special)] = doubleTheaterFallback(game, outcome, special === 'normal' ? '' : special, roleName); });
     return out;
   }
   function assertTheaterPackShape(jobs, data) {
@@ -2687,6 +2790,8 @@ export async function initWanbanXiaowu() {
   function wordGuessJsonSkeleton() {
     return '{\n'
       + '  "random": ["碎碎念1", "碎碎念2", "碎碎念3", "碎碎念4", "碎碎念5", "碎碎念6", "碎碎念7", "碎碎念8"],\n'
+      + '  "user_win": ["user赢定语录1", "user赢定语录2", "user赢定语录3", "user赢定语录4", "user赢定语录5", "user赢定语录6", "user赢定语录7", "user赢定语录8"],\n'
+      + '  "user_lose": ["{{char}}赢定语录1", "{{char}}赢定语录2", "{{char}}赢定语录3", "{{char}}赢定语录4", "{{char}}赢定语录5", "{{char}}赢定语录6", "{{char}}赢定语录7", "{{char}}赢定语录8"],\n'
       + '  "word_bank": [\n'
       + '    {\n'
       + '      "word": "答案",\n'
@@ -2759,14 +2864,13 @@ export async function initWanbanXiaowu() {
     const select = qs('#wb-line-preset-select');
     let promptCfg = cfg;
     let preset = currentLinePreset(game);
-    if (select && select.value && select.value.indexOf('world::') === 0) {
-      const pr = worldPresets()[parseInt(select.value.slice(7), 10)];
-      if (pr) { promptCfg = Object.assign({}, cfg, pr); preset = normalizePresetName(pr.name); }
-    } else if (select && select.value) {
-      preset = normalizePresetName(select.value.replace(/^line::/, ''));
-      const pr = worldPresets().find(x => normalizePresetName(x.name) === preset);
-      if (pr) promptCfg = Object.assign({}, cfg, pr);
-    }
+	    if (select && select.value && select.value.indexOf('world::') === 0) {
+	      const pr = worldPresets()[parseInt(select.value.slice(7), 10)];
+	      if (pr) { preset = normalizePresetName(pr.name); promptCfg = rolePromptConfig(preset, cfg, pr); }
+	    } else if (select && select.value) {
+	      preset = normalizePresetName(select.value.replace(/^line::/, ''));
+	      promptCfg = rolePromptConfig(preset, cfg);
+	    }
     return { cfg: promptCfg, preset };
   }
 	  function showLinePromptPreview(game) {
@@ -2858,19 +2962,24 @@ export async function initWanbanXiaowu() {
     if (lineGenerationBusy) { if (lineGenerationKind === 'batch') requestBatchLineGenerationCancel(); else toast('已有角色数据生成任务正在进行'); return; }
     const doc = getHostDocument();
     const old = qs('#wb-batch-lines-mask', doc); if (old) old.remove();
-    const cfg = settings();
-    const games = Object.values(GAME_META).map(g => g.id);
-    const roleOptions = roleNamesForLineStorage();
-    const apis = apiPresets();
-    const apiSelectOptions = '<option value="default">默认：当前API设置</option>' + apis.map((x,i) => '<option value="' + i + '">' + esc(x.name || ('API预设' + (i + 1))) + '</option>').join('');
+	    const cfg = settings();
+	    const games = Object.values(GAME_META).map(g => g.id);
+	    const roleOptions = roleNamesForLineStorage();
+	    const apis = apiPresets();
+	    const apiSelectOptions = '<option value="default">默认：当前API设置</option>' + apis.map((x,i) => '<option value="' + i + '">' + esc(x.name || ('API预设' + (i + 1))) + '</option>').join('');
+	    const savedAttempts = Math.max(1, Math.min(5, parseInt(cfg.batchAttempts, 10) || 1));
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-batch-lines-mask';
     const defaultLineTpl = promptTemplates().lineGeneration || PROMPT_TEMPLATES.lineGeneration || {};
     const defaultLinePromptText = [].concat(defaultLineTpl.header || [], defaultLineTpl.rules || [], defaultLineTpl.output || []).join('\n');
     const defaultTheaterPromptText = (promptTemplates().theater || PROMPT_TEMPLATES.theater).join('\n');
-    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">批量生成角色数据</div><label class="wb-field"><span>角色</span><select class="wb-select" id="wb-batch-role">' + roleOptions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('') + '</select></label><div class="wb-preset-row"><label class="wb-field" style="flex:1;margin:0;"><span>语录 API</span><select class="wb-select" id="wb-batch-lines-api">' + apiSelectOptions + '</select></label><label class="wb-field" style="flex:1;margin:0;"><span>小剧场 API</span><select class="wb-select" id="wb-batch-theater-api">' + apiSelectOptions + '</select></label></div><label class="wb-field"><span>生成次数</span><input class="wb-input" id="wb-batch-attempts" type="number" min="1" max="5" step="1" value="1"><div class="wb-muted">每项数据最多生成的总次数；失败才会继续下一次，成功后停止。</div></label><div class="wb-actions" style="margin-bottom:8px;"><button class="wb-btn" id="wb-batch-all" type="button">全选</button><button class="wb-btn" id="wb-batch-missing" type="button">全选未生成</button><button class="wb-btn" id="wb-batch-clear" type="button">全部取消</button></div><div class="wb-worldbook-list" id="wb-batch-game-list" style="display:grid;grid-template-columns:1fr;max-height:360px;"></div><div class="wb-field" style="margin-top:10px;"><label>语录提示词</label><textarea class="wb-textarea" id="wb-batch-line-prompt" style="min-height:110px;">' + esc(cfg.batchLinePromptOverride || defaultLinePromptText) + '</textarea><button class="wb-btn" id="wb-batch-line-restore" type="button">恢复默认语录提示词</button></div><div class="wb-field"><label>小剧场提示词</label><textarea class="wb-textarea" id="wb-batch-theater-prompt" style="min-height:110px;">' + esc(cfg.batchTheaterPromptOverride || defaultTheaterPromptText) + '</textarea><button class="wb-btn" id="wb-batch-theater-restore" type="button">恢复默认小剧场提示词</button></div><div class="wb-api-status" id="wb-batch-info" style="margin-top:10px;">请选择要生成的数据。</div><div class="wb-actions wb-sticky-actions"><button class="wb-btn primary" id="wb-batch-start" style="flex:1;">生成并覆盖</button><button class="wb-btn" id="wb-batch-cancel">返回</button></div></div>';
-    appendModalMask(mask);
+	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">批量生成角色数据</div><label class="wb-field"><span>角色</span><select class="wb-select" id="wb-batch-role">' + roleOptions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('') + '</select></label><div class="wb-preset-row"><label class="wb-field" style="flex:1;margin:0;"><span>语录 API</span><select class="wb-select" id="wb-batch-lines-api">' + apiSelectOptions + '</select></label><label class="wb-field" style="flex:1;margin:0;"><span>小剧场 API</span><select class="wb-select" id="wb-batch-theater-api">' + apiSelectOptions + '</select></label></div><label class="wb-field"><span>生成次数</span><input class="wb-input" id="wb-batch-attempts" type="number" min="1" max="5" step="1" value="' + savedAttempts + '"><div class="wb-muted">每项数据最多生成的总次数；失败才会继续下一次，成功后停止。</div></label><div class="wb-actions" style="margin-bottom:8px;"><button class="wb-btn" id="wb-batch-all" type="button">全选</button><button class="wb-btn" id="wb-batch-missing" type="button">全选未生成</button><button class="wb-btn" id="wb-batch-clear" type="button">全部取消</button></div><div class="wb-worldbook-list" id="wb-batch-game-list" style="display:grid;grid-template-columns:1fr;max-height:360px;"></div><div class="wb-field" style="margin-top:10px;"><label>语录提示词</label><textarea class="wb-textarea" id="wb-batch-line-prompt" style="min-height:110px;">' + esc(cfg.batchLinePromptOverride || defaultLinePromptText) + '</textarea><button class="wb-btn" id="wb-batch-line-restore" type="button">恢复默认语录提示词</button></div><div class="wb-field"><label>小剧场提示词</label><textarea class="wb-textarea" id="wb-batch-theater-prompt" style="min-height:110px;">' + esc(cfg.batchTheaterPromptOverride || defaultTheaterPromptText) + '</textarea><button class="wb-btn" id="wb-batch-theater-restore" type="button">恢复默认小剧场提示词</button></div><div class="wb-api-status" id="wb-batch-info" style="margin-top:10px;">请选择要生成的数据。</div><div class="wb-actions wb-sticky-actions"><button class="wb-btn primary" id="wb-batch-start" style="flex:1;">生成并覆盖</button><button class="wb-btn" id="wb-batch-cancel">返回</button></div></div>';
+	    appendModalMask(mask);
+	    const linesApiSel = qs('#wb-batch-lines-api', mask);
+	    const theaterApiSel = qs('#wb-batch-theater-api', mask);
+	    if (linesApiSel && Array.from(linesApiSel.options).some(o => o.value === String(cfg.batchLinesApiChoice || 'default'))) linesApiSel.value = String(cfg.batchLinesApiChoice || 'default');
+	    if (theaterApiSel && Array.from(theaterApiSel.options).some(o => o.value === String(cfg.batchTheaterApiChoice || 'default'))) theaterApiSel.value = String(cfg.batchTheaterApiChoice || 'default');
 	    qs('#wb-batch-line-restore', mask).onclick = () => { qs('#wb-batch-line-prompt', mask).value = defaultLinePromptText; setSettings({ batchLinePromptOverride:'' }); };
 	    qs('#wb-batch-theater-restore', mask).onclick = () => { qs('#wb-batch-theater-prompt', mask).value = defaultTheaterPromptText; setSettings({ batchTheaterPromptOverride:'' }); };
 	    const linePromptBox = qs('#wb-batch-line-prompt', mask); if (linePromptBox) linePromptBox.oninput = () => setSettings({ batchLinePromptOverride: linePromptBox.value === defaultLinePromptText ? '' : linePromptBox.value });
@@ -2916,9 +3025,9 @@ export async function initWanbanXiaowu() {
 	    };
 	    qs('#wb-batch-clear', mask).onclick = () => { qsa('.wb-batch-part', mask).forEach(x => x.checked = false); refresh(); };
     qs('#wb-batch-role', mask).onchange = renderGameList;
-    qs('#wb-batch-attempts', mask).oninput = refresh;
-    qs('#wb-batch-lines-api', mask).onchange = refresh;
-    qs('#wb-batch-theater-api', mask).onchange = refresh;
+	    qs('#wb-batch-attempts', mask).oninput = () => { setSettings({ batchAttempts: selectedAttempts() }); refresh(); };
+	    qs('#wb-batch-lines-api', mask).onchange = () => { setSettings({ batchLinesApiChoice: qs('#wb-batch-lines-api', mask).value || 'default' }); refresh(); };
+	    qs('#wb-batch-theater-api', mask).onchange = () => { setSettings({ batchTheaterApiChoice: qs('#wb-batch-theater-api', mask).value || 'default' }); refresh(); };
     renderGameList();
     qs('#wb-batch-cancel', mask).onclick = () => mask.remove();
 	    qs('#wb-batch-start', mask).onclick = async () => {
@@ -2926,7 +3035,7 @@ export async function initWanbanXiaowu() {
 	      if (!pendingBatch) {
 	        const linePromptOverride = qs('#wb-batch-line-prompt', mask)?.value || '';
 	        const theaterPromptOverride = qs('#wb-batch-theater-prompt', mask)?.value || '';
-	        setSettings({ batchLinePromptOverride: linePromptOverride === defaultLinePromptText ? '' : linePromptOverride, batchTheaterPromptOverride: theaterPromptOverride === defaultTheaterPromptText ? '' : theaterPromptOverride });
+		        setSettings({ batchLinePromptOverride: linePromptOverride === defaultLinePromptText ? '' : linePromptOverride, batchTheaterPromptOverride: theaterPromptOverride === defaultTheaterPromptText ? '' : theaterPromptOverride, batchAttempts: selectedAttempts(), batchLinesApiChoice: qs('#wb-batch-lines-api', mask).value || 'default', batchTheaterApiChoice: qs('#wb-batch-theater-api', mask).value || 'default' });
 	        const tasks = selectedTasks();
 	        if (!tasks.length) { toast('请先选择要生成的数据'); return; }
 	        const attempts = selectedAttempts();
@@ -2951,8 +3060,8 @@ export async function initWanbanXiaowu() {
 	      let taskDone = 0;
 	      pendingBatch = null;
 	        const btn = qs('#wb-batch-start', mask); if (btn) { btn.disabled = false; btn.textContent = '中断生成'; }
-	        const preset = normalizePresetName(role);
-	        const basePromptCfg = Object.assign({}, cfg, { charName: role, linePromptOverride, theaterPromptOverride });
+		        const preset = normalizePresetName(role);
+		        const basePromptCfg = rolePromptConfig(role, cfg, { linePromptOverride, theaterPromptOverride });
 	        const setInfo = text => { const info = qs('#wb-batch-info', mask); if (info) info.textContent = text; };
 	        const batchStatus = (label, attempt) => {
 	          const text = '正在批量生成数据：' + Math.min(taskDone + 1, taskTotal) + '/' + taskTotal + '（' + label + '，第' + (attempt + 1) + '/' + attempts + '次）';
@@ -3115,15 +3224,18 @@ export async function initWanbanXiaowu() {
       const dist = Math.max(1, Math.hypot(vx, vy));
       const power = 72 + charge * 230;
       const ratio = power / dist;
+      const ex = player.x + vx * ratio, ey = player.y + vy * ratio;
+      const willMiss = Math.hypot(ex - to.x, ey - standY(to)) > to.r * .72;
+      if (!seen.gameover && willMiss) { seen.gameover = 1; speak('jump', 'gameover'); }
       flight = {
         t: 0,
         sx: player.x,
         sy: player.y,
-        ex: player.x + vx * ratio,
-        ey: player.y + vy * ratio,
+        ex,
+        ey,
         target: to
       };
-      if (!seen.jump) { seen.jump = 1; speak('jump', 'jump'); }
+      if (!willMiss && !seen.jump) { seen.jump = 1; speak('jump', 'jump'); }
       charge = 0;
       save();
     }
@@ -3148,7 +3260,7 @@ export async function initWanbanXiaowu() {
         dead = true;
         clearInterval(jumpTimer);
         jumpTimer = null;
-        speak('jump', 'gameover');
+        if (!seen.gameover) speak('jump', 'gameover');
         showGameOver('jump', '游戏结束', '本局分数：' + score + '分');
       }
     }
@@ -3604,7 +3716,7 @@ export async function initWanbanXiaowu() {
   }
   function resetCurrentWorldDefaultFromUI() {
     const name = normalizePresetName(companionName());
-    showConfirm('恢复当前角色卡默认', '确定将当前世界观注入设置恢复为“' + name + '”的角色卡默认内容吗？已保存的注入预设不会被删除，前置提示词 / 破限词会保留。', () => {
+    showConfirm('恢复当前角色卡默认', '确定将当前世界观注入设置恢复为“' + name + '”的角色卡默认内容吗？已保存的角色和世界观预设不会被删除，前置提示词 / 破限词会保留。', () => {
       const keepBreak = qs('#wb-break-limit-prompt') ? qs('#wb-break-limit-prompt').value.trim() : (settings().breakLimitPrompt || '');
       setSettings({
         injectCharDesc: true,
@@ -3657,8 +3769,9 @@ export async function initWanbanXiaowu() {
       summarySnapshot: pr.summarySnapshot || null,
       selectedWorldEntries: matched
     });
+    applyRoleToAllGames(normalizePresetName(pr.name || qs('#wb-char-name')?.value || companionName()));
     const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(settings());
-    toast('注入预设已按保存快照载入');
+    toast('角色和世界观已按保存快照载入');
   }
   async function loadCurrentWorldPresetFromUI() {
     const name = normalizePresetName(companionName());
@@ -3668,7 +3781,7 @@ export async function initWanbanXiaowu() {
     const sel = qs('#wb-world-preset'); if (sel) sel.value = String(idx);
     await loadWorldPresetFromUI();
   }
-  function deleteWorldPresetFromUI() { const idx=parseInt(qs('#wb-world-preset').value,10); const arr=worldPresets(); if(!arr[idx]) return; showConfirm('删除注入预设','确定删除这个注入预设吗？',()=>{ arr.splice(idx,1); saveWorldPresets(arr); renderSettings(); }); }
+  function deleteWorldPresetFromUI() { const idx=parseInt(qs('#wb-world-preset').value,10); const arr=worldPresets(); if(!arr[idx]) return; showConfirm('删除角色和世界观','确定删除这个角色和世界观预设吗？',()=>{ arr.splice(idx,1); saveWorldPresets(arr); renderSettings(); }); }
 
   function renderGame(id) {
     stopGame();
@@ -3690,7 +3803,7 @@ export async function initWanbanXiaowu() {
     qs('#wb-game-rules').onclick = e => { e.stopPropagation(); showGameRules(id); };
     qs('#wb-game-records').onclick = () => showGameRecords(id);
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.onclick = togglePause;
-    qs('#wb-restart').onclick = () => { gamePaused = true; showGamePauseOverlay(); const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续'; showConfirm('确认重开', '确定要重开当前游戏吗？当前进度会丢失。', () => { clearProgress(id); renderGame(id); }, () => startPauseResumeCountdown()); };
+    qs('#wb-restart').onclick = () => { commitGameActiveDuration(true); gamePaused = true; showGamePauseOverlay(); const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续'; showConfirm('确认重开', '确定要重开当前游戏吗？当前进度会丢失。', () => { clearProgress(id); renderGame(id); }, () => startPauseResumeCountdown()); };
     renderLinePresetSelect(id);
     const presetSelect = qs('#wb-line-preset-select'); if (presetSelect) presetSelect.onchange = () => applyLinePresetSelection(id, presetSelect.value);
     const genBtn = qs('#wb-generate-lines'); if (genBtn) genBtn.onclick = () => openSingleGenerateChoice(id);
@@ -3712,11 +3825,13 @@ export async function initWanbanXiaowu() {
     if (!resumeState) clearProgress(id);
     gameStarted = true;
     gamePaused = false;
+    gameAccumulatedMs = Math.max(0, Number(resumeState?.durationMs || 0));
+    gameActiveStartedAt = Date.now();
     hideGamePauseOverlay();
     currentRoundRecord = false;
     currentRoundLineEvents = Array.isArray(resumeState?.lineEvents) ? resumeState.lineEvents.slice(-120) : [];
     currentRoundTheaterInfo = null;
-    gameStartAt = resumeState ? (resumeState.startedAt || resumeState.savedAt || Date.now()) : Date.now();
+    gameStartAt = Date.now();
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '暂停';
     const coverBtn = qs('#wb-start-cover-btn'); if (coverBtn) coverBtn.style.display = 'none';
     if (randomLineTimer) clearInterval(randomLineTimer);
@@ -3747,6 +3862,7 @@ export async function initWanbanXiaowu() {
   function togglePause() {
     if (!gameStarted) return;
     if (!gamePaused) {
+      commitGameActiveDuration(true);
       gamePaused = true;
       showGamePauseOverlay();
       const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
@@ -3836,7 +3952,7 @@ function showGameRecords(game, page) {
     const rows = arr.slice((page - 1) * pageSize, page * pageSize).map(r => {
       const labels = headers.filter(h => h !== '日志' && h !== '操作');
       const cells = recordDisplayCells(game, r).map((x, i) => '<td data-label="' + esc(labels[i] || '') + '" title="' + esc(x) + '">' + esc(x) + '</td>').join('');
-      const logCell = r.log ? '<button class="wb-btn wb-log-view" data-id="' + esc(r.id) + '">查看</button>' : '<span class="wb-muted">无</span>';
+	      const logCell = (r.log || recordFavoriteTheaterText(r)) ? '<button class="wb-btn wb-log-view" data-id="' + esc(r.id) + '">查看</button>' : '<span class="wb-muted">无</span>';
       return '<tr data-id="' + esc(r.id) + '">' + cells + '<td data-label="日志">' + logCell + '</td><td data-label="操作"><div class="wb-actions"><button class="wb-btn wb-record-del" data-id="' + esc(r.id) + '">删除</button></div></td></tr>';
     }).join('');
     const empty = '<tr><td colspan="' + headers.length + '" style="text-align:center;color:var(--wb-sub);padding:14px;">暂无游戏记录。</td></tr>';
@@ -3846,11 +3962,21 @@ function showGameRecords(game, page) {
     qs('#wb-record-close', mask).onclick = () => mask.remove();
     qs('#wb-record-prev', mask).onclick = () => showGameRecords(game, page - 1);
     qs('#wb-record-next', mask).onclick = () => showGameRecords(game, page + 1);
-    qsa('.wb-log-view', mask).forEach(b => b.onclick = () => { const r = (records()[game] || []).find(x => x.id === b.dataset.id); if (r) showTextModal('游戏日志', r.log || ''); });
-    qsa('.wb-record-del', mask).forEach(b => b.onclick = () => showConfirm('删除游戏记录', '确定删除这条记录吗？', () => { deleteRecord(game, b.dataset.id); showGameRecords(game, page); }));
-  }
+	    qsa('.wb-log-view', mask).forEach(b => b.onclick = () => { const r = (records()[game] || []).find(x => x.id === b.dataset.id); if (r) showRecordLogModal(r); });
+	    qsa('.wb-record-del', mask).forEach(b => b.onclick = () => showConfirm('删除游戏记录', '确定删除这条记录吗？', () => { deleteRecord(game, b.dataset.id); showGameRecords(game, page); }));
+	  }
 
-    function showTextModal(title, text) { const doc = getHostDocument(); const old = qs('#wb-text-mask', doc); if (old) old.remove(); const mask = doc.createElement('div'); mask.className = modalMaskClass(); mask.id = 'wb-text-mask'; mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(title) + '</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + textSegmentsHTML(text || '') + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;"><button class="wb-btn" id="wb-text-close">关闭</button></div></div>'; appendModalMask(mask); qs('#wb-text-close', mask).onclick = () => mask.remove(); }
+	    function showTextModal(title, text) { const doc = getHostDocument(); const old = qs('#wb-text-mask', doc); if (old) old.remove(); const mask = doc.createElement('div'); mask.className = modalMaskClass(); mask.id = 'wb-text-mask'; mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(title) + '</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + textSegmentsHTML(text || '') + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;"><button class="wb-btn" id="wb-text-close">关闭</button></div></div>'; appendModalMask(mask); qs('#wb-text-close', mask).onclick = () => mask.remove(); }
+	  function showRecordLogModal(r) {
+	    const log = (r && r.log) || '无';
+	    const theater = recordFavoriteTheaterText(r);
+	    const title = r && r.favoriteTheater && r.favoriteTheater.title ? r.favoriteTheater.title : '收藏的小剧场';
+	    const body = '<div class="wb-section-title" style="font-size:12px;margin-bottom:6px;">游戏日志</div>' + textSegmentsHTML(log) + (theater ? '<div class="wb-section-title" style="font-size:12px;margin:12px 0 6px;">' + esc(title) + '</div>' + textSegmentsHTML(theater) : '');
+	    const doc = getHostDocument(); const old = qs('#wb-text-mask', doc); if (old) old.remove(); const mask = doc.createElement('div'); mask.className = modalMaskClass(); mask.id = 'wb-text-mask';
+	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">游戏日志</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + body + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;"><button class="wb-btn" id="wb-text-close">关闭</button></div></div>';
+	    appendModalMask(mask);
+	    qs('#wb-text-close', mask).onclick = () => mask.remove();
+	  }
   function showBatchDebugModal(items) {
     const doc = getHostDocument();
     const old = qs('#wb-batch-debug-mask', doc); if (old) old.remove();
@@ -3901,8 +4027,8 @@ function showGameRecords(game, page) {
     qs('#wb-progress-back', mask).onclick = () => { mask.remove(); currentGame = null; saveWindowState(currentTab, ''); syncPopupModeClass(); renderSelect(currentTab); };
   }
 
-  function doubleTheaterFallback(game, outcome, special) {
-    const name = companionName(); const win = outcome === 'user_win'; const draw = outcome === 'draw'; const score = outcome === 'score';
+	  function doubleTheaterFallback(game, outcome, special, roleName) {
+	    const name = normalizePresetName(roleName || companionName()); const win = outcome === 'user_win'; const draw = outcome === 'draw'; const score = outcome === 'score';
     if (score && !special) {
       const lead = '游戏结束的结算停在屏幕上，' + name + '没有急着说话，只是把视线从分数移到你脸上，像是在重新确认你刚才的表现。';
       return [lead + '“很厉害。”她说得不重，却很认真，指尖轻轻点了点屏幕上的数字，像是在替你把这一局收进记忆里。小游戏只是你一个人在操作，她却看得比谁都专注，连你刚才几次差点失误又救回来的瞬间都记得清楚。她靠近一点，声音里带着藏不住的笑意：“这局结束了，但我觉得你还能更高。下一把，我继续看着你。”', lead + name + '看着最后的分数，先是轻轻笑了一声，随后把手搭在你旁边，语气里有一点调侃，也有一点明显的偏袒。“你刚才那几步是真的漂亮，别装作只是随便玩玩。”她没有把这局说成输赢，只把它当成你认真投入后留下的证明。屏幕暗下去时，她还在看你，像是在等你承认自己确实很厉害。', lead + '她把结算画面又看了一遍，像在回味刚才的节奏。“结束了。”她轻声说，随即弯起眼睛，“但是这个成绩不差，甚至有点让我想夸你。”没有对手，没有输赢，只有你刚才一点点把局面撑到最后的样子。她把手柄往你手边推了推，语气放软：“要不要再来一次？我想看看你还能做到什么程度。”'];
@@ -3927,7 +4053,26 @@ function showGameRecords(game, page) {
 	    try { const txt = await callApiText(cfg, prompt, promptTemplates().systems.theater || PROMPT_TEMPLATES.systems.theater); const arr = JSON.parse(txt); if (Array.isArray(arr) && arr.length) return arr.map(normalizeTheaterItem).filter(x => x.length).slice(0,3); } catch(e) { console.warn('[玩伴小屋] theater failed:', e); }
     return fallback;
   }
-  function showTheaterModal(title, lines) { const arr = Array.isArray(lines) && lines.length ? lines : ['']; const text = arr[Math.floor(Math.random() * arr.length)]; showTextModal(title || '角色互动小剧场', normalizeTheaterItem(text)); }
+	  function showTheaterModal(title, lines, meta) {
+	    const arr = Array.isArray(lines) && lines.length ? lines : [''];
+	    const text = normalizeTheaterText(arr[Math.floor(Math.random() * arr.length)]);
+	    const doc = getHostDocument();
+	    const old = qs('#wb-text-mask', doc); if (old) old.remove();
+	    const mask = doc.createElement('div');
+	    mask.className = modalMaskClass();
+	    mask.id = 'wb-text-mask';
+	    const canFavorite = !!(meta && meta.game && meta.recordId);
+	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(title || '角色互动小剧场') + '</div><div class="wb-api-status wb-text-segments" style="max-height:420px;overflow:auto;">' + textSegmentsHTML(text || '') + '</div><div class="wb-actions" style="margin-top:12px;justify-content:flex-end;">' + (canFavorite ? '<button class="wb-btn" id="wb-theater-favorite" title="收藏">♡ 收藏</button>' : '') + '<button class="wb-btn" id="wb-text-close">关闭</button></div></div>';
+	    appendModalMask(mask);
+	    const fav = qs('#wb-theater-favorite', mask);
+	    if (fav) fav.onclick = () => {
+	      updateRecord(meta.game, meta.recordId, { favoriteTheater: { title: title || '角色互动小剧场', text, savedAt: Date.now() } });
+	      fav.textContent = '♥ 已收藏';
+	      fav.disabled = true;
+	      toast('已收藏小剧场到游戏记录');
+	    };
+	    qs('#wb-text-close', mask).onclick = () => mask.remove();
+	  }
   async function generateGameLog(game, recordId) {
     const cfg = settings(); const rec = (records()[game] || []).find(r => r.id === recordId); if (!rec) { toast('未找到游戏记录'); return ''; }
     const fallback = displayCharName() + '轻声回顾了这局' + ((GAME_META[game] || {}).name || '游戏') + '：' + (rec.scoreText || formatRecordResult(rec.result)) + '。短短几分钟像被折进一页日记，她把你的认真和遗憾都记了下来。';
@@ -3963,7 +4108,8 @@ function showGameRecords(game, page) {
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-gameover-mask';
-    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">' + esc(title || '游戏结束') + '</div><div style="margin-bottom:14px;line-height:1.8;"><div>游戏：' + esc(g.name) + '</div><div>' + esc(displayCharText(scoreText || '本局分数：0' + g.unit)) + '</div><div>' + esc(high) + '</div><div>陪伴者：' + esc(displayCharName()) + '</div></div><div class="wb-actions"><button class="wb-btn primary" id="wb-next-round">开启下一把</button><button class="wb-btn" id="wb-generate-log">生成日志</button><button class="wb-btn" id="wb-over-close">留在本局</button></div></div>';
+	    const logAction = settings().companion ? '<button class="wb-btn" id="wb-generate-log">生成日志</button>' : '';
+	    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">' + esc(title || '游戏结束') + '</div><div style="margin-bottom:14px;line-height:1.8;"><div>游戏：' + esc(g.name) + '</div><div>' + esc(displayCharText(scoreText || '本局分数：0' + g.unit)) + '</div><div>' + esc(high) + '</div><div>陪伴者：' + esc(displayCharName()) + '</div></div><div class="wb-actions"><button class="wb-btn primary" id="wb-next-round">开启下一把</button>' + logAction + '<button class="wb-btn" id="wb-over-close">留在本局</button></div></div>';
     appendModalMask(mask);
     const allowDrawTheater = !(outcome === 'draw' && ['gomoku','oldmaid','ludo'].includes(game));
     const shouldShowTheater = !!(settings().companion && settings().theaterEnabled && allowDrawTheater && (special || Math.random() < 0.6));
@@ -3976,10 +4122,10 @@ function showGameRecords(game, page) {
     }
     if (shouldShowTheater) {
       const cachedTheater = theaterCache[theaterCacheKey(game, outcome, special)] || doubleTheaterFallback(game, outcome, special);
-      showTheaterModal(special ? theaterTitleForSpecial(special) : '角色互动小剧场', cachedTheater);
+	      showTheaterModal(special ? theaterTitleForSpecial(special) : '角色互动小剧场', cachedTheater, { game, recordId: rec.id });
     }
-    const logBtnHandler = async () => { const btn = qs('#wb-generate-log', mask); if (!btn) return; btn.disabled = true; btn.textContent = '生成中...'; const log = await generateGameLog(game, rec.id); btn.disabled = false; btn.textContent = '查看日志'; btn.onclick = () => showTextModal('游戏日志', log || ''); };
-    qs('#wb-generate-log', mask).onclick = logBtnHandler;
+    const logBtnHandler = async () => { const btn = qs('#wb-generate-log', mask); if (!btn) return; btn.disabled = true; btn.textContent = '生成中...'; await generateGameLog(game, rec.id); btn.disabled = false; btn.textContent = '查看日志'; btn.onclick = () => { const latest = (records()[game] || []).find(r => r.id === rec.id); if (latest) showRecordLogModal(latest); }; };
+	    const logBtn = qs('#wb-generate-log', mask); if (logBtn) logBtn.onclick = logBtnHandler;
     if (settings().companion && settings().autoLog) setTimeout(logBtnHandler, 80);
     qs('#wb-next-round', mask).onclick = () => { mask.remove(); renderGame(game); startCurrentGame(game); };
     qs('#wb-over-close', mask).onclick = () => mask.remove();
@@ -4020,7 +4166,7 @@ function showGameRecords(game, page) {
   function speak(game, event) {
     const cfg = settings(); if (!cfg.companion) return;
     const set = activeLineSet(game);
-    const arr = set[event] || set.random || (DEFAULT_LINES[game] && (DEFAULT_LINES[game][event] || DEFAULT_LINES[game].random)) || ['我在。'];
+    const arr = set[event] || (DEFAULT_LINES[game] && DEFAULT_LINES[game][event]) || set.random || (DEFAULT_LINES[game] && DEFAULT_LINES[game].random) || ['我在。'];
     const sp = qs('#wb-speech');
     if (sp) {
       sp.textContent = arr[Math.floor(Math.random() * arr.length)].replace(/{{char}}/g, companionName()).replace(/{{user}}/g, cfg.userName);
@@ -4052,7 +4198,7 @@ function showGameRecords(game, page) {
     delete theaterGenerationFailures[failKey];
     const cfg = cfgOverride || settings();
     const jobs = theaterJobsForGame(game);
-    let pack = theaterPackFallback(game, jobs);
+	    let pack = theaterPackFallback(game, jobs, targetRole);
     let apiFailed = '';
     let rawOutput = '';
     const apiDebug = {};
@@ -4090,14 +4236,13 @@ function showGameRecords(game, page) {
     let failed = false;
     try {
       const select = qs('#wb-line-preset-select');
-      if (select && select.value && select.value.indexOf('world::') === 0) {
-        const pr = worldPresets()[parseInt(select.value.slice(7), 10)];
-        if (pr) { promptCfg = Object.assign({}, cfg, pr); preset = normalizePresetName(pr.name); }
-      } else if (select && select.value) {
-        preset = normalizePresetName(select.value.replace(/^line::/, ''));
-        const pr = worldPresets().find(x => normalizePresetName(x.name) === preset);
-        if (pr) promptCfg = Object.assign({}, cfg, pr);
-      }
+	      if (select && select.value && select.value.indexOf('world::') === 0) {
+	        const pr = worldPresets()[parseInt(select.value.slice(7), 10)];
+	        if (pr) { preset = normalizePresetName(pr.name); promptCfg = rolePromptConfig(preset, cfg, pr); }
+	      } else if (select && select.value) {
+	        preset = normalizePresetName(select.value.replace(/^line::/, ''));
+	        promptCfg = rolePromptConfig(preset, cfg);
+	      }
       setCurrentLinePreset(game, preset);
       const total = aiCallCountForGames([game], promptCfg);
       const progress = makeLineGenerationProgress('正在生成' + GAME_META[game].name + '数据', total);
@@ -4131,7 +4276,8 @@ function showGameRecords(game, page) {
     const chatDesc = cfg.injectChat ? '请参考当前最新聊天记录的关系氛围（插件不直接上传聊天全文时按此要求处理）' : '不注入';
     const wbText = selectedWorldText(cfg) || '无';
     const summaryText = selectedSummaryText(cfg) || '无';
-    const recentLogs = recentGameLogs(game, companionName()) || '无';
+    const recentRole = normalizePresetName((cfg && cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : companionName());
+    const recentLogs = recentGameLogs(game, recentRole) || '无';
     const intimacyText = cfg.intimacyMode ? '开启。允许成年角色之间更亲近、更暧昧、更依赖，允许含蓄的NSFW暗示；禁止未成年人相关性内容、强迫、失控或违法内容。' : '关闭。保持自然陪伴和轻松亲近，禁止色情行为和露骨内容。';
 	    const prefix = (cfg.breakLimitPrompt || '').trim();
 	    if (game === 'wordguess') {
@@ -4139,10 +4285,12 @@ function showGameRecords(game, page) {
 	        prefix,
 	        ...(tpl.header || []),
 	        '游戏：' + GAME_META[game].name,
-	        '这是“我说你猜”的题库与每题专属语录生成。除random外，不要输出通用事件键。',
-	        '输出JSON顶层必须且只能包含 word_bank 和 random。禁止输出 start、clue、clue_late、guess、reveal、user_win 等顶层事件键。',
-	        'word_bank 必须是数组，至少7道题。每道题必须完整包含：word、length、type、clues、start_line、wrong_lines、next_lines、win_line、reveal_line。',
-	        'random 必须是数组，写8条“很久没有说话时触发”的碎碎念；用于猜词过程中10秒没有新对话时触发，不绑定具体某一道题。',
+        '这是“我说你猜”的题库、每题专属语录、以及整局常规胜负语录生成。顶层常规事件键只能包含 random、user_win、user_lose。',
+        '输出JSON顶层必须且只能包含 word_bank、random、user_win、user_lose。禁止输出 start、clue、clue_late、guess、reveal 等顶层事件键。',
+        'word_bank 必须是数组，至少7道题。每道题必须完整包含：word、length、type、clues、start_line、wrong_lines、next_lines、win_line、reveal_line。',
+        'random 必须是数组，写8条“很久没有说话时触发”的碎碎念；用于猜词过程中10秒没有新对话时触发，不绑定具体某一道题。',
+        'user_win 必须是数组，写8条user猜中第3题时触发的整局胜利语录；此时{{char}}知道user已经必赢，语气应是认输、惊讶、不服气、佩服或想再来。',
+        'user_lose 必须是数组，写8条user第3次没猜中/揭晓答案时触发的整局失败语录；此时{{char}}知道自己已经必赢、user已经输了，语气可以得意、调侃、安抚或邀战。',
 	        '每题格式必须严格类似：{"word":"答案","length":2,"type":"分类","clues":["描述1","描述2","描述3","描述4","描述5"],"start_line":"本词刚开始时{{char}}说的一句话","wrong_lines":["猜错1","猜错2","猜错3","猜错4","猜错5"],"next_lines":["下一条1","下一条2","下一条3","下一条4"],"win_line":"猜中后{{char}}说的话","reveal_line":"揭晓答案后{{char}}说的话"}。',
 	        'clues 必须正好5条，是给user看的逐步描述；next_lines 必须正好4条，对应第2到第5条描述前/后{{char}}的反应。',
 	        'start_line 是每个词单独的开场语，会在该词刚开始时触发；每个词都必须不同，必须贴合该词和角色语气。',
@@ -4252,12 +4400,15 @@ function showGameRecords(game, page) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('语录返回必须是JSON对象');
     if (game === 'wordguess') {
       const keys = Object.keys(data);
-      const extra = keys.filter(k => !['word_bank','random'].includes(k));
-      if (extra.length) throw new Error('我说你猜只允许顶层 word_bank 和 random，不能包含：' + extra.join(', '));
-      const random = data.random;
-      if (!Array.isArray(random)) throw new Error('我说你猜必须输出 random 数组');
-      const validRandom = random.map(x => String(x || '').trim()).filter(Boolean);
-      if (validRandom.length < 1) throw new Error('random 至少需要1条有效碎碎念');
+      const allowed = ['word_bank','random','user_win','user_lose'];
+      const extra = keys.filter(k => !allowed.includes(k));
+      if (extra.length) throw new Error('我说你猜只允许顶层 word_bank、random、user_win、user_lose，不能包含：' + extra.join(', '));
+      ['random','user_win','user_lose'].forEach(k => {
+        const arr = data[k];
+        if (!Array.isArray(arr)) throw new Error('我说你猜必须输出 ' + k + ' 数组');
+        const valid = arr.map(x => String(x || '').trim()).filter(Boolean);
+        if (valid.length < 1) throw new Error(k + ' 至少需要1条有效短句');
+      });
       if (!Array.isArray(data.word_bank)) throw new Error('我说你猜必须输出 word_bank 数组');
       if (data.word_bank.length < 7) throw new Error('word_bank 至少需要7道题');
       data.word_bank.forEach((item, i) => {
@@ -4401,7 +4552,7 @@ function showGameRecords(game, page) {
     function save(){ saveProgress('game2048', { board, score, seen }); }
     function add(){ const empt=board.map((v,i)=>v?null:i).filter(v=>v!==null); if(empt.length) board[empt[Math.floor(Math.random()*empt.length)]] = Math.random()<.9?2:4; }
     function rows(dir){ const r=[]; for(let y=0;y<4;y++) r.push([0,1,2,3].map(x=>y*4+x)); if(dir==='right') r.forEach(a=>a.reverse()); if(dir==='up'||dir==='down'){ r.length=0; for(let x=0;x<4;x++) r.push([0,1,2,3].map(y=>y*4+x)); if(dir==='down') r.forEach(a=>a.reverse()); } return r; }
-    function move(dir){ if (gamePaused) return; const old=board.join(','); rows(dir).forEach(idx=>{ let vals=idx.map(i=>board[i]).filter(Boolean); for(let i=0;i<vals.length-1;i++) if(vals[i]===vals[i+1]){ vals[i]*=2; score+=vals[i]; vals.splice(i+1,1); } while(vals.length<4) vals.push(0); idx.forEach((p,i)=>board[p]=vals[i]); }); if(board.join(',')!==old){ if(!seen.move){ seen.move=1; speak('game2048','move'); } add(); if(!seen.stuck && board.filter(Boolean).length>=13){ seen.stuck=1; speak('game2048','stuck'); } draw(); save(); } if(!board.includes(0) && !canMove()) { speak('game2048','gameover'); showGameOver('game2048', '游戏结束', '本局分数：' + score + '分', null, { maxTile: Math.max(...board) }); } }
+    function move(dir){ if (gamePaused) return; const old=board.join(','); rows(dir).forEach(idx=>{ let vals=idx.map(i=>board[i]).filter(Boolean); for(let i=0;i<vals.length-1;i++) if(vals[i]===vals[i+1]){ vals[i]*=2; score+=vals[i]; vals.splice(i+1,1); } while(vals.length<4) vals.push(0); idx.forEach((p,i)=>board[p]=vals[i]); }); if(board.join(',')!==old){ if(!seen.move){ seen.move=1; speak('game2048','move'); } add(); if(!seen.stuck && board.filter(Boolean).length>=13){ seen.stuck=1; speak('game2048','stuck'); } if(!seen.gameover && !board.includes(0)){ seen.gameover=1; speak('game2048','gameover'); } draw(); save(); } if(!board.includes(0) && !canMove()) { if(!seen.gameover){ seen.gameover=1; speak('game2048','gameover'); save(); } showGameOver('game2048', '游戏结束', '本局分数：' + score + '分', null, { maxTile: Math.max(...board) }); } }
     function canMove(){ return rows('left').some(idx=>idx.some((p,i)=>i<3 && board[p]===board[idx[i+1]])) || rows('up').some(idx=>idx.some((p,i)=>i<3 && board[p]===board[idx[i+1]])); }
     function draw(){ setScore('game2048', score); const grid=qs('#wb-2048'); grid.innerHTML=board.map(v=>'<div class="wb-tile" style="background:' + tileColor(v) + ';font-size:' + (v>999?22:28) + 'px">' + (v||'') + '</div>').join(''); [64,128,256,512,1024,2048,4096].forEach(v=>{ if(board.includes(v)&&!seen[v]){ seen[v]=1; speak('game2048','tile_'+v); } }); }
     function tileColor(v){ return ({0:'#cdc0b6',2:'#eee4da',4:'#ead8c7',8:'#efb07e',16:'#ec9368',32:'#e87865',64:'#e95f51',128:'#e4c16d',256:'#dfb954',512:'#d7ac3f',1024:'#cfa02f',2048:'#9ccbbb',4096:'#8f7ad8'})[v] || '#40342f'; }
@@ -4439,7 +4590,34 @@ function showGameRecords(game, page) {
     function done(m){ const rounds=b.filter(Boolean).length; if(winG(b,n,m)){ over=true; if(m==='B'){ { const curScore = scores().gomoku; setScore('gomoku', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('gomoku','user_win'); showGameOver('gomoku', '你赢了', '回合数：' + rounds, 'user_win'); } else { speak('gomoku','user_lose'); showGameOver('gomoku', '游戏结束', '回合数：' + rounds + '（失败）', 'ta_win'); } return true; } if(b.every(Boolean)){ over=true; speak('gomoku','draw'); showGameOver('gomoku', '平局', '回合数：' + rounds + '（平局）', 'draw'); return true; } return false; }
     function draw(){ qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':''); }); }
   }
-  function bestGomoku(b,n){ const empty=b.map((v,i)=>v?'':i).filter(v=>v!==''); let best=-1, bestScore=-1; for(const i of empty){ let score=lineScore(b,n,i,'W')*1.1 + lineScore(b,n,i,'B'); if(score>bestScore){ bestScore=score; best=i; } } if(bestScore>=80) speak('gomoku','ai_block'); return best; }
+  function bestGomoku(b,n){ const empty=b.map((v,i)=>v?'':i).filter(v=>v!==''); if(empty.length===n*n){ const c=Math.floor(n/2); return c*n+c; } const win=empty.find(i=>gomokuMoveWins(b,n,i,'W')); if(win!=null) return win; const block=empty.find(i=>gomokuMoveWins(b,n,i,'B')); if(block!=null){ speak('gomoku','ai_block'); return block; } let best=-1, bestScore=-1; for(const i of empty){ let score=gomokuMoveScore(b,n,i,'W')*1.12 + gomokuMoveScore(b,n,i,'B')*.96 + gomokuCenterScore(n,i); if(score>bestScore){ bestScore=score; best=i; } } if(bestScore>=180) speak('gomoku','ai_block'); return best; }
+  function gomokuMoveWins(b,n,i,m){ b[i]=m; const ok=winG(b,n,m); b[i]=''; return ok; }
+  function gomokuCenterScore(n,i){ const x=i%n,y=Math.floor(i/n), c=(n-1)/2; return Math.max(0, 18 - (Math.abs(x-c)+Math.abs(y-c))*2); }
+  function gomokuMoveScore(b,n,i,m){
+    const x=i%n,y=Math.floor(i/n), dirs=[[1,0],[0,1],[1,1],[1,-1]];
+    let total=0, openThrees=0, fours=0;
+    for(const [dx,dy] of dirs){
+      let count=1, open=0, gapBoost=0;
+      for(const s of [-1,1]){
+        let nx=x+dx*s, ny=y+dy*s;
+        while(nx>=0&&ny>=0&&nx<n&&ny<n&&b[ny*n+nx]===m){ count++; nx+=dx*s; ny+=dy*s; }
+        if(nx>=0&&ny>=0&&nx<n&&ny<n&&!b[ny*n+nx]){
+          open++;
+          const gx=nx+dx*s, gy=ny+dy*s;
+          if(gx>=0&&gy>=0&&gx<n&&gy<n&&b[gy*n+gx]===m) gapBoost++;
+        }
+      }
+      if(count>=4){ fours++; total += open ? 9000 : 2600; }
+      else if(count===3&&open===2){ openThrees++; total += 1250; }
+      else if(count===3&&open===1) total += 320;
+      else if(count===2&&open===2) total += 110;
+      else total += Math.pow(5,count) + open*8;
+      total += gapBoost * 80;
+    }
+    if(fours>=2) total += 12000;
+    if(openThrees>=2) total += 3600;
+    return total;
+  }
   function gomokuPattern(b,n,i,m){ const x=i%n,y=Math.floor(i/n), dirs=[[1,0],[0,1],[1,1],[1,-1]]; let best=''; for(const [dx,dy] of dirs){ let count=1, open=0; for(const s of [-1,1]){ let nx=x+dx*s, ny=y+dy*s; while(nx>=0&&ny>=0&&nx<n&&ny<n&&b[ny*n+nx]===m){ count++; nx+=dx*s; ny+=dy*s; } if(nx>=0&&ny>=0&&nx<n&&ny<n&&!b[ny*n+nx]) open++; } if(count>=4&&open===2) return 'user_open_four'; if(count>=4&&open===1) best=best||'user_blocked_four'; else if(count===3&&open===2) best=best||'user_open_three'; } return best; }
   function lineScore(b,n,i,m){ const x=i%n,y=Math.floor(i/n), dirs=[[1,0],[0,1],[1,1],[1,-1]]; let total=0; for(const [dx,dy] of dirs){ let c=1; for(const s of [-1,1]){ let nx=x+dx*s, ny=y+dy*s; while(nx>=0&&ny>=0&&nx<n&&ny<n&&b[ny*n+nx]===m){ c++; nx+=dx*s; ny+=dy*s; } } total += Math.pow(5,c); } return total; }
   function winG(b,n,m){ for(let y=0;y<n;y++) for(let x=0;x<n;x++) if(b[y*n+x]===m) for(const [dx,dy] of [[1,0],[0,1],[1,1],[1,-1]]){ let c=0; for(let k=0;k<5;k++){ const nx=x+dx*k, ny=y+dy*k; if(nx>=0&&ny>=0&&nx<n&&ny<n&&b[ny*n+nx]===m) c++; } if(c===5) return true; } return false; }
@@ -4531,6 +4709,10 @@ function showGameRecords(game, page) {
       if(!seen.charDouble && afterTa > afterUser * 2 && afterUser > 0){ seen.charDouble=1; speak('reversi','char_double'); }
       if(!seen.userDouble && afterUser > afterTa * 2 && afterTa > 0){ seen.userDouble=1; speak('reversi','user_double'); }
       if([0,7,56,63].includes(i)) speak('reversi','corner');
+      if(!seen.endLine && board.filter(x=>!x).length===1){
+        seen.endLine=1;
+        speak('reversi', afterUser>afterTa ? 'user_win' : (afterTa>afterUser ? 'user_lose' : 'draw'));
+      }
       const other=side==='user'?'ta':'user';
       if(legal(other).length){ turn=other; } else if(legal(side).length){ turn=side; } else return done();
       draw(); save(); if(turn==='ta') setTimeout(ai,700); return true;
@@ -4574,7 +4756,7 @@ function showGameRecords(game, page) {
       });
     }
     function ai(){ if(over||gamePaused||turn!=='ta') return; const moves=legal('ta'); if(!moves.length){ turn='user'; draw(); save(); return; } moves.sort((a,b)=>moveScore(b)-moveScore(a)); if(isCorner(moves[0])) speak('reversi','corner'); place('ta', moves[0]); }
-    function done(){ over=true; clearProgress('reversi'); const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length, rounds=Math.max(0,u+t-4); const res=u>t?'user_win':(t>u?'ta_win':'draw'); if(res==='user_win'){ const cur=scores().reversi; setScore('reversi',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); } else if(res==='ta_win') addTaWin('reversi'); showGameOver('reversi',res==='user_win'?'你赢了':(res==='draw'?'平局':'游戏结束'),'你'+u+'格 / '+displayCharName()+t+'格，回合数：'+rounds,res,{userScore:u,taScore:t,comeback:!!seen.comeback}); return true; }
+    function done(){ over=true; clearProgress('reversi'); const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length, rounds=Math.max(0,u+t-4); const res=u>t?'user_win':(t>u?'ta_win':'draw'); if(!seen.endLine) speak('reversi', res==='ta_win' ? 'user_lose' : res); if(res==='user_win'){ const cur=scores().reversi; setScore('reversi',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); } else if(res==='ta_win') addTaWin('reversi'); showGameOver('reversi',res==='user_win'?'你赢了':(res==='draw'?'平局':'游戏结束'),'你'+u+'格 / '+displayCharName()+t+'格，回合数：'+rounds,res,{userScore:u,taScore:t,comeback:!!seen.comeback}); return true; }
     function draw(){ const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length; qs('#wb-score').textContent='本局：你'+u+' / '+displayCharName()+t; qs('#wb-reversi-info').textContent=(turn==='user'?'你的回合':displayCharName()+'思考中')+' · 你'+u+' / '+displayCharName()+t; const leg=new Set(legal('user')); qs('#wb-reversi-board').innerHTML=board.map((v,i)=>'<button class="wb-reversi-cell '+v+(leg.has(i)&&turn==='user'?' legal':'')+'" data-i="'+i+'">'+(v?'<span></span>':'')+'</button>').join(''); qsa('.wb-reversi-cell',box).forEach(b=>b.onclick=()=>{ if(turn==='user'&&!busy) place('user',+b.dataset.i); }); }
   }
 
@@ -4622,7 +4804,7 @@ function showGameRecords(game, page) {
     function save(){ if(!over) saveProgress('connect4d',{grid,turn,taMoves,nextCharLineAt}); }
     function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('connect4d','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); } }
     function winner(side){ for(let y=0;y<S;y++) for(let x=0;x<S;x++) if(grid[id(x,y)]===side){ for(const d of dirs){ let ok=true; for(let k=1;k<4;k++){ const nx=x+d[0]*k,ny=y+d[1]*k; if(!inside(nx,ny)||grid[id(nx,ny)]!==side){ ok=false; break; } } if(ok) return true; } } return false; }
-    function place(side,x,aimPct){ const y=landingRow(x); if(y<0||over||gamePaused||dropping) return; aimCol=-1; dropping={x,y,side,t:0,aimX:aimPct}; if(side==='ta') maybeCharNext(); animateDrop(()=>{ grid[id(x,y)]=side; dropping=null; const rounds=grid.filter(Boolean).length; if(winner(side)){ over=true; clearProgress('connect4d'); const res=side==='user'?'user_win':'ta_win'; if(res==='user_win'){ const cur=scores().connect4d; setScore('connect4d',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('connect4d','user_win'); } else { addTaWin('connect4d'); speak('connect4d','user_lose'); } showGameOver('connect4d',res==='user_win'?'你赢了':'游戏结束','本局：'+(res==='user_win'?'你连成四子':displayCharName()+'连成四子')+'，回合数：'+rounds,res); return; } if(!legal().length){ over=true; clearProgress('connect4d'); showGameOver('connect4d','平局','棋盘填满，回合数：'+rounds,'draw'); return; } turn=side==='user'?'ta':'user'; draw(); save(); if(turn==='ta') setTimeout(ai,700); }); }
+    function place(side,x,aimPct){ const y=landingRow(x); if(y<0||over||gamePaused||dropping) return; aimCol=-1; dropping={x,y,side,t:0,aimX:aimPct}; if(side==='ta') maybeCharNext(); animateDrop(()=>{ grid[id(x,y)]=side; dropping=null; const rounds=grid.filter(Boolean).length; if(winner(side)){ over=true; clearProgress('connect4d'); const res=side==='user'?'user_win':'ta_win'; if(res==='user_win'){ const cur=scores().connect4d; setScore('connect4d',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('connect4d','user_win'); } else { addTaWin('connect4d'); speak('connect4d','user_lose'); } showGameOver('connect4d',res==='user_win'?'你赢了':'游戏结束','本局：'+(res==='user_win'?'你连成四子':displayCharName()+'连成四子')+'，回合数：'+rounds,res); return; } if(!legal().length){ over=true; clearProgress('connect4d'); speak('connect4d','draw'); showGameOver('connect4d','平局','棋盘填满，回合数：'+rounds,'draw'); return; } turn=side==='user'?'ta':'user'; draw(); save(); if(turn==='ta') setTimeout(ai,700); }); }
     function animateDrop(done){ let n=0; const step=()=>{ n++; if(dropping) dropping.t=n/16; draw(); if(n<16) setTimeout(step,24); else done(); }; step(); }
     function supportedEmpty(x,y){ return inside(x,y) && !grid[id(x,y)] && landingRow(x) === y; }
     function lineScore(side,x,y){
@@ -4735,15 +4917,15 @@ function showGameRecords(game, page) {
     const box = qs('#wb-gamebox');
     const icons = Array.from({ length: 8 }, (_, i) => 'memory-' + (i + 1));
     let cards = Array.isArray(state?.cards) && state.cards.length === 16 && /^memory-\d+$/.test(String(state.cards[0]?.v || '')) ? state.cards : shuffleArray(icons.concat(icons).map((v,i)=>({ v, id:i, open:false, done:false })));
-    let open = Array.isArray(state?.open) ? state.open : [], moves = state?.moves || 0, matched = state?.matched || 0, combo = state?.combo || 0, busy = false, over = false;
+    let open = Array.isArray(state?.open) ? state.open : [], moves = state?.moves || 0, matched = state?.matched || 0, combo = state?.combo || 0, busy = false, over = false, seen = state?.seen || {};
     box.innerHTML = '<div class="wb-guess-panel wb-memory-panel"><div class="wb-guess-row"><span class="wb-pill" id="wb-memory-moves">步数：0</span><span class="wb-pill" id="wb-memory-pairs">配对：0/8</span></div><div class="wb-memory" id="wb-memory-board"></div></div>';
     draw(); save();
     function score(){ return Math.max(0, 1200 - moves * 25 + matched * 80); }
-    function save(){ if(!over) saveProgress('memory', { cards, open, moves, matched, combo }); }
+    function save(){ if(!over) saveProgress('memory', { cards, open, moves, matched, combo, seen }); }
     function memoryCardFace(c){ return '<img class="wb-memory-img" src="' + esc(GAME_ICON_BASE + c.v + '.jpg') + '" alt="">'; }
     function memoryCardHTML(c,i){ return '<button class="wb-memory-card' + (c.open?' open':'') + (c.done?' done':'') + '" data-i="'+i+'"><span class="wb-memory-inner"><span class="wb-memory-face wb-memory-back"></span><span class="wb-memory-face wb-memory-front">' + memoryCardFace(c) + '</span></span></button>'; }
     function draw(){ const board = qs('#wb-memory-board'); if (!board) return; qs('#wb-memory-moves').textContent = '步数：' + moves; qs('#wb-memory-pairs').textContent = '配对：' + matched + '/8'; setScore('memory', score()); board.innerHTML = cards.map(memoryCardHTML).join(''); qsa('.wb-memory-card', board).forEach(btn => btn.onclick = () => flip(+btn.dataset.i)); }
-    function flip(i){ if(gamePaused||busy||over||cards[i].done||cards[i].open||open.length>=2) return; if(moves===0&&open.length===0) speak('memory','first_flip'); cards[i].open = true; open.push(i); draw(); if(open.length===2){ moves++; const a=cards[open[0]], b=cards[open[1]]; if(a.v===b.v){ a.done=b.done=true; matched++; combo++; open=[]; speak('memory', combo>=2?'combo':'match'); if(matched===4) speak('memory','half'); if(matched===8){ over=true; clearProgress('memory'); setScore('memory', score()); saveMemoryBestMoves(moves); speak('memory','gameover'); showGameOver('memory','配对完成','本局分数：'+score()+'分'); return; } draw(); save(); } else { combo=0; speak('memory','miss'); busy=true; setTimeout(()=>{ cards[open[0]].open=false; cards[open[1]].open=false; open=[]; busy=false; draw(); save(); }, 650); } } else save(); }
+    function flip(i){ if(gamePaused||busy||over||cards[i].done||cards[i].open||open.length>=2) return; if(moves===0&&open.length===0) speak('memory','first_flip'); cards[i].open = true; open.push(i); draw(); if(open.length===2){ moves++; const a=cards[open[0]], b=cards[open[1]]; if(a.v===b.v){ a.done=b.done=true; matched++; combo++; open=[]; speak('memory', combo>=2?'combo':'match'); if(matched===4) speak('memory','half'); if(matched===7&&!seen.gameover){ seen.gameover=1; speak('memory','gameover'); } if(matched===8){ over=true; clearProgress('memory'); setScore('memory', score()); saveMemoryBestMoves(moves); if(!seen.gameover) speak('memory','gameover'); showGameOver('memory','配对完成','本局分数：'+score()+'分'); return; } draw(); save(); } else { combo=0; speak('memory','miss'); busy=true; setTimeout(()=>{ cards[open[0]].open=false; cards[open[1]].open=false; open=[]; busy=false; draw(); save(); }, 650); } } else save(); }
   }
 
   function startPlank(state) {
@@ -4761,9 +4943,9 @@ function showGameRecords(game, page) {
     function loadPlankHero(src){ const img = new Image(); img.onload = draw; img.src = src; return img; }
     function save(){ if(!over) saveProgress('plank', { score, bridge: phase === 'ready' || charging ? bridge : 0, gap, rightW, nextGap, nextW, seen, perfectStreak, bestPerfectStreak }); }
     function startCharge(){ if(gamePaused||over||charging||phase!=='ready') return; charging=true; bridge=0; }
-    function endCharge(){ if(!charging||gamePaused||over) return; charging=false; phase='falling'; angle=0; }
+    function endCharge(){ if(!charging||gamePaused||over) return; charging=false; if(!seen.gameover && (bridge < gap || bridge > gap + rightW)){ seen.gameover=1; speak('plank','gameover'); } phase='falling'; angle=0; }
     function nextPillar(){ score++; setScore('plank', score); if(score===10) speak('plank','score_10'); if(score===20) speak('plank','score_20'); if(score===30) speak('plank','score_30'); if(score===40) speak('plank','score_40'); if(score>=50&&score%10===0) speak('plank','score_50_plus'); if(Math.abs(bridge-gap-rightW/2)<10){ perfectStreak++; bestPerfectStreak=Math.max(bestPerfectStreak, perfectStreak); speak('plank','perfect'); if(perfectStreak>=3 && !seen.perfectStreak){ seen.perfectStreak=1; speak('plank','perfect_streak'); } } else perfectStreak=0; gap=nextGap; rightW=nextW; nextGap=rand(80,190); nextW=rand(55,95); bridge=0; angle=0; walk=0; drop=0; scroll=0; phase='ready'; save(); }
-    function fail(){ const miss = failMode === 'short' ? gap - bridge : (failMode === 'long' ? bridge - (gap + rightW) : 0); over=true; clearInterval(jumpTimer); jumpTimer=null; speak('plank','gameover'); showGameOver('plank','游戏结束','本局分数：'+score+'分', null, { perfectStreak: bestPerfectStreak, nearMiss: miss > 0 && miss <= 10, farMiss: miss >= 58 }); }
+    function fail(){ const miss = failMode === 'short' ? gap - bridge : (failMode === 'long' ? bridge - (gap + rightW) : 0); over=true; clearInterval(jumpTimer); jumpTimer=null; if(!seen.gameover) speak('plank','gameover'); showGameOver('plank','游戏结束','本局分数：'+score+'分', null, { perfectStreak: bestPerfectStreak, nearMiss: miss > 0 && miss <= 10, farMiss: miss >= 58 }); }
     function loop(){
       if(gamePaused||over) { draw(); return; }
       if(charging) bridge=Math.min(302, bridge+3.45);
@@ -4980,6 +5162,7 @@ function showGameRecords(game, page) {
     function row(i){ return Math.floor(i/9); } function col(i){ return i%9; }
     function completeLine(kind, n){ for(let i=0;i<9;i++){ const idx=kind==='r'?n*9+i:i*9+n; if(grid[idx]!==solution[idx]) return false; } return true; }
     function solutionErrors(){ return grid.reduce((sum, v, i) => sum + (v && v !== solution[i] ? 1 : 0), 0); }
+    function maybeSudokuGameoverLine(blanks, errors){ if(!seen.gameover && (blanks===1 || errors===1)){ seen.gameover=1; speak('sudoku','gameover'); } }
     function hasRuleConflict(i){
       const v = grid[i]; if(!v) return false;
       const r = row(i), c = col(i), br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
@@ -5010,10 +5193,10 @@ function showGameRecords(game, page) {
       }).join('');
       qsa('[data-sudoku-cell]', board).forEach(b=>b.onclick=()=>{ selected=+b.dataset.i; draw(); save(); });
     }
-    function input(n){ if(gamePaused||over||selected<0||puzzle[selected]) return; if(!seen.first){ seen.first=1; speak('sudoku','first_fill'); } grid[selected]=n; if(hasRuleConflict(selected)) speak('sudoku','conflict'); if(completeLine('r',row(selected))&&!seen['r'+row(selected)]){ seen['r'+row(selected)]=1; speak('sudoku','row_done'); } if(completeLine('c',col(selected))&&!seen['c'+col(selected)]){ seen['c'+col(selected)]=1; speak('sudoku','col_done'); } const blanks=grid.filter(v=>!v).length; if(blanks<=5&&!seen.near){ seen.near=1; speak('sudoku','nearly_done'); } const errors=solutionErrors(); draw(); save(); if(blanks===0 && errors===0) done(); else if(blanks===0){ speak('sudoku','complete_error'); toast('已填满，当前错误 ' + errors + ' 格，可以继续修改'); } }
-    function erase(){ if(selected<0||puzzle[selected]) return; grid[selected]=0; speak('sudoku','erase'); draw(); save(); }
-    function hint(){ let i = selected>=0 && !puzzle[selected] && grid[selected]!==solution[selected] ? selected : -1; if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && v && v!==solution[k]); if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && !v); if(i<0) return; hints++; selected=i; grid[i]=solution[i]; puzzle[i]=solution[i]; speak('sudoku', hints>5?'many_hints':'hint'); draw(); save(); if(grid.every(Boolean) && solutionErrors()===0) done(); }
-    function done(){ const duration = Date.now() - (gameStartAt || Date.now()), oldBest = sudokuBestDuration(); if(oldBest && duration < oldBest) currentRoundRecord = true; over=true; clearProgress('sudoku'); speak('sudoku','gameover'); showGameOver('sudoku','数独完成','求助'+hints+'次', null, { hints }); }
+    function input(n){ if(gamePaused||over||selected<0||puzzle[selected]) return; if(!seen.first){ seen.first=1; speak('sudoku','first_fill'); } grid[selected]=n; if(hasRuleConflict(selected)) speak('sudoku','conflict'); if(completeLine('r',row(selected))&&!seen['r'+row(selected)]){ seen['r'+row(selected)]=1; speak('sudoku','row_done'); } if(completeLine('c',col(selected))&&!seen['c'+col(selected)]){ seen['c'+col(selected)]=1; speak('sudoku','col_done'); } const blanks=grid.filter(v=>!v).length; if(blanks<=5&&!seen.near){ seen.near=1; speak('sudoku','nearly_done'); } const errors=solutionErrors(); maybeSudokuGameoverLine(blanks, errors); draw(); save(); if(blanks===0 && errors===0) done(); else if(blanks===0){ speak('sudoku','complete_error'); toast('已填满，当前错误 ' + errors + ' 格，可以继续修改'); } }
+    function erase(){ if(selected<0||puzzle[selected]) return; grid[selected]=0; speak('sudoku','erase'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(); }
+    function hint(){ let i = selected>=0 && !puzzle[selected] && grid[selected]!==solution[selected] ? selected : -1; if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && v && v!==solution[k]); if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && !v); if(i<0) return; hints++; selected=i; grid[i]=solution[i]; puzzle[i]=solution[i]; speak('sudoku', hints>5?'many_hints':'hint'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(); if(grid.every(Boolean) && solutionErrors()===0) done(); }
+    function done(){ const duration = currentGameDurationMs(), oldBest = sudokuBestDuration(); if(oldBest && duration < oldBest) currentRoundRecord = true; over=true; clearProgress('sudoku'); if(!seen.gameover) speak('sudoku','gameover'); showGameOver('sudoku','数独完成','求助'+hints+'次', null, { hints }); }
     qs('#wb-sudoku-erase', box).onclick=erase; qs('#wb-sudoku-hint', box).onclick=hint; qsa('.wb-sudoku-nums .wb-btn', box).forEach(b=>b.onclick=()=>input(+b.dataset.n));
     getHostDocument().onkeydown=e=>{ if(/^[1-9]$/.test(e.key)) input(+e.key); if(e.key==='Backspace'||e.key==='Delete') erase(); };
     function parseSudoku(str){ return String(str).replace(/\./g,'0').split('').map(x=>parseInt(x,10)||0); }
@@ -5063,7 +5246,7 @@ function showGameRecords(game, page) {
     function step(){ if(gamePaused||over) { draw(); return; } balls.forEach(b=>{ const f=fruits[b.l]; b.vy+=0.45; b.x+=b.vx; b.y+=b.vy; b.a=(b.a||0)+(b.av||0); b.av=(b.av||0)*0.985; if(b.x<f.r){ b.x=f.r; b.vx=Math.abs(b.vx)*0.58; b.av += b.vx / f.r * 0.08; } if(b.x>W-f.r){ b.x=W-f.r; b.vx=-Math.abs(b.vx)*0.58; b.av += b.vx / f.r * 0.08; } if(b.y>H-f.r){ b.y=H-f.r; b.vy*=-0.38; b.av += b.vx / f.r * 0.16; b.vx*=0.985; b.av*=0.94; if(Math.abs(b.vy)<.45) b.vy=0; } });
       for(let k=0;k<4;k++) collide();
       balls = balls.filter(Boolean); draw(); save();
-      if(balls.some(b=>b.y-fruits[b.l].r<36 && Math.abs(b.vy)<.25) && balls.length>8){ over=true; clearInterval(watermelonTimer); speak('watermelon','gameover'); showGameOver('watermelon','游戏结束','本局分数：'+score+'分', null, { finalWatermelons: balls.filter(b=>b && b.l===fruits.length-1).length }); }
+      if(balls.some(b=>b.y-fruits[b.l].r<36 && Math.abs(b.vy)<.25) && balls.length>8){ over=true; clearInterval(watermelonTimer); if(!seen.gameover){ seen.gameover=1; speak('watermelon','gameover'); } showGameOver('watermelon','游戏结束','本局分数：'+score+'分', null, { finalWatermelons: balls.filter(b=>b && b.l===fruits.length-1).length }); }
     }
     function collide(){ for(let i=0;i<balls.length;i++) for(let j=i+1;j<balls.length;j++){ const a=balls[i], b=balls[j]; if(!a||!b) continue; const fa=fruits[a.l], fb=fruits[b.l], dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1, min=fa.r+fb.r; if(d<min){ if(a.l===b.l && a.l<fruits.length-1){ const nl=a.l+1; score += (nl+1)*20; setScore('watermelon', score); const nx=(a.x+b.x)/2, ny=(a.y+b.y)/2; balls[i]={x:nx,y:ny,vx:(a.vx+b.vx)*.32,vy:-3.2,l:nl,a:((a.a||0)+(b.a||0))/2,av:((a.av||0)+(b.av||0))* .22}; balls[j]=null; if(nl>=4&&!seen[nl]){ seen[nl]=1; speak('watermelon', nl>=8?'watermelon':('merge_'+(nl>=7?7:nl>=6?6:4))); } else if(nl===2&&!seen.merge_2){ seen.merge_2=1; speak('watermelon','merge_2'); } continue; } const push=(min-d)/2, nx=dx/d, ny=dy/d; a.x-=nx*push; a.y-=ny*push; b.x+=nx*push; b.y+=ny*push; const rvx=b.vx-a.vx, rvy=b.vy-a.vy, sep=rvx*nx+rvy*ny, tangent=rvx*(-ny)+rvy*nx; a.av=(a.av||0)-tangent/fa.r*.035; b.av=(b.av||0)+tangent/fb.r*.035; if(sep<0){ const imp=-sep*.62; a.vx-=imp*nx; a.vy-=imp*ny; b.vx+=imp*nx; b.vy+=imp*ny; } } } }
     function shade(hex, amt){ const n=parseInt(String(hex).slice(1),16); const r=Math.max(0,Math.min(255,(n>>16)+amt)), g=Math.max(0,Math.min(255,((n>>8)&255)+amt)), b=Math.max(0,Math.min(255,(n&255)+amt)); return 'rgb('+r+','+g+','+b+')'; }
@@ -5274,7 +5457,7 @@ function showGameRecords(game, page) {
       ctx.restore();
     }
     function drawAim(){ if(!aiming || aimX == null || dropping || gamePaused || over) return; const f=fruits[next], x=Math.max(f.r, Math.min(W-f.r, aimX)), y=f.r+6; ctx.save(); ctx.setLineDash([5,5]); ctx.strokeStyle='rgba(58,143,145,.62)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x,36); ctx.lineTo(x,H-4); ctx.stroke(); ctx.setLineDash([]); ctx.restore(); drawFruit(x,y,next,.58,1); }
-    function draw(){ const night=isNightTheme(); const pal=canvasThemePalette(); ctx.clearRect(0,0,W,H); const bg=ctx.createLinearGradient(0,0,0,H); bg.addColorStop(0,pal.top); bg.addColorStop(1,pal.bottom); ctx.fillStyle=bg; ctx.fillRect(0,0,W,H); ctx.fillStyle=pal.pattern; for(let y=54;y<H;y+=42) for(let x=(y/42)%2?26:10;x<W;x+=52){ ctx.beginPath(); ctx.arc(x,y,2.2,0,Math.PI*2); ctx.fill(); } ctx.strokeStyle=pal.border; ctx.lineWidth=3; ctx.strokeRect(1.5,1.5,W-3,H-3); ctx.setLineDash([6,6]); ctx.strokeStyle=night?pal.grid:'rgba(216,75,66,.38)'; ctx.beginPath(); ctx.moveTo(0,36); ctx.lineTo(W,36); ctx.stroke(); ctx.setLineDash([]); ctx.font='12px Georgia, serif'; ctx.fillStyle=pal.text; ctx.fillText('下一颗', 12, 22); drawFruit(W-34,22,next,1,.62,0); balls.forEach(b=>{ if(!b) return; drawFruit(b.x,b.y,b.l,1,1,b.a||0); }); drawAim(); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; if(!over && !seen.near_top && balls.some(b=>b.y-fruits[b.l].r<72 && Math.abs(b.vy)<.35)){ seen.near_top=1; speak('watermelon','near_top'); } }
+    function draw(){ const night=isNightTheme(); const pal=canvasThemePalette(); ctx.clearRect(0,0,W,H); const bg=ctx.createLinearGradient(0,0,0,H); bg.addColorStop(0,pal.top); bg.addColorStop(1,pal.bottom); ctx.fillStyle=bg; ctx.fillRect(0,0,W,H); ctx.fillStyle=pal.pattern; for(let y=54;y<H;y+=42) for(let x=(y/42)%2?26:10;x<W;x+=52){ ctx.beginPath(); ctx.arc(x,y,2.2,0,Math.PI*2); ctx.fill(); } ctx.strokeStyle=pal.border; ctx.lineWidth=3; ctx.strokeRect(1.5,1.5,W-3,H-3); ctx.setLineDash([6,6]); ctx.strokeStyle=night?pal.grid:'rgba(216,75,66,.38)'; ctx.beginPath(); ctx.moveTo(0,36); ctx.lineTo(W,36); ctx.stroke(); ctx.setLineDash([]); ctx.font='12px Georgia, serif'; ctx.fillStyle=pal.text; ctx.fillText('下一颗', 12, 22); drawFruit(W-34,22,next,1,.62,0); balls.forEach(b=>{ if(!b) return; drawFruit(b.x,b.y,b.l,1,1,b.a||0); }); drawAim(); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; if(!over && !seen.near_top && balls.some(b=>b.y-fruits[b.l].r<72 && Math.abs(b.vy)<.35)){ seen.near_top=1; speak('watermelon','near_top'); } if(!over && !seen.gameover && balls.some(b=>b.y-fruits[b.l].r<50 && Math.abs(b.vy)<.3) && balls.length>8){ seen.gameover=1; speak('watermelon','gameover'); } }
   }
 
   function startLudo(state) {
@@ -5334,15 +5517,15 @@ function showGameRecords(game, page) {
     function moveRed(i){
       const moves=legal(red,dice);
       if(turn!=='red'||!rolled||!moves.includes(i)) return;
-      if(gamePaused){ gamePaused=false; hideGamePauseOverlay(); }
+      if(gamePaused){ gamePaused=false; gameActiveStartedAt = Date.now(); hideGamePauseOverlay(); }
       if(busy && !diceRolling) busy=false;
       if(busy) return;
       const wasHome=Number(red[i])<0;
       red[i]=nextPos(red[i],dice);
-      if(wasHome) speak('ludo','takeoff');
+      if(wasHome) speak('ludo','user_takeoff');
       afterMove('red');
     }
-    function robot(){ if(over||gamePaused) return; animateDice('blue', 900, value=>{ turnCount++; rolled=true; busy=true; draw(); setTimeout(()=>{ const moves=legal(blue,value); if(moves.length){ const i=chooseRobot(moves); const wasHome=blue[i]<0; blue[i]=nextPos(blue[i],value); if(wasHome) speak('ludo','takeoff'); afterMove('blue'); } else endTurn(); },450); }); }
+    function robot(){ if(over||gamePaused) return; animateDice('blue', 900, value=>{ turnCount++; rolled=true; busy=true; draw(); setTimeout(()=>{ const moves=legal(blue,value); if(moves.length){ const i=chooseRobot(moves); const wasHome=blue[i]<0; blue[i]=nextPos(blue[i],value); if(wasHome) speak('ludo','char_takeoff'); afterMove('blue'); } else endTurn(); },450); }); }
     function globalPos(side,pos){ return pos>=0 && pos<40 ? (offset[side] + pos) % 40 : -1; }
     function chooseRobot(moves){ let best=moves[0], val=-999; moves.forEach(i=>{ const p=nextPos(blue[i],dice); let s=p; const gp=globalPos('blue',p); if(gp>=0 && red.some(r=>globalPos('red',r)===gp)) s+=60; if(p>=FINAL_POS) s+=200; if(blue[i]<0) s+=20; if(s>val){ val=s; best=i; } }); return best; }
     function sideArr(side){ return side === 'red' ? red : blue; }
@@ -5405,7 +5588,7 @@ function showGameRecords(game, page) {
 		    let round = rounds[0];
 	    round = normalizeWordRound(round) || round;
 	    let over=false;
-    let userWins = state?.userWins || 0, taWins = state?.taWins || 0, completed = state?.completed || 0, firstClueWin = !!state?.firstClueWin;
+    let userWins = state?.userWins || 0, taWins = state?.taWins || 0, completed = state?.completed || 0, firstClueWin = !!state?.firstClueWin, finalLineSpoken = !!state?.finalLineSpoken;
 	    function finishGame(){ over=true; clearProgress('wordguess'); const userWon=userWins > (roundLimit - userWins); showGameOver('wordguess', userWon?'你赢了':'游戏结束', '本局：你猜中'+userWins+'题，共'+roundLimit+'题', userWon?'user_win':'ta_win', { firstClueWin, allCorrect: userWins >= roundLimit, userWins, completed: roundLimit }); }
 	    if (!round || completed >= roundLimit) { finishGame(); return; }
 	    let clueIndex = state?.clueIndex || 0, guesses = (state?.roundWord === round.word && Array.isArray(state?.guesses)) ? state.guesses : [], revealed=!!state?.revealed;
@@ -5413,7 +5596,7 @@ function showGameRecords(game, page) {
 	    draw(); save();
 	    if (!state?.roundWord) speakText(round.interactions.start);
 	    qs('#wb-word-submit').onclick=submit; qs('#wb-word-next').onclick=nextClue; qs('#wb-word-reveal').onclick=reveal; qs('#wb-word-input').onkeydown=e=>{ if(e.key==='Enter') submit(); };
-	    function save(){ if(!over) saveProgress('wordguess',{ rounds, roundWord:round.word, clueIndex, guesses, userWins, taWins, completed, revealed, firstClueWin }); }
+	    function save(){ if(!over) saveProgress('wordguess',{ rounds, roundWord:round.word, clueIndex, guesses, userWins, taWins, completed, revealed, firstClueWin, finalLineSpoken }); }
 	    function visibleClues(){ return round.clues.slice(0, Math.max(1, Math.min(5, clueIndex+1))); }
 		    function nextClue(){ if(gamePaused||over) return; if(clueIndex < Math.min(5, round.clues.length)-1){ clueIndex++; const inter=round.interactions||{}; const nextLines=Array.isArray(inter.clue)?inter.clue:[]; speakText(nextLines[clueIndex-1] || inter[clueIndex>=3?'clue_late':'clue']); draw(); save(); } else toast('这题已经是最后一条描述了'); }
 	    function finishQuestion(userWon, label){
@@ -5423,6 +5606,7 @@ function showGameRecords(game, page) {
 	      const inter=round.interactions||{};
 	      guesses.unshift({ guess:label, ok:!!userWon, text:userWon ? (inter.win || ('答案是：' + round.word + '。' + displayCharName() + '眼睛一亮：“猜中了，就是它。”')) : (inter.reveal || ('答案是：' + round.word + '。' + displayCharName() + '把答案轻轻念出来，这一题先收好。')) });
 	      speakText(guesses[0].text);
+      if(!finalLineSpoken && (userWins >= 3 || taWins >= 3)){ finalLineSpoken = true; speak('wordguess', userWins >= 3 ? 'user_win' : 'user_lose'); }
       draw(); save();
       showWordNextModal(userWon, guesses[0].text);
     }
