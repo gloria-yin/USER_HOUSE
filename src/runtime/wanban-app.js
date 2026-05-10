@@ -178,6 +178,7 @@ export async function initWanbanXiaowu() {
     breakLimitPrompt: '',
     summaryId: '',
     selectedWorldEntries: [],
+    selectedWorldPresetName: '',
     charName: '{{char}}',
     userName: '{{user}}',
     rememberWindow: false,
@@ -293,6 +294,7 @@ export async function initWanbanXiaowu() {
   function roleLineScopeForName(game, name) { return String(name || companionName()).trim() + '::' + game; }
   function roleLineScope(game) { return roleLineScopeForName(game, companionName()); }
   function currentLinePreset(game) { const sel = linePresetSelection(); return normalizePresetName(sel[roleLineScope(game)] || companionName()); }
+  function activeGameRoleName(game) { const id = game || currentGame; return id && GAME_META[id] ? normalizePresetName(currentLinePreset(id)) : companionName(); }
   function setCurrentLinePreset(game, name) { const sel = linePresetSelection(); sel[roleLineScope(game)] = normalizePresetName(name); saveLinePresetSelection(sel); }
   function roleLineSet(game, preset) { const all = roleLines(); const name = normalizePresetName(preset || currentLinePreset(game)); const scope = all[roleLineScope(game)] || {}; const direct = scope[name]; if (direct) return direct; const roleScope = all[roleLineScopeForName(game, name)] || {}; return roleScope[name] || Object.keys(roleScope).map(k => roleScope[k]).find(v => validLineSet(game, v)) || null; }
   function roleLineSetForName(game, roleName, preset) { const all = roleLines(); const scope = all[roleLineScopeForName(game, roleName)] || {}; return scope[normalizePresetName(preset || roleName)] || null; }
@@ -432,8 +434,15 @@ export async function initWanbanXiaowu() {
   function records() { const all = loadJSON(STORAGE_RECORDS, {}); let changed = false; Object.keys(all || {}).forEach(game => { (all[game] || []).forEach((r, i) => { if (!r.id) { r.id = 'rec_legacy_' + game + '_' + (r.savedAt || Date.now()) + '_' + i; changed = true; } if (r.log == null) { r.log = ''; changed = true; } }); }); if (changed) saveJSON(STORAGE_RECORDS, all); return all || {}; }
   function saveRecords(v) { saveJSON(STORAGE_RECORDS, v); }
   function companionName() { const cfg = settings(); const ctx = getHostContext(); const char = ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null); const charData = char?.data || char || {}; return (cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}'); }
-  function displayCharName() { return settings().companion ? companionName() : 'TA'; }
-  function displayCharText(text) { return String(text || '').replace(/{{char}}/g, displayCharName()).replace(new RegExp(companionName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), displayCharName()); }
+  function displayCharNameForGame(game) { return settings().companion ? activeGameRoleName(game) : 'TA'; }
+  function displayCharName() { return displayCharNameForGame(currentGame); }
+  function displayCharTextForGame(text, game) {
+    const name = displayCharNameForGame(game);
+    let out = String(text || '').replace(/{{char}}/g, name);
+    [companionName(), activeGameRoleName(game)].filter(Boolean).forEach(n => { out = out.replace(new RegExp(String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), name); });
+    return out;
+  }
+  function displayCharText(text) { return displayCharTextForGame(text, currentGame); }
   function roleGameStats(game, roleName) {
     const who = roleName || companionName();
     const arr = (records()[game] || []).filter(r => (r.companion || '') === who);
@@ -493,7 +502,7 @@ export async function initWanbanXiaowu() {
   function recordGameResult(game, title, scoreText, explicitResult) {
     commitGameActiveDuration(false);
     const all = records(); const g = GAME_META[game] || { name: game, mode: 'single' }; const result = explicitResult || inferResult(game, title, scoreText);
-    const item = { id:'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), playedAt: new Date().toLocaleString(), savedAt: Date.now(), durationMs: currentGameDurationMs(), game: g.name, result, scoreText: displayCharText(scoreText || ''), companion: displayCharName(), log: '' };
+    const item = { id:'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), playedAt: new Date().toLocaleString(), savedAt: Date.now(), durationMs: currentGameDurationMs(), game: g.name, result, scoreText: displayCharTextForGame(scoreText || '', game), companion: displayCharNameForGame(game), log: '' };
     if (!all[game]) all[game] = []; all[game].unshift(item); all[game] = all[game].slice(0, 100); saveRecords(all); return item;
   }
   function formatDuration(ms) { const sec = Math.max(0, Math.round((ms || 0) / 1000)); const m = Math.floor(sec / 60), s = sec % 60; return (m ? m + '分' : '') + s + '秒'; }
@@ -567,13 +576,14 @@ export async function initWanbanXiaowu() {
     const headers = recordTableHeaders(game).filter(h => h !== '日志' && h !== '操作');
     return headers.map((h, i) => h + '：' + (cells[i] || '')).join('，');
   }
-  function gameLogFieldRules(game) {
-    if (game === 'territory' || game === 'reversi') return '字段说明：胜负是user的胜负；回合数表示本局双方行动总数；格子数只表示user占领的格子数，不包含' + displayCharName() + '的格子。';
+  function gameLogFieldRules(game, roleName) {
+    const role = roleName || displayCharNameForGame(game);
+    if (game === 'territory' || game === 'reversi') return '字段说明：胜负是user的胜负；回合数表示本局双方行动总数；格子数只表示user占领的格子数，不包含' + role + '的格子。';
     if (isRoundCountGame(game)) return '字段说明：胜负是user的胜负；回合数表示本局双方行动总数。';
     if (game === 'guessnumber') return '字段说明：胜负是user的胜负；猜几次只表示user猜了几次。';
     if (game === 'sudoku') return '字段说明：求助次数只表示user本局点击提示/修改的次数。';
     if (game === 'wordguess') return '字段说明：猜中题数只表示user猜中的题数。';
-    if ((GAME_META[game] || {}).mode === 'double') return '字段说明：胜负是user的胜负，胜表示user赢，负表示' + displayCharName() + '赢。';
+    if ((GAME_META[game] || {}).mode === 'double') return '字段说明：胜负是user的胜负，胜表示user赢，负表示' + role + '赢。';
     return '字段说明：结果是user本局获得的分数。';
   }
   function textSegments(value) {
@@ -675,8 +685,9 @@ export async function initWanbanXiaowu() {
     return n;
   }
   function parseScoreNumber(text) { const m = String(text || '').match(/(\d+)\s*分/); return m ? parseInt(m[1], 10) : 0; }
-  function gameTheaterConditionRules(game) {
+  function gameTheaterConditionRules(game, roleName) {
     const g = GAME_META[game] || {};
+    const role = roleName || displayCharNameForGame(game);
     if (g.mode !== 'double') {
       if (game === 'plank') return [
         'record：刷新当前游戏历史记录。',
@@ -690,7 +701,7 @@ export async function initWanbanXiaowu() {
       if (game === 'sudoku') return [
         'record：刷新当前游戏最短完成时长记录。',
         'super_good：超厉害小剧场。求助少于5次，并且5分钟内完成。',
-        'scholar：谁是学霸小剧场。数独里' + displayCharName() + '帮助你超过5次，表现user一直找TA求助的情感。',
+        'scholar：谁是学霸小剧场。数独里' + role + '帮助你超过5次，表现user一直找TA求助的情感。',
         'independent：超独立小剧场。数独一次求助都没有就完成。',
         'long_run：单局持续20分钟以上。',
         '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
@@ -698,7 +709,7 @@ export async function initWanbanXiaowu() {
       return [
         'record：刷新当前游戏历史记录。',
         'super_good：超级厉害小剧场。2048合成4096以上；俄罗斯方块消除10行以上；合成大西瓜合成2个最终西瓜；贪吃蛇达到200分以上。',
-        'scholar：谁是学霸小剧场。数独里' + displayCharName() + '帮助你超过5次，表现user一直找TA求助的情感。',
+        'scholar：谁是学霸小剧场。数独里' + role + '帮助你超过5次，表现user一直找TA求助的情感。',
         'independent：超独立小剧场。数独一次求助都没有就完成。',
         'super_bad：超级菜小剧场。15秒以内失败，并且分数很低：俄罗斯方块低于200分、贪吃蛇低于30分、跳一跳低于3分、合成大西瓜低于120分、2048低于128分。',
         'long_run：单局持续20分钟以上。',
@@ -709,39 +720,39 @@ export async function initWanbanXiaowu() {
       'bad_luck：数字炸弹超倒霉小剧场。user在还有80个以上可选数字时点中炸弹失败。',
       'bomb_lucky：数字炸弹超幸运小剧场。user一次缩小50个以上数字且没有爆炸。',
       'fated：数字炸弹命中注定小剧场。user最后剩1个数字没得选。',
-      'rage：数字炸弹气急败坏小剧场。' + displayCharName() + '最后剩1个数字没得选。'
+      'rage：数字炸弹气急败坏小剧场。' + role + '最后剩1个数字没得选。'
     ].join('\n');
     if (game === 'reversi') return [
       'win_streak3：user在同一角色同一游戏连续赢三场。',
-      'lose_streak3：' + displayCharName() + '在同一角色同一游戏连续赢三场。',
+      'lose_streak3：' + role + '在同一角色同一游戏连续赢三场。',
       'reversi_user_sweep：完胜小剧场。user占据棋盘55个以上的棋子并获胜。',
-      'reversi_char_sweep：完败小剧场。' + displayCharName() + '占据棋盘55个以上的棋子并获胜。',
-      'reversi_close_win：险胜小剧场。user的棋子不超过2个胜过' + displayCharName() + '。',
-      'reversi_close_lose：险败小剧场。' + displayCharName() + '的棋子不超过2个胜过user，可以带一点小侥幸。',
-      'reversi_comeback：逆转小剧场。user从远远少于' + displayCharName() + '（user棋子是' + displayCharName() + '一半以下）到一次突然翻转超过7个并最终获胜。'
+      'reversi_char_sweep：完败小剧场。' + role + '占据棋盘55个以上的棋子并获胜。',
+      'reversi_close_win：险胜小剧场。user的棋子不超过2个胜过' + role + '。',
+      'reversi_close_lose：险败小剧场。' + role + '的棋子不超过2个胜过user，可以带一点小侥幸。',
+      'reversi_comeback：逆转小剧场。user从远远少于' + role + '（user棋子是' + role + '一半以下）到一次突然翻转超过7个并最终获胜。'
     ].join('\n');
     if (game === 'connect4d') return [
       'win_streak3：user在同一角色同一游戏连续赢三场。',
-      'lose_streak3：' + displayCharName() + '在同一角色同一游戏连续赢三场。',
+      'lose_streak3：' + role + '在同一角色同一游戏连续赢三场。',
       'balanced：势均力敌小剧场。棋盘填满但是平局。'
     ].join('\n');
     return [
       'win_streak3：user在同一角色同一游戏连续赢三场。',
-      'lose_streak3：' + displayCharName() + '在同一角色同一游戏连续赢三场。',
+      'lose_streak3：' + role + '在同一角色同一游戏连续赢三场。',
       'lucky：运气超好。猜数字5次内猜中；飞行棋连续摇到2次6并获胜；我说你猜第一条直接猜中；抽鬼牌user3回合内获胜。',
-      'stomp：实力悬殊。双人飞行棋' + displayCharName() + '获胜且user一个飞机都没回去；围地盘' + displayCharName() + '比user多10格以上；抽鬼牌' + displayCharName() + '3回合内获胜。',
-      'close_lose：惜败。user差一点输给' + displayCharName() + '，包括井字棋最后一步输、围地盘差2格以内、飞行棋' + displayCharName() + '赢时user也只差一个棋子。',
-      'close_win：险胜。user惊险获胜，包括井字棋最后一步赢、围地盘差2格以内、飞行棋user赢时' + displayCharName() + '也只差一个棋子。',
+      'stomp：实力悬殊。双人飞行棋' + role + '获胜且user一个飞机都没回去；围地盘' + role + '比user多10格以上；抽鬼牌' + role + '3回合内获胜。',
+      'close_lose：惜败。user差一点输给' + role + '，包括井字棋最后一步输、围地盘差2格以内、飞行棋' + role + '赢时user也只差一个棋子。',
+      'close_win：险胜。user惊险获胜，包括井字棋最后一步赢、围地盘差2格以内、飞行棋user赢时' + role + '也只差一个棋子。',
       'soulmate：我说你猜5道全部猜中。'
       ,'bad_luck：数字炸弹超倒霉小剧场。user在还有80个以上可选数字时点中炸弹失败。'
       ,'bomb_lucky：数字炸弹超幸运小剧场。user一次缩小50个以上数字且没有爆炸。'
       ,'fated：数字炸弹命中注定小剧场。user最后剩1个数字没得选。'
-      ,'rage：数字炸弹气急败坏小剧场。' + displayCharName() + '最后剩1个数字没得选。'
+      ,'rage：数字炸弹气急败坏小剧场。' + role + '最后剩1个数字没得选。'
     ].join('\n');
   }
-  function theaterConditionForSpecial(game, special) {
+  function theaterConditionForSpecial(game, special, roleName) {
     if (!special) return '普通小剧场：未命中特殊小剧场条件。';
-    const rules = gameTheaterConditionRules(game).split('\n');
+    const rules = gameTheaterConditionRules(game, roleName).split('\n');
     return rules.find(x => x.indexOf(special + '：') === 0) || (theaterTitleForSpecial(special) + '：命中该特殊小剧场条件。');
   }
   function singleSpecialTheater(game, scoreText, meta, durationMs) {
@@ -2232,8 +2243,11 @@ export async function initWanbanXiaowu() {
     const injPresets = worldPresets();
     const sums = summaries();
     const apiOptions = '<option value="">— 选择预设载入 —</option>' + apis.map((x,i) => '<option value="' + i + '">' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
-	    const activeWorldIndex = injPresets.findIndex(x => normalizePresetName(x && x.name) === normalizePresetName(companionName()));
-		    const injOptions = '<option value="">— 当前角色 —</option>' + injPresets.map((x,i) => '<option value="' + i + '"' + (i === activeWorldIndex ? ' selected' : '') + '>' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
+	    const savedWorldNameRaw = String(cfg.selectedWorldPresetName || '').trim();
+	    const savedWorldName = savedWorldNameRaw ? normalizePresetName(savedWorldNameRaw) : '';
+	    let activeWorldIndex = savedWorldName ? injPresets.findIndex(x => normalizePresetName(x && x.name) === savedWorldName) : -1;
+	    if (activeWorldIndex < 0) activeWorldIndex = injPresets.findIndex(x => normalizePresetName(x && x.name) === normalizePresetName(companionName()));
+		    const injOptions = '<option value=""' + (activeWorldIndex < 0 ? ' selected' : '') + '>— 当前角色 —</option>' + injPresets.map((x,i) => '<option value="' + i + '"' + (i === activeWorldIndex ? ' selected' : '') + '>' + esc(x.name || ('预设' + (i + 1))) + '</option>').join('');
 	    const sumOptions = '<option value="">— 不注入 —</option>' + sums.map(x => '<option value="' + esc(x.id) + '">' + esc(x.name || '大总结') + '</option>').join('');
 		    const lineRoleOptions = roleNamesForLineStorage().map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
 		    const lineGameOptions = Object.values(GAME_META).map(g => '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>').join('');
@@ -2426,6 +2440,13 @@ export async function initWanbanXiaowu() {
 	    renderSettings();
 	    toast('字体已保存并应用');
 	  }
+  function selectedWorldPresetNameFromUI() {
+    const sel = qs('#wb-world-preset');
+    if (!sel || sel.value === '') return '';
+    const pr = worldPresets()[parseInt(sel.value, 10)];
+    const name = String((pr && pr.name) || '').trim();
+    return name ? normalizePresetName(name) : '';
+  }
   function autoSaveInjectionSettingsFromUI() {
     if (!qs('#wb-inject-user-desc')) return;
     setSettings({
@@ -2440,7 +2461,8 @@ export async function initWanbanXiaowu() {
       charName: (qs('#wb-char-name') && qs('#wb-char-name').value.trim()) || '{{char}}',
       avatarUrl: qs('#wb-avatar-url') ? qs('#wb-avatar-url').value.trim() : '',
       summaryId: qs('#wb-summary-select').value || '',
-      selectedWorldEntries: selectedWorldEntriesFromUI()
+      selectedWorldEntries: selectedWorldEntriesFromUI(),
+      selectedWorldPresetName: selectedWorldPresetNameFromUI()
     });
   }
   function debounceAutoSaveInjection() { if (wbAutoSaveTimer) clearTimeout(wbAutoSaveTimer); wbAutoSaveTimer = setTimeout(autoSaveInjectionSettingsFromUI, 250); }
@@ -3902,7 +3924,7 @@ export async function initWanbanXiaowu() {
   }
   function closeSummaryModal(mask) { if (mask) mask.remove(); const ed = qs('#wb-summary-editor-mask', getHostDocument()); if (ed) ed.remove(); }
   function saveSettingsFromUI() {
-    setSettings({ injectUserDesc: qs('#wb-inject-user-desc').checked, injectCharDesc: qs('#wb-inject-char-desc').checked, injectChat: qs('#wb-inject-chat').checked, userPersona: qs('#wb-user-persona').value.trim(), charName: (qs('#wb-char-name') && qs('#wb-char-name').value.trim()) || '{{char}}', avatarUrl: qs('#wb-avatar-url') ? qs('#wb-avatar-url').value.trim() : '', summaryId: qs('#wb-summary-select').value || '', selectedWorldEntries: selectedWorldEntriesFromUI() });
+    setSettings({ injectUserDesc: qs('#wb-inject-user-desc').checked, injectCharDesc: qs('#wb-inject-char-desc').checked, injectChat: qs('#wb-inject-chat').checked, userPersona: qs('#wb-user-persona').value.trim(), charName: (qs('#wb-char-name') && qs('#wb-char-name').value.trim()) || '{{char}}', avatarUrl: qs('#wb-avatar-url') ? qs('#wb-avatar-url').value.trim() : '', summaryId: qs('#wb-summary-select').value || '', selectedWorldEntries: selectedWorldEntriesFromUI(), selectedWorldPresetName: selectedWorldPresetNameFromUI() });
     toast('注入设置已保存'); render();
   }
   function saveWorldPresetFromUI() {
@@ -3910,6 +3932,7 @@ export async function initWanbanXiaowu() {
     const arr = worldPresets().filter(x => x.name !== name);
     arr.unshift(worldPresetSnapshotFromUI(name));
     saveWorldPresets(arr);
+    setSettings({ selectedWorldPresetName: name });
     toast('已保存当前角色卡配置：' + name);
     renderSettings();
   }
@@ -3927,6 +3950,7 @@ export async function initWanbanXiaowu() {
         summaryId: '',
         summarySnapshot: null,
         selectedWorldEntries: [],
+        selectedWorldPresetName: '',
         breakLimitPrompt: keepBreak
       });
       renderSettings();
@@ -3936,7 +3960,7 @@ export async function initWanbanXiaowu() {
   async function loadWorldPresetFromUI() {
     const idx = parseInt(qs('#wb-world-preset').value, 10);
     const pr = worldPresets()[idx];
-    if (!pr) return;
+    if (!pr) { setSettings({ selectedWorldPresetName: '' }); return; }
     qs('#wb-inject-user-desc').checked = pr.injectUserDesc !== false;
     qs('#wb-inject-char-desc').checked = pr.injectCharDesc !== false;
     qs('#wb-inject-chat').checked = !!pr.injectChat;
@@ -3966,7 +3990,8 @@ export async function initWanbanXiaowu() {
       avatarUrl: qs('#wb-avatar-url') ? qs('#wb-avatar-url').value.trim() : '',
       summaryId: qs('#wb-summary-select').value || '',
       summarySnapshot: pr.summarySnapshot || null,
-      selectedWorldEntries: matched
+      selectedWorldEntries: matched,
+      selectedWorldPresetName: normalizePresetName(pr.name || qs('#wb-char-name')?.value || companionName())
     });
     applyRoleToAllGames(normalizePresetName(pr.name || qs('#wb-char-name')?.value || companionName()));
     const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(settings());
@@ -4089,7 +4114,7 @@ export async function initWanbanXiaowu() {
     const sp = qs('#wb-speech');
     if (!sp) return;
     const cfg = settings();
-    const line = String(text || '').replace(/{{char}}/g, companionName()).replace(/{{user}}/g, cfg.userName);
+    const line = String(text || '').replace(/{{char}}/g, displayCharNameForGame(game)).replace(/{{user}}/g, cfg.userName);
     sp.innerHTML = markdownTextHTML(line);
     recordLineTrigger(game, event, line);
     lastDialogueAt = Date.now();
@@ -4120,7 +4145,7 @@ export async function initWanbanXiaowu() {
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-first-mask';
-    const taName = settings().companion ? companionName() : 'TA';
+    const taName = displayCharNameForGame(game);
     const gestures = [['scissors','✌','剪刀'], ['rock','👊','石头'], ['paper','👋','布']];
     const choiceActions = () => '<button class="wb-btn primary" data-first="user">你</button><button class="wb-btn" data-first="ta">' + esc(taName) + '</button><button class="wb-btn" data-first="random">随机</button><button class="wb-btn" id="wb-first-back">返回</button>';
     mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">决定先手</div><div class="wb-api-status" id="wb-first-body" style="margin-bottom:12px;">' + esc(g.name) + ' 请选择谁先出。</div><div class="wb-actions" id="wb-first-actions">' + choiceActions() + '</div></div>';
@@ -4297,10 +4322,13 @@ function showGameRecords(game, page) {
 	  }
   async function generateGameLog(game, recordId) {
     const cfg = settings(); const rec = (records()[game] || []).find(r => r.id === recordId); if (!rec) { toast('未找到游戏记录'); return ''; }
-    const fallback = displayCharName() + '轻声回顾了这局' + ((GAME_META[game] || {}).name || '游戏') + '：' + (rec.scoreText || formatRecordResult(rec.result)) + '。短短几分钟像被折进一页日记，她把你的认真和遗憾都记了下来。';
+    const roleName = rec.companion || displayCharNameForGame(game);
+    const fallback = roleName + '轻声回顾了这局' + ((GAME_META[game] || {}).name || '游戏') + '：' + (rec.scoreText || formatRecordResult(rec.result)) + '。短短几分钟像被折进一页日记，她把你的认真和遗憾都记了下来。';
     if (!cfg.apiUrl || !cfg.apiModel) { updateRecord(game, recordId, { log:fallback }); toast('已生成离线日志'); return fallback; }
 	    const theaterInfo = rec.theaterInfo || {};
-	    const prompt = [...(promptTemplates().gameLog || PROMPT_TEMPLATES.gameLog),'游戏：' + ((GAME_META[game] || {}).name || game),'游戏情况（记录表字段，均为user视角）：' + gameLogSituation(game, rec), gameLogFieldRules(game),'原始结算文本：' + String(rec.scoreText || '').replace(new RegExp('TA' + '赢', 'g'), '{{char}}赢').replace(/TA/g, '{{char}}') + '，结果：' + formatRecordResultForPrompt(rec.result) + '，用时：' + formatDuration(rec.durationMs),'本局触发过的角色语录（按触发顺序，包含触发条件解释和实际显示内容）：\n' + lineEventLogText(rec.lineEvents),'本局触发的小剧场主题：' + (theaterInfo.title || '角色互动小剧场'),'本局小剧场触发条件：' + (theaterInfo.condition || theaterConditionForSpecial(game, theaterInfo.special || '')),'当前游戏全部特殊小剧场规则：\n' + gameTheaterConditionRules(game),'规则说明：{{char}}赢表示当前角色获胜，也就是原先的角色获胜。胜负字段里的“胜/负/平”永远表示user的胜/负/平。','前几次同角色同游戏日志：\n' + (recentGameLogs(game, rec.companion || companionName()) || '无'),'陪伴者：' + (rec.companion || companionName()),'角色描述：' + currentCharDescription(cfg),'世界背景：' + (selectedWorldText(cfg) || '无'),'大总结：' + (selectedSummaryText(cfg) || '无')].join('\n');
+	    const logCfg = rolePromptConfig(roleName, cfg);
+	    const normalizedScoreText = String(rec.scoreText || '').replace(new RegExp(String(roleName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '{{char}}').replace(new RegExp('TA' + '赢', 'g'), '{{char}}赢').replace(/TA/g, '{{char}}');
+	    const prompt = [...(promptTemplates().gameLog || PROMPT_TEMPLATES.gameLog),'游戏：' + ((GAME_META[game] || {}).name || game),'游戏情况（记录表字段，均为user视角）：' + gameLogSituation(game, rec), gameLogFieldRules(game, roleName),'原始结算文本：' + normalizedScoreText + '，结果：' + formatRecordResultForPrompt(rec.result) + '，用时：' + formatDuration(rec.durationMs),'本局触发过的角色语录（按触发顺序，包含触发条件解释和实际显示内容）：\n' + lineEventLogText(rec.lineEvents),'本局触发的小剧场主题：' + (theaterInfo.title || '角色互动小剧场'),'本局小剧场触发条件：' + (theaterInfo.condition || theaterConditionForSpecial(game, theaterInfo.special || '', roleName)),'当前游戏全部特殊小剧场规则：\n' + gameTheaterConditionRules(game, roleName),'规则说明：{{char}}赢表示当前角色获胜，也就是原先的角色获胜。胜负字段里的“胜/负/平”永远表示user的胜/负/平。','前几次同角色同游戏日志：\n' + (recentGameLogs(game, roleName) || '无'),'陪伴者：' + roleName,'角色描述：' + currentCharDescription(logCfg),'世界背景：' + (selectedWorldText(logCfg) || '无'),'大总结：' + (selectedSummaryText(logCfg) || '无')].join('\n');
 	    let log = fallback; try { log = await callApiText(cfg, prompt, promptTemplates().systems.gameLog || PROMPT_TEMPLATES.systems.gameLog); } catch(e) { toast('日志生成失败，已使用本地日志'); } updateRecord(game, recordId, { log }); return log;
   }
   async function showGameOver(game, title, scoreText, result, meta) {
@@ -4321,7 +4349,7 @@ function showGameRecords(game, page) {
     let special = '';
     if (g.mode === 'double') { special = doubleSpecialTheater(game, outcome, scoreText, meta); const streak = game === 'bombnumber' ? 0 : doubleStreak(game, outcome, rec.companion); if (!special && outcome === 'user_win' && streak >= 3) special = 'win_streak3'; if (!special && outcome === 'ta_win' && streak >= 3) special = 'lose_streak3'; }
     else special = singleSpecialTheater(game, scoreText, meta, rec.durationMs || 0);
-    currentRoundTheaterInfo = { special, title:special ? theaterTitleForSpecial(special) : '角色互动小剧场', condition:theaterConditionForSpecial(game, special), allRules:gameTheaterConditionRules(game) };
+    currentRoundTheaterInfo = { special, title:special ? theaterTitleForSpecial(special) : '角色互动小剧场', condition:theaterConditionForSpecial(game, special, rec.companion), allRules:gameTheaterConditionRules(game, rec.companion) };
     updateRecord(game, rec.id, { lineEvents: currentRoundLineEvents.slice(-120), theaterInfo: currentRoundTheaterInfo });
     gamePaused = true;
     gameStarted = false;
@@ -4331,7 +4359,7 @@ function showGameRecords(game, page) {
     mask.className = modalMaskClass();
     mask.id = 'wb-gameover-mask';
 	    const logAction = settings().companion ? '<button class="wb-btn" id="wb-generate-log">生成日志</button>' : '';
-	    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">' + esc(title || '游戏结束') + '</div><div style="margin-bottom:14px;line-height:1.8;"><div>游戏：' + esc(g.name) + '</div><div>' + esc(displayCharText(scoreText || '本局分数：0' + g.unit)) + '</div><div>' + esc(high) + '</div><div>陪伴者：' + esc(displayCharName()) + '</div></div><div class="wb-actions"><button class="wb-btn primary" id="wb-next-round">开启下一把</button>' + logAction + '<button class="wb-btn" id="wb-over-close">留在本局</button></div></div>';
+	    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">' + esc(title || '游戏结束') + '</div><div style="margin-bottom:14px;line-height:1.8;"><div>游戏：' + esc(g.name) + '</div><div>' + esc(displayCharTextForGame(scoreText || '本局分数：0' + g.unit, game)) + '</div><div>' + esc(high) + '</div><div>陪伴者：' + esc(displayCharNameForGame(game)) + '</div></div><div class="wb-actions"><button class="wb-btn primary" id="wb-next-round">开启下一把</button>' + logAction + '<button class="wb-btn" id="wb-over-close">留在本局</button></div></div>';
     appendModalMask(mask);
     const allowDrawTheater = !(outcome === 'draw' && ['gomoku','oldmaid','ludo'].includes(game));
     const shouldShowTheater = !!(settings().companion && settings().theaterEnabled && allowDrawTheater && (special || Math.random() < 0.6));
@@ -4339,11 +4367,12 @@ function showGameRecords(game, page) {
       const reason = settings().companion && settings().theaterEnabled
         ? (allowDrawTheater ? '本局未触发小剧场。普通小剧场仅有60%概率触发；特殊小剧场未命中。' : '本局为平局，当前游戏不触发平局小剧场。')
         : '小剧场未开启。';
-      currentRoundTheaterInfo = { special:'', title:'无', condition:reason, allRules:gameTheaterConditionRules(game) };
+      currentRoundTheaterInfo = { special:'', title:'无', condition:reason, allRules:gameTheaterConditionRules(game, rec.companion) };
       updateRecord(game, rec.id, { theaterInfo: currentRoundTheaterInfo });
     }
     if (shouldShowTheater) {
-      const cachedTheater = theaterCache[theaterCacheKey(game, outcome, special)] || doubleTheaterFallback(game, outcome, special);
+      const roleName = activeGameRoleName(game);
+      const cachedTheater = theaterCache[theaterCacheKey(game, outcome, special)] || doubleTheaterFallback(game, outcome, special, roleName);
 	      showTheaterModal(special ? theaterTitleForSpecial(special) : '角色互动小剧场', cachedTheater, { game, recordId: rec.id });
     }
     const logBtnHandler = async () => { const btn = qs('#wb-generate-log', mask); if (!btn) return; btn.disabled = true; btn.textContent = '生成中...'; await generateGameLog(game, rec.id); btn.disabled = false; btn.textContent = '查看日志'; btn.onclick = () => { const latest = (records()[game] || []).find(r => r.id === rec.id); if (latest) showRecordLogModal(latest, game); }; };
@@ -4369,13 +4398,14 @@ function showGameRecords(game, page) {
     const ctx = getHostContext();
     const char = ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null);
     const charData = char?.data || char || {};
-    const name = cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}');
+    const name = currentGame ? displayCharNameForGame(currentGame) : (cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}'));
     const avatar = findAvatar();
     const av = avatar ? '<img src="' + esc(avatar) + '" style="width:100%;height:100%;object-fit:cover">' : esc(name.slice(0,1));
     return '<div class="wb-companion ' + (cfg.companion ? 'on' : '') + '" id="wb-comp"><div class="wb-comp-row"><div class="wb-avatar">' + av + '</div><div class="wb-comp-main"><div class="wb-comp-name">' + esc(name) + '</div><div class="wb-speech wb-text-segments" id="wb-speech">...</div></div></div></div>';
   }
   function findAvatar() {
-    const fixed = (settings().avatarUrl || '').trim();
+    const rolePreset = currentGame ? worldPresetForRole(activeGameRoleName(currentGame)) : null;
+    const fixed = ((rolePreset && rolePreset.avatarUrl) || settings().avatarUrl || '').trim();
     if (fixed) return fixed;
     return findCurrentCardAvatar();
   }
@@ -4400,7 +4430,7 @@ function showGameRecords(game, page) {
     if (line) showSpeechLine(currentGame, 'custom', line);
   }
 
-  function theaterCacheKey(game, outcome, special) { return theaterCacheKeyForName(companionName(), game, outcome, special); }
+  function theaterCacheKey(game, outcome, special) { return theaterCacheKeyForName(activeGameRoleName(game), game, outcome, special); }
   function clearTheaterCacheForGame(game, roleName) {
     const prefix = normalizePresetName(roleName || companionName()) + '::' + game + '::';
     Object.keys(theaterCache).forEach(k => { if (k.indexOf(prefix) === 0) delete theaterCache[k]; });
@@ -4471,10 +4501,11 @@ function showGameRecords(game, page) {
         if (!data) data = fallbackGenerated(game, promptCfg);
         data = normalizeGeneratedLines(game, data);
         saveRoleLineSet(game, preset, data);
+        saveRoleLineSetForName(game, preset, preset, data);
         renderLinePresetSelect(game);
       }
       if ((kind || 'all') !== 'lines') {
-        try { await preGenerateTheaters(game, promptCfg, progress); }
+        try { await preGenerateTheaters(game, promptCfg, progress, preset); }
         catch(theaterErr) { console.warn('[玩伴小屋] theater pregenerate failed:', theaterErr); toast('小剧场生成失败时会使用本地小剧场'); }
       }
       toast('已生成并覆盖“' + companionName() + ' / ' + preset + '”的' + ((kind === 'lines') ? '语录' : (kind === 'theater' ? '小剧场' : '全部数据')));
@@ -4839,6 +4870,7 @@ function showGameRecords(game, page) {
 
   function startTerritory(state) {
     const box = qs('#wb-gamebox'), N = 5;
+    const role = displayCharName();
     const makeH = () => Array.from({length:N+1}, () => Array(N).fill(''));
     const makeV = () => Array.from({length:N}, () => Array(N+1).fill(''));
     const makeO = () => Array.from({length:N}, () => Array(N).fill(''));
@@ -4867,19 +4899,20 @@ function showGameRecords(game, page) {
     function checkNoSafe(skipLine){ if(!noSafeSpoken && legalEdges().length && !legalEdges().some(isSafe)){ noSafeSpoken=true; if(!skipLine){ speak('territory','no_safe_edge'); return true; } } return false; }
     function human(kind,r,c){ if(over||busy||turn!=='user') return; if(!isLegalEdge(kind,r,c)){ toast('要贴着已有线继续画'); return; } markFirstMoverUserAction(); let userEvent = cellsFor(kind,r,c).some(([x,y]) => !owner[y][x] && sideCount(x,y) === 2) ? 'danger' : ''; const gained=applyEdge(kind,r,c,'user'); if(gained){ chain += gained; if(!userEvent) userEvent = chain > 1 ? 'chain' : 'capture'; } else { chain = 0; if(!userEvent) userEvent = 'edge'; turn='ta'; } let spoke = !!userEvent && Math.random()<.5; if(spoke) speak('territory', userEvent); if(checkNoSafe(spoke)) spoke = true; draw(); save(); if(done()) return; if(turn==='ta'){ busy=true; setTimeout(() => robot(spoke), 520); } }
     function robot(skipLine){ if(over||turn!=='ta'||currentGame!=='territory') return; const edges=legalEdges(); if(!edges.length){ done(); return; } const completions=edges.filter(wouldComplete), safe=edges.filter(isSafe); const pool=completions.length ? completions : (safe.length ? safe : edges); const e=pool[Math.floor(Math.random()*pool.length)]; const charNext = shouldCharNext(); let spoke = !!skipLine; const gained=applyEdge(e[0],e[1],e[2],'ta'); if(checkNoSafe(spoke)) spoke = true; if(gained){ if(!spoke){ spoke = true; speak('territory','ta_capture'); } draw(); save(); if(done()) return; setTimeout(() => robot(spoke), 520); return; } turn='user'; chain=0; if(!spoke) speak('territory', charNext ? 'char_next' : 'user_turn'); busy=false; draw(); save(); done(); }
-    function done(){ if(allEdges().length) return false; over=true; clearProgress('territory'); const charLabel=settings().companion ? companionName() : 'TA'; const rounds=claimedEdges().length, text='本局：你 '+userScore+' 格，'+charLabel+' '+taScore+' 格，回合数：'+rounds, meta={ userScore, taScore }; if(userScore>taScore){ const cur=scores().territory; setScore('territory', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('territory','user_win'); showGameOver('territory','你赢了',text,'user_win',meta); } else if(taScore>userScore){ addTaWin('territory'); speak('territory','user_lose'); showGameOver('territory','游戏结束',text,'ta_win',meta); } else { speak('territory','draw'); showGameOver('territory','平局',text,'draw',meta); } return true; }
-    function draw(){ const charLabel=settings().companion ? companionName() : 'TA'; const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userScore + '/' + charLabel + taScore; const t=qs('#wb-territory-turn'); if(t) t.textContent=(turn==='user'?'你的回合':charLabel+'的回合') + (claimedEdges().length ? '，贴着已有线' : ''); const s=qs('#wb-territory-score'); if(s) s.textContent='你 '+userScore+' / '+charLabel+' '+taScore; const board=qs('#wb-territory-board'); if(!board) return; const cells=[]; for(let gy=0;gy<N*2+1;gy++) for(let gx=0;gx<N*2+1;gx++){ if(gy%2===0&&gx%2===0) cells.push('<div class="wb-territory-dot"></div>'); else if(gy%2===0){ const r=gy/2,c=(gx-1)/2,val=h[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('h',r,c); cells.push('<button class="wb-territory-edge h'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="h" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else if(gx%2===0){ const r=(gy-1)/2,c=gx/2,val=v[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('v',r,c); cells.push('<button class="wb-territory-edge v'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="v" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else { const x=(gx-1)/2,y=(gy-1)/2,o=owner[y][x]; cells.push('<div class="wb-territory-cell '+(o||'')+'">'+(o==='user'?'你':o==='ta'?charLabel:'')+'</div>'); } } board.innerHTML=cells.join(''); qsa('.wb-territory-edge', board).forEach(btn => btn.onclick = () => human(btn.dataset.k, +btn.dataset.r, +btn.dataset.c)); }
+    function done(){ if(allEdges().length) return false; over=true; clearProgress('territory'); const charLabel=role; const rounds=claimedEdges().length, text='本局：你 '+userScore+' 格，'+charLabel+' '+taScore+' 格，回合数：'+rounds, meta={ userScore, taScore }; if(userScore>taScore){ const cur=scores().territory; setScore('territory', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('territory','user_win'); showGameOver('territory','你赢了',text,'user_win',meta); } else if(taScore>userScore){ addTaWin('territory'); speak('territory','user_lose'); showGameOver('territory','游戏结束',text,'ta_win',meta); } else { speak('territory','draw'); showGameOver('territory','平局',text,'draw',meta); } return true; }
+    function draw(){ const charLabel=role; const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userScore + '/' + charLabel + taScore; const t=qs('#wb-territory-turn'); if(t) t.textContent=(turn==='user'?'你的回合':charLabel+'的回合') + (claimedEdges().length ? '，贴着已有线' : ''); const s=qs('#wb-territory-score'); if(s) s.textContent='你 '+userScore+' / '+charLabel+' '+taScore; const board=qs('#wb-territory-board'); if(!board) return; const cells=[]; for(let gy=0;gy<N*2+1;gy++) for(let gx=0;gx<N*2+1;gx++){ if(gy%2===0&&gx%2===0) cells.push('<div class="wb-territory-dot"></div>'); else if(gy%2===0){ const r=gy/2,c=(gx-1)/2,val=h[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('h',r,c); cells.push('<button class="wb-territory-edge h'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="h" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else if(gx%2===0){ const r=(gy-1)/2,c=gx/2,val=v[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('v',r,c); cells.push('<button class="wb-territory-edge v'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="v" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else { const x=(gx-1)/2,y=(gy-1)/2,o=owner[y][x]; cells.push('<div class="wb-territory-cell '+(o||'')+'">'+(o==='user'?'你':o==='ta'?charLabel:'')+'</div>'); } } board.innerHTML=cells.join(''); qsa('.wb-territory-edge', board).forEach(btn => btn.onclick = () => human(btn.dataset.k, +btn.dataset.r, +btn.dataset.c)); }
   }
 
   function startOldMaid(state) {
     const box = qs('#wb-gamebox');
+    const role = displayCharName();
     let userHand = Array.isArray(state?.userHand) ? state.userHand : null;
     let taHand = Array.isArray(state?.taHand) ? state.taHand : null;
     let turn = state?.turn || (state?.firstMover === 'ta' ? 'ta' : 'user'), phase = state?.phase || (state?.firstMover === 'ta' ? 'ta_thinking' : 'user_pick'), busy = false, over = false;
     let pending = state?.pending || null, userTurns = state?.userTurns || 0, taTurns = state?.taTurns || 0;
     const log = Array.isArray(state?.log) ? state.log.slice(0, 6) : [];
     if (!userHand || !taHand) deal();
-    box.innerHTML = '<div class="wb-oldmaid"><div class="wb-oldmaid-status" id="wb-oldmaid-status"></div><div class="wb-oldmaid-reveal" id="wb-oldmaid-reveal"></div><div class="wb-oldmaid-zone"><div class="wb-muted">' + esc(displayCharName()) + '的手牌</div><div class="wb-oldmaid-hand backs" id="wb-oldmaid-ta"></div></div><div class="wb-oldmaid-zone"><div class="wb-muted">你的手牌</div><div class="wb-oldmaid-hand" id="wb-oldmaid-user"></div></div><div class="wb-oldmaid-log" id="wb-oldmaid-log"></div></div>';
+    box.innerHTML = '<div class="wb-oldmaid"><div class="wb-oldmaid-status" id="wb-oldmaid-status"></div><div class="wb-oldmaid-reveal" id="wb-oldmaid-reveal"></div><div class="wb-oldmaid-zone"><div class="wb-muted">' + esc(role) + '的手牌</div><div class="wb-oldmaid-hand backs" id="wb-oldmaid-ta"></div></div><div class="wb-oldmaid-zone"><div class="wb-muted">你的手牌</div><div class="wb-oldmaid-hand" id="wb-oldmaid-user"></div></div><div class="wb-oldmaid-log" id="wb-oldmaid-log"></div></div>';
     if (!state?.turn && state?.firstMover) speakFirstMover('oldmaid', state.firstMover); draw(); save();
     if (turn === 'ta' && phase === 'ta_thinking') { busy = true; setTimeout(robot, 900); }
     function deal(){ const ranks=['A','2','3','4','5','6','7','8','9','10','J','Q']; const suits=['♠','♥']; const deck=shuffleArray(ranks.flatMap(r=>suits.map(s=>r+s)).concat('JOKER')); userHand=[]; taHand=[]; deck.forEach((c,i)=>(i%2?taHand:userHand).push(c)); removePairs(userHand); removePairs(taHand); }
@@ -4891,15 +4924,16 @@ function showGameRecords(game, page) {
     function drawCard(from, to, i){ const card = from.splice(i, 1)[0]; to.push(card); return card; }
     function human(i){ if(over||busy||turn!=='user'||phase!=='user_pick'||i<0||i>=taHand.length) return; markFirstMoverUserAction(); userTurns++; const card=drawCard(taHand,userHand,i); pending={ actor:'user', card }; phase='user_review'; addLog('你抽到了 ' + label(card)); speak('oldmaid', card==='JOKER' ? 'joker' : 'draw'); draw(); save(); }
     function continueUser(){ if(over||phase!=='user_review') return; markFirstMoverUserAction(); const pairs=removePairs(userHand); if(pairs){ addLog('你丢掉了 ' + pairs + ' 对牌'); speak('oldmaid','pair'); } pending=null; if(done()) return; turn='ta'; phase='ta_thinking'; busy=true; draw(); save(); setTimeout(robot, 900); }
-    function robot(){ if(over||turn!=='ta'||currentGame!=='oldmaid') return; if(!userHand.length){ done(); return; } taTurns++; const card=drawCard(userHand,taHand,Math.floor(Math.random()*userHand.length)); pending={ actor:'ta', card }; phase='ta_review'; busy=false; addLog(displayCharName() + '抽走了 ' + label(card)); speak('oldmaid', card==='JOKER' ? 'joker' : 'ta_draw'); draw(); save(); }
-    function continueTa(){ if(over||phase!=='ta_review') return; markFirstMoverUserAction(); const pairs=removePairs(taHand); if(pairs){ addLog(displayCharName() + '丢掉了 ' + pairs + ' 对牌'); speak('oldmaid','ta_pair'); } pending=null; if(done()) return; turn='user'; phase='user_pick'; busy=false; draw(); save(); }
+    function robot(){ if(over||turn!=='ta'||currentGame!=='oldmaid') return; if(!userHand.length){ done(); return; } taTurns++; const card=drawCard(userHand,taHand,Math.floor(Math.random()*userHand.length)); pending={ actor:'ta', card }; phase='ta_review'; busy=false; addLog(role + '抽走了 ' + label(card)); speak('oldmaid', card==='JOKER' ? 'joker' : 'ta_draw'); draw(); save(); }
+    function continueTa(){ if(over||phase!=='ta_review') return; markFirstMoverUserAction(); const pairs=removePairs(taHand); if(pairs){ addLog(role + '丢掉了 ' + pairs + ' 对牌'); speak('oldmaid','ta_pair'); } pending=null; if(done()) return; turn='user'; phase='user_pick'; busy=false; draw(); save(); }
     function done(){ if(userHand.length && taHand.length) return false; over=true; clearProgress('oldmaid'); const userWon = userHand.length === 0, meta={ userTurns, taTurns }; if(userWon){ const cur=scores().oldmaid; setScore('oldmaid', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('oldmaid','user_win'); showGameOver('oldmaid','你赢了','本局：你先清空手牌','user_win', meta); } else { addTaWin('oldmaid'); speak('oldmaid','user_lose'); showGameOver('oldmaid','游戏结束','本局：你留下了鬼牌','ta_win', meta); } return true; }
     function drawCardHTML(c, extra){ return '<div class="wb-oldmaid-card '+(c==='JOKER'?'joker':'')+' '+(extra||'')+'">'+esc(label(c))+'</div>'; }
-    function draw(){ const charLabel=displayCharName(); const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; const st=qs('#wb-oldmaid-status'); if(st) st.textContent=(phase==='user_pick'?'你的回合：从' + charLabel + '手里抽一张':phase==='user_review'?'看清抽到的牌，然后手动丢对子':phase==='ta_review'?charLabel + '抽走了这张牌，确认后继续':charLabel + '正在抽牌') + ' · 你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; const reveal=qs('#wb-oldmaid-reveal'); if(reveal){ reveal.innerHTML=pending ? '<div class="wb-oldmaid-reveal-text">'+(pending.actor==='user'?'你抽到':charLabel + '抽走')+'</div>'+drawCardHTML(pending.card,'big')+'<button class="wb-btn primary" id="wb-oldmaid-next">'+(pending.actor==='user'?'丢对子并让' + charLabel + '抽':'知道了，继续')+'</button>' : ''; const nb=qs('#wb-oldmaid-next', reveal); if(nb) nb.onclick=pending.actor==='user'?continueUser:continueTa; } const ta=qs('#wb-oldmaid-ta'); if(ta){ ta.innerHTML=taHand.map((_,i)=>'<button class="wb-oldmaid-card back" data-i="'+i+'" '+(phase!=='user_pick'||turn!=='user'||busy?'disabled':'')+'>?</button>').join(''); qsa('.wb-oldmaid-card',ta).forEach(btn=>btn.onclick=()=>human(+btn.dataset.i)); } const user=qs('#wb-oldmaid-user'); if(user) user.innerHTML=userHand.map(c=>drawCardHTML(c)).join(''); const lg=qs('#wb-oldmaid-log'); if(lg) lg.innerHTML=log.map(esc).join('<br>'); }
+    function draw(){ const charLabel=role; const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; const st=qs('#wb-oldmaid-status'); if(st) st.textContent=(phase==='user_pick'?'你的回合：从' + charLabel + '手里抽一张':phase==='user_review'?'看清抽到的牌，然后手动丢对子':phase==='ta_review'?charLabel + '抽走了这张牌，确认后继续':charLabel + '正在抽牌') + ' · 你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; const reveal=qs('#wb-oldmaid-reveal'); if(reveal){ reveal.innerHTML=pending ? '<div class="wb-oldmaid-reveal-text">'+(pending.actor==='user'?'你抽到':charLabel + '抽走')+'</div>'+drawCardHTML(pending.card,'big')+'<button class="wb-btn primary" id="wb-oldmaid-next">'+(pending.actor==='user'?'丢对子并让' + charLabel + '抽':'知道了，继续')+'</button>' : ''; const nb=qs('#wb-oldmaid-next', reveal); if(nb) nb.onclick=pending.actor==='user'?continueUser:continueTa; } const ta=qs('#wb-oldmaid-ta'); if(ta){ ta.innerHTML=taHand.map((_,i)=>'<button class="wb-oldmaid-card back" data-i="'+i+'" '+(phase!=='user_pick'||turn!=='user'||busy?'disabled':'')+'>?</button>').join(''); qsa('.wb-oldmaid-card',ta).forEach(btn=>btn.onclick=()=>human(+btn.dataset.i)); } const user=qs('#wb-oldmaid-user'); if(user) user.innerHTML=userHand.map(c=>drawCardHTML(c)).join(''); const lg=qs('#wb-oldmaid-log'); if(lg) lg.innerHTML=log.map(esc).join('<br>'); }
   }
 
   function startReversi(state) {
     const box=qs('#wb-gamebox'), N=8, dirs=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+    const role = displayCharName();
     let board=Array.isArray(state?.board)?state.board.slice():Array(64).fill('');
     if(!state?.board){ board[27]=board[36]='ta'; board[28]=board[35]='user'; }
     let turn=state?.turn || (state?.firstMover==='ta'?'ta':'user'), over=false, busy=false;
@@ -4976,18 +5010,19 @@ function showGameRecords(game, page) {
       });
     }
     function ai(skipLine){ if(over||gamePaused||turn!=='ta') return; const moves=legal('ta'); if(!moves.length){ turn='user'; draw(); save(); return; } moves.sort((a,b)=>moveScore(b)-moveScore(a)); const spoke = !skipLine && isCorner(moves[0]); if(spoke) speak('reversi','corner'); place('ta', moves[0], skipLine || spoke); }
-    function done(){ over=true; clearProgress('reversi'); const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length, rounds=Math.max(0,u+t-4); const res=u>t?'user_win':(t>u?'ta_win':'draw'); if(!seen.endLine) speak('reversi', res==='ta_win' ? 'user_lose' : res); if(res==='user_win'){ const cur=scores().reversi; setScore('reversi',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); } else if(res==='ta_win') addTaWin('reversi'); showGameOver('reversi',res==='user_win'?'你赢了':(res==='draw'?'平局':'游戏结束'),'你'+u+'格 / '+displayCharName()+t+'格，回合数：'+rounds,res,{userScore:u,taScore:t,comeback:!!seen.comeback}); return true; }
-    function draw(){ const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length; qs('#wb-score').textContent='本局：你'+u+' / '+displayCharName()+t; qs('#wb-reversi-info').textContent=(turn==='user'?'你的回合':displayCharName()+'思考中')+' · 你'+u+' / '+displayCharName()+t; const leg=new Set(legal('user')); qs('#wb-reversi-board').innerHTML=board.map((v,i)=>'<button class="wb-reversi-cell '+v+(leg.has(i)&&turn==='user'?' legal':'')+'" data-i="'+i+'">'+(v?'<span></span>':'')+'</button>').join(''); qsa('.wb-reversi-cell',box).forEach(b=>b.onclick=()=>{ if(turn==='user'&&!busy) place('user',+b.dataset.i); }); }
+    function done(){ over=true; clearProgress('reversi'); const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length, rounds=Math.max(0,u+t-4); const res=u>t?'user_win':(t>u?'ta_win':'draw'); if(!seen.endLine) speak('reversi', res==='ta_win' ? 'user_lose' : res); if(res==='user_win'){ const cur=scores().reversi; setScore('reversi',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); } else if(res==='ta_win') addTaWin('reversi'); showGameOver('reversi',res==='user_win'?'你赢了':(res==='draw'?'平局':'游戏结束'),'你'+u+'格 / '+role+t+'格，回合数：'+rounds,res,{userScore:u,taScore:t,comeback:!!seen.comeback}); return true; }
+    function draw(){ const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length; qs('#wb-score').textContent='本局：你'+u+' / '+role+t; qs('#wb-reversi-info').textContent=(turn==='user'?'你的回合':role+'思考中')+' · 你'+u+' / '+role+t; const leg=new Set(legal('user')); qs('#wb-reversi-board').innerHTML=board.map((v,i)=>'<button class="wb-reversi-cell '+v+(leg.has(i)&&turn==='user'?' legal':'')+'" data-i="'+i+'">'+(v?'<span></span>':'')+'</button>').join(''); qsa('.wb-reversi-cell',box).forEach(b=>b.onclick=()=>{ if(turn==='user'&&!busy) place('user',+b.dataset.i); }); }
   }
 
   function startBombNumber(state) {
     const box=qs('#wb-gamebox'); let bomb=state?.bomb||Math.floor(Math.random()*100)+1, low=state?.low||1, high=state?.high||100, turn=state?.turn||(state?.firstMover==='ta'?'ta':'user'), log=Array.isArray(state?.log)?state.log:[], over=false, busy=false, chosen=null, exploding=0, luckyShrink=!!state?.luckyShrink, userDoomed=!!state?.userDoomed, charDoomed=!!state?.charDoomed, turnCount=state?.turnCount||0;
+    const role = displayCharName();
     box.innerHTML='<div class="wb-bomb-panel"><div class="wb-bomb-info" id="wb-bomb-info"></div><div class="wb-bomb-grid" id="wb-bomb-grid"></div><div class="wb-bomb-log" id="wb-bomb-log"></div></div>';
     if(!state?.turn&&state?.firstMover) speakFirstMover('bombnumber', state.firstMover); draw(); save(); if(turn==='ta') setTimeout(aiThink,900);
     function choices(){ return Array.from({length:100},(_,i)=>i+1).filter(n=>n>=low&&n<=high); }
     function rangeEvent(){ const len=choices().length; if(len===1) return 'doomed'; if(len>=80) return 'range_100_80'; if(len>=60) return 'range_80_60'; if(len>=40) return 'range_60_40'; if(len>=20) return 'range_40_20'; return 'range_20_0'; }
     function save(){ if(!over) saveProgress('bombnumber',{bomb,low,high,turn,log,luckyShrink,userDoomed,charDoomed,turnCount}); }
-    function pick(side,n){ if(over||busy||n<low||n>high) return; if(side==='user') markFirstMoverUserAction(); const before=choices().length; busy=true; turnCount++; chosen={side,n}; log.unshift((side==='user'?'你':displayCharName())+'选择了 '+n); draw(); setTimeout(()=>resolvePick(side,n,before),680); }
+    function pick(side,n){ if(over||busy||n<low||n>high) return; if(side==='user') markFirstMoverUserAction(); const before=choices().length; busy=true; turnCount++; chosen={side,n}; log.unshift((side==='user'?'你':role)+'选择了 '+n); draw(); setTimeout(()=>resolvePick(side,n,before),680); }
     function resolvePick(side,n,before){
       if(over) return;
       if(n===bomb){
@@ -5009,11 +5044,12 @@ function showGameRecords(game, page) {
       if(turn==='ta') setTimeout(aiThink, 500 + Math.random() * 500);
     }
     function aiThink(){ if(over||gamePaused||turn!=='ta'||busy) return; const arr=choices(); const n=arr[Math.floor(arr.length/2 + (Math.random()-.5)*Math.max(1,arr.length/3))]||arr[0]; pick('ta', n); }
-    function draw(){ const len=choices().length; qs('#wb-score').textContent='范围：'+low+'-'+high; qs('#wb-bomb-info').textContent=(turn==='user'?'你的回合':displayCharName()+(busy?'正在判断':'的回合'))+' · 可选 '+len+' 个'; qs('#wb-bomb-grid').innerHTML=Array.from({length:100},(_,i)=>{ const n=i+1, ok=n>=low&&n<=high, isChosen=chosen&&chosen.n===n, isBoom=exploding===n; return '<button class="wb-bomb-cell '+(ok?'ok':'off')+(isChosen?' chosen':'')+(isBoom?' boom':'')+'" data-n="'+n+'" '+(!ok||turn!=='user'||busy?'disabled':'')+'>'+(isBoom?'💣':n)+'</button>'; }).join(''); qs('#wb-bomb-log').innerHTML=log.slice(0,6).map(esc).join('<br>'); qsa('.wb-bomb-cell.ok',box).forEach(b=>b.onclick=()=>pick('user',+b.dataset.n)); }
+    function draw(){ const len=choices().length; qs('#wb-score').textContent='范围：'+low+'-'+high; qs('#wb-bomb-info').textContent=(turn==='user'?'你的回合':role+(busy?'正在判断':'的回合'))+' · 可选 '+len+' 个'; qs('#wb-bomb-grid').innerHTML=Array.from({length:100},(_,i)=>{ const n=i+1, ok=n>=low&&n<=high, isChosen=chosen&&chosen.n===n, isBoom=exploding===n; return '<button class="wb-bomb-cell '+(ok?'ok':'off')+(isChosen?' chosen':'')+(isBoom?' boom':'')+'" data-n="'+n+'" '+(!ok||turn!=='user'||busy?'disabled':'')+'>'+(isBoom?'💣':n)+'</button>'; }).join(''); qs('#wb-bomb-log').innerHTML=log.slice(0,6).map(esc).join('<br>'); qsa('.wb-bomb-cell.ok',box).forEach(b=>b.onclick=()=>pick('user',+b.dataset.n)); }
   }
 
   function startConnect4D(state) {
     const box=qs('#wb-gamebox'), S=7, dirs=[[1,0],[0,1],[1,1],[1,-1]];
+    const role = displayCharName();
     let grid=Array.isArray(state?.grid)?state.grid.slice():Array(S*S).fill(''), turn=state?.turn||(state?.firstMover==='ta'?'ta':'user'), over=false, dropping=null, aimCol=-1, aimX=0;
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     box.innerHTML='<div class="wb-c4d-panel"><div class="wb-c4d-info" id="wb-c4d-info"></div><div class="wb-c4d-mask"><div class="wb-c4d-stage" id="wb-c4d-stage"><div class="wb-c4d-drop-line"></div><div class="wb-c4d" id="wb-c4d-board"></div></div></div></div>';
@@ -5024,7 +5060,7 @@ function showGameRecords(game, page) {
     function save(){ if(!over) saveProgress('connect4d',{grid,turn,taMoves,nextCharLineAt}); }
     function shouldCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function winner(side){ for(let y=0;y<S;y++) for(let x=0;x<S;x++) if(grid[id(x,y)]===side){ for(const d of dirs){ let ok=true; for(let k=1;k<4;k++){ const nx=x+d[0]*k,ny=y+d[1]*k; if(!inside(nx,ny)||grid[id(nx,ny)]!==side){ ok=false; break; } } if(ok) return true; } } return false; }
-    function place(side,x,aimPct,skipLine){ const y=landingRow(x); if(y<0||over||gamePaused||dropping) return; if(side==='user') markFirstMoverUserAction(); aimCol=-1; dropping={x,y,side,t:0,aimX:aimPct}; const charNext = side === 'ta' ? shouldCharNext() : false; animateDrop(()=>{ grid[id(x,y)]=side; dropping=null; const rounds=grid.filter(Boolean).length; if(winner(side)){ over=true; clearProgress('connect4d'); const res=side==='user'?'user_win':'ta_win'; if(res==='user_win'){ const cur=scores().connect4d; setScore('connect4d',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('connect4d','user_win'); } else { addTaWin('connect4d'); speak('connect4d','user_lose'); } showGameOver('connect4d',res==='user_win'?'你赢了':'游戏结束','本局：'+(res==='user_win'?'你连成四子':displayCharName()+'连成四子')+'，回合数：'+rounds,res); return; } if(!legal().length){ over=true; clearProgress('connect4d'); speak('connect4d','draw'); showGameOver('connect4d','平局','棋盘填满，回合数：'+rounds,'draw'); return; } if(side==='ta' && charNext && !skipLine) speak('connect4d','char_next'); turn=side==='user'?'ta':'user'; draw(); save(); if(turn==='ta') setTimeout(ai,700); }); }
+    function place(side,x,aimPct,skipLine){ const y=landingRow(x); if(y<0||over||gamePaused||dropping) return; if(side==='user') markFirstMoverUserAction(); aimCol=-1; dropping={x,y,side,t:0,aimX:aimPct}; const charNext = side === 'ta' ? shouldCharNext() : false; animateDrop(()=>{ grid[id(x,y)]=side; dropping=null; const rounds=grid.filter(Boolean).length; if(winner(side)){ over=true; clearProgress('connect4d'); const res=side==='user'?'user_win':'ta_win'; if(res==='user_win'){ const cur=scores().connect4d; setScore('connect4d',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('connect4d','user_win'); } else { addTaWin('connect4d'); speak('connect4d','user_lose'); } showGameOver('connect4d',res==='user_win'?'你赢了':'游戏结束','本局：'+(res==='user_win'?'你连成四子':role+'连成四子')+'，回合数：'+rounds,res); return; } if(!legal().length){ over=true; clearProgress('connect4d'); speak('connect4d','draw'); showGameOver('connect4d','平局','棋盘填满，回合数：'+rounds,'draw'); return; } if(side==='ta' && charNext && !skipLine) speak('connect4d','char_next'); turn=side==='user'?'ta':'user'; draw(); save(); if(turn==='ta') setTimeout(ai,700); }); }
     function animateDrop(done){ let n=0; const step=()=>{ n++; if(dropping) dropping.t=n/16; draw(); if(n<16) setTimeout(step,24); else done(); }; step(); }
     function supportedEmpty(x,y){ return inside(x,y) && !grid[id(x,y)] && landingRow(x) === y; }
     function lineScore(side,x,y){
@@ -5094,7 +5130,7 @@ function showGameRecords(game, page) {
       place('ta', scored[0].x);
     }
     function draw(){
-      qs('#wb-score').textContent=turn==='user'?'你的回合':displayCharName()+'的回合';
+      qs('#wb-score').textContent=turn==='user'?'你的回合':role+'的回合';
       qs('#wb-c4d-info').textContent='长按任意位置选择一列，松开后棋子会从虚线落到该列最低空位。';
       const html=[];
       for(let y=0;y<S;y++) for(let x=0;x<S;x++){
@@ -5754,7 +5790,7 @@ function showGameRecords(game, page) {
     function checkWin(side){ const arr=sideArr(side); if(arr.every(p=>Number(p)>=FINAL_POS)){ over=true; clearProgress('ludo'); const meta = { consecutiveSixes:redSixStreak, userHomeAll:red.every(p=>p<0), opponentOnePieceLeft: side==='red' ? blue.filter(p=>Number(p)>=FINAL_POS).length>=3 : red.filter(p=>Number(p)>=FINAL_POS).length>=3 }; if(side==='red'){ { const curScore = scores().ludo; setScore('ludo', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('ludo','user_win'); showGameOver('ludo','你赢了','本局分数：1胜，回合数：'+turnCount, null, meta); } else { speak('ludo','user_lose'); showGameOver('ludo','游戏结束','本局分数：0胜（TA获胜），回合数：'+turnCount, null, meta); } return true; } return false; }
     function endTurn(){ turn=turn==='red'?'blue':'red'; rolled=false; dice=0; busy=false; draw(); save(); if(turn==='blue') setTimeout(robot,650); }
     function posCoord(side,pos,idx){ if(pos<0) return starts[side][idx]; if(pos>=40) { const f=Math.min(3,pos-40); return finish[side][f] || [5,5]; } return path[globalPos(side,pos)]; }
-    function draw(){ const board=qs('#wb-ludo-board'); const cells=[]; const charLabel=settings().companion?companionName():'TA'; for(let y=0;y<11;y++) for(let x=0;x<11;x++){ let cls='wb-ludo-cell'; if(path.some(p=>p[0]===x&&p[1]===y)) cls+=' path'; if(starts.red.some(p=>p[0]===x&&p[1]===y)||finish.red.some(p=>p[0]===x&&p[1]===y)) cls+=' home-red'; if(starts.blue.some(p=>p[0]===x&&p[1]===y)||finish.blue.some(p=>p[0]===x&&p[1]===y)) cls+=' home-blue'; cells.push('<div class="'+cls+'" data-x="'+x+'" data-y="'+y+'"></div>'); } board.innerHTML=cells.join(''); addPieces('red',red); addPieces('blue',blue); const t=qs('#wb-ludo-turn'); if(t) t.textContent=turn==='red'?'你的回合':charLabel+'的回合'; setDiceDisplay(dice, diceRolling); const rb=qs('#wb-ludo-roll'); if(rb){ const userRolling=diceRolling&&diceRollingSide==='red'; const charRolling=diceRolling&&diceRollingSide==='blue'; rb.disabled=gamePaused || charRolling || (turn!=='red' && !userRolling) || (rolled && !userRolling) || (busy && !userRolling); rb.textContent=userRolling ? '停止' : (charRolling ? charLabel + '掷骰中' : '掷骰'); } }
+    function draw(){ const board=qs('#wb-ludo-board'); const cells=[]; const charLabel=displayCharName(); for(let y=0;y<11;y++) for(let x=0;x<11;x++){ let cls='wb-ludo-cell'; if(path.some(p=>p[0]===x&&p[1]===y)) cls+=' path'; if(starts.red.some(p=>p[0]===x&&p[1]===y)||finish.red.some(p=>p[0]===x&&p[1]===y)) cls+=' home-red'; if(starts.blue.some(p=>p[0]===x&&p[1]===y)||finish.blue.some(p=>p[0]===x&&p[1]===y)) cls+=' home-blue'; cells.push('<div class="'+cls+'" data-x="'+x+'" data-y="'+y+'"></div>'); } board.innerHTML=cells.join(''); addPieces('red',red); addPieces('blue',blue); const t=qs('#wb-ludo-turn'); if(t) t.textContent=turn==='red'?'你的回合':charLabel+'的回合'; setDiceDisplay(dice, diceRolling); const rb=qs('#wb-ludo-roll'); if(rb){ const userRolling=diceRolling&&diceRollingSide==='red'; const charRolling=diceRolling&&diceRollingSide==='blue'; rb.disabled=gamePaused || charRolling || (turn!=='red' && !userRolling) || (rolled && !userRolling) || (busy && !userRolling); rb.textContent=userRolling ? '停止' : (charRolling ? charLabel + '掷骰中' : '掷骰'); } }
     function addPieces(side,arr){ const moves=side==='red'&&turn==='red'&&rolled ? legal(red,dice) : []; arr.forEach((p,i)=>{ const xy=posCoord(side,p,i); const cell=qs('.wb-ludo-cell[data-x="'+xy[0]+'"][data-y="'+xy[1]+'"]'); if(!cell) return; const b=getHostDocument().createElement('button'); b.type='button'; const can=moves.includes(i); b.className='wb-ludo-piece '+(side==='red'?'red':'blue')+(can?' can':''); b.disabled=side!=='red'||!can; b.textContent=i+1; let tapped=false; const tap=e=>{ e.preventDefault(); if(tapped) return; tapped=true; moveRed(i); setTimeout(()=>{ tapped=false; }, 260); }; b.onclick=tap; b.onpointerup=tap; cell.appendChild(b); }); }
   }
 
@@ -5775,6 +5811,7 @@ function showGameRecords(game, page) {
 
   async function createWordGuessRounds(count, forceFallback) {
     const cfg=settings();
+    const role = displayCharName();
 	    const fallbackWords = [
 	      {word:'漏刻', type:'旧时代计时器具', clues:['它和时间有关，但不依赖钟表。','它把流逝变成一种能被看见的秩序。','它常借助水的变化来标记时辰。','如果角色总是冷静地等你，它会像一种不催促的陪伴。','古代用滴水来计时的器具就是它。']},
 	      {word:'晕珥', type:'天文气象现象', clues:['它属于天空，却不是星月本身。','它常让普通光源显得像被某种边界包围。','它与冰晶折射有关，偶尔会围绕日月出现。','如果角色说话总带一点疏离的光，它会像那层不易靠近的边。','日月周围出现的彩色光环现象就是它。']},
@@ -5785,7 +5822,7 @@ function showGameRecords(game, page) {
 	      {word:'檐铃', type:'建筑装饰物', clues:['它和边缘有关，也和风有关。','它通常不主动发声，却会被经过的气流叫醒。','它常挂在屋檐或塔檐下，声音清而细。','如果角色表面冷淡，心绪却被你轻轻碰响，它很像这个东西。','挂在檐角、随风作响的小铃就是它。']},
 	      {word:'潮汐', type:'自然现象', clues:['它和来去有关，也和某种遥远牵引有关。','它看似重复，却每次都有细微差别。','它受月亮和引力影响，让海水涨落。','如果角色总被你一句话牵动情绪，这种规律会很像。','海水周期性上涨和退落的现象就是它。']}
 	    ];
-    const normalize = item => { const word=String(item?.word||'').trim(); if(!word) return null; const clues=Array.isArray(item.clues)?item.clues.map(x=>String(x).trim()).filter(Boolean).slice(0,5):[]; while(clues.length<5) clues.push(clues[clues.length-1] || '这个词和现在的场景有关，你再靠近一点想。'); const raw=item.interactions||{}; const interactions={ start:String(raw.start||('我把“' + word + '”藏好了，先给你一条不太好猜的线。')), clue:String(raw.clue||'我再换一种说法，你听听是不是离它近一点。'), clue_late:String(raw.clue_late||'这个提示已经很近了，再往前一点就要碰到答案了。'), guess:String(raw.guess||'这个答案还没贴到它的影子，我再把线索往它身边推一点。'), win:String(raw.win||('猜中了。' + displayCharName() + '把“' + word + '”轻轻重复了一遍，像确认你们刚才抓住了同一个小秘密。')), reveal:String(raw.reveal||('答案是“' + word + '”。' + displayCharName() + '把它说出来时，语气里带着一点只属于这个词的温柔。')) }; return { word, type:String(item.type||'未分类'), length:parseInt(item.length,10)||word.length, clues, interactions }; };
+    const normalize = item => { const word=String(item?.word||'').trim(); if(!word) return null; const clues=Array.isArray(item.clues)?item.clues.map(x=>String(x).trim()).filter(Boolean).slice(0,5):[]; while(clues.length<5) clues.push(clues[clues.length-1] || '这个词和现在的场景有关，你再靠近一点想。'); const raw=item.interactions||{}; const interactions={ start:String(raw.start||('我把“' + word + '”藏好了，先给你一条不太好猜的线。')), clue:String(raw.clue||'我再换一种说法，你听听是不是离它近一点。'), clue_late:String(raw.clue_late||'这个提示已经很近了，再往前一点就要碰到答案了。'), guess:String(raw.guess||'这个答案还没贴到它的影子，我再把线索往它身边推一点。'), win:String(raw.win||('猜中了。' + role + '把“' + word + '”轻轻重复了一遍，像确认你们刚才抓住了同一个小秘密。')), reveal:String(raw.reveal||('答案是“' + word + '”。' + role + '把它说出来时，语气里带着一点只属于这个词的温柔。')) }; return { word, type:String(item.type||'未分类'), length:parseInt(item.length,10)||word.length, clues, interactions }; };
     const fallback = () => shuffleArray(fallbackWords.slice()).slice(0, Math.max(5, count||5)).map(normalize).filter(Boolean);
     if (forceFallback || !cfg.apiUrl || !cfg.apiModel) return fallback();
 	    const prompt = [...(promptTemplates().wordGuess || PROMPT_TEMPLATES.wordGuess), '角色描述：'+currentCharDescription(cfg), '世界背景：'+(selectedWorldText(cfg)||'无'), '大总结：'+(selectedSummaryText(cfg)||'无')].join('\n');
@@ -5795,9 +5832,10 @@ function showGameRecords(game, page) {
 
 	  async function startWordGuess(state) {
 	    const cfg=settings(); const box=qs('#wb-gamebox');
+	    const role = displayCharName();
 		    const bank = !state ? wordGuessBank() : [];
 	    if (!state && !bank.length) box.innerHTML='<div class="wb-guess-panel"><div class="wb-guess-title">我说你猜</div><div class="wb-api-status wb-clue-box">当前为随机题库，请点击生成为该角色生成题库。正在抽取默认题库...</div></div>';
-		    function normalizeWordRound(item){ const normalized=normalizeWordGuessRoundData(item); if(normalized) return normalized; const word=String(item?.word||'').trim(); if(!word) return null; const clues=Array.isArray(item.clues)?item.clues.map(x=>String(x).trim()).filter(Boolean).slice(0,5):[]; while(clues.length<5) clues.push(clues[clues.length-1] || '这个词和现在的场景有关，你再靠近一点想。'); const raw=item.interactions||{}; return { word, type:String(item.type||'未分类'), length:parseInt(item.length,10)||word.length, clues, interactions:{ start:String(raw.start||('我把“' + word + '”藏好了，先从很远的地方说起。')), clue:Array.isArray(raw.clue)?raw.clue:String(raw.clue||'我再换一种说法，你听听是不是离它近一点。'), clue_late:String(raw.clue_late||'这个提示已经很近了，再往前一点就要碰到答案了。'), guess:Array.isArray(raw.guess)?raw.guess:String(raw.guess||'这个方向还差一点，我把线索再往它身边推近些。'), win:String(raw.win||('猜中了，答案就是“' + word + '”。')), reveal:String(raw.reveal||('答案是“' + word + '”。' + displayCharName() + '把它念出来，像把这题轻轻收好。')) } }; }
+		    function normalizeWordRound(item){ const normalized=normalizeWordGuessRoundData(item); if(normalized) return normalized; const word=String(item?.word||'').trim(); if(!word) return null; const clues=Array.isArray(item.clues)?item.clues.map(x=>String(x).trim()).filter(Boolean).slice(0,5):[]; while(clues.length<5) clues.push(clues[clues.length-1] || '这个词和现在的场景有关，你再靠近一点想。'); const raw=item.interactions||{}; return { word, type:String(item.type||'未分类'), length:parseInt(item.length,10)||word.length, clues, interactions:{ start:String(raw.start||('我把“' + word + '”藏好了，先从很远的地方说起。')), clue:Array.isArray(raw.clue)?raw.clue:String(raw.clue||'我再换一种说法，你听听是不是离它近一点。'), clue_late:String(raw.clue_late||'这个提示已经很近了，再往前一点就要碰到答案了。'), guess:Array.isArray(raw.guess)?raw.guess:String(raw.guess||'这个方向还差一点，我把线索再往它身边推近些。'), win:String(raw.win||('猜中了，答案就是“' + word + '”。')), reveal:String(raw.reveal||('答案是“' + word + '”。' + role + '把它念出来，像把这题轻轻收好。')) } }; }
 	    const roundLimit = 5;
 		    let rounds = Array.isArray(state?.rounds) && state.rounds.length ? state.rounds : (state?.round ? [state.round] : (bank.length ? bank.slice(0, roundLimit) : await createWordGuessRounds(roundLimit, true)));
 		    rounds = rounds.map(normalizeWordRound).filter(Boolean);
@@ -5824,7 +5862,7 @@ function showGameRecords(game, page) {
       else { taWins++; addTaWin('wordguess'); }
 	      completed++;
 	      const inter=round.interactions||{};
-	      guesses.unshift({ guess:label, ok:!!userWon, text:userWon ? (inter.win || ('答案是：' + round.word + '。' + displayCharName() + '眼睛一亮：“猜中了，就是它。”')) : (inter.reveal || ('答案是：' + round.word + '。' + displayCharName() + '把答案轻轻念出来，这一题先收好。')) });
+	      guesses.unshift({ guess:label, ok:!!userWon, text:userWon ? (inter.win || ('答案是：' + round.word + '。' + role + '眼睛一亮：“猜中了，就是它。”')) : (inter.reveal || ('答案是：' + round.word + '。' + role + '把答案轻轻念出来，这一题先收好。')) });
 	      speakText(guesses[0].text);
       if(!finalLineSpoken && (userWins >= 3 || taWins >= 3)){ finalLineSpoken = true; speak('wordguess', userWins >= 3 ? 'user_win' : 'user_lose'); }
       draw(); save();
@@ -5844,7 +5882,7 @@ function showGameRecords(game, page) {
       qs('#wb-word-go-next', mask).onclick=()=>{ mask.remove(); advanceQuestion(); };
     }
 	    function reveal(){ if(gamePaused||over||revealed) return; revealed=true; clueIndex=Math.min(4, round.clues.length-1); finishQuestion(false, '揭晓答案'); }
-		    function submit(){ if(gamePaused||over) return; const input=qs('#wb-word-input'); const guess=(input.value||'').trim(); if(!guess){ toast('请输入猜测'); return; } input.value=''; if(guess===round.word){ finishQuestion(true, guess); } else { const inter=round.interactions||{}; const wrong=Array.isArray(inter.guess)?inter.guess:[]; guesses.unshift({ guess, ok:false, text: wrong[Math.min(wrong.length-1, guesses.filter(g=>!g.ok).length)] || inter.guess || (displayCharName() + '轻轻摇头，又把提示说得更软了一点。') }); speakText(guesses[0].text); draw(); save(); } }
+		    function submit(){ if(gamePaused||over) return; const input=qs('#wb-word-input'); const guess=(input.value||'').trim(); if(!guess){ toast('请输入猜测'); return; } input.value=''; if(guess===round.word){ finishQuestion(true, guess); } else { const inter=round.interactions||{}; const wrong=Array.isArray(inter.guess)?inter.guess:[]; guesses.unshift({ guess, ok:false, text: wrong[Math.min(wrong.length-1, guesses.filter(g=>!g.ok).length)] || inter.guess || (role + '轻轻摇头，又把提示说得更软了一点。') }); speakText(guesses[0].text); draw(); save(); } }
     function draw(){ qs('#wb-word-meta').textContent = '第 ' + (completed+1) + ' 题　字数：' + (round.length || (round.word || '').length) + ' 字　类型：' + (round.type || '未分类') + '　' + visibleClues().length + '/5　你赢：' + userWins; qs('#wb-word-clues').textContent = visibleClues().map((c,i)=>(i+1)+'. '+c).join('\n') + (revealed ? '\n\n答案：' + round.word : ''); qs('#wb-word-history').innerHTML = guesses.length ? guesses.map(g=>'<div class="wb-guess-item"><b>'+esc(g.guess)+'</b>　'+(g.ok?'你赢':'未中')+'<br>'+esc(g.text)+'</div>').join('') : '<div class="wb-muted">还没有猜测。</div>'; }
   }
 
