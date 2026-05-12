@@ -1349,6 +1349,14 @@ export async function initWanbanXiaowu() {
         overscroll-behavior:contain;
       }
       #${SHELL_ID}.wb-shell-visible { display:flex; justify-content:center; align-items:stretch; padding:16px; }
+      #${SHELL_ID}.wb-open-guard::after {
+        content:'';
+        position:fixed;
+        inset:0;
+        z-index:1000003;
+        background:transparent;
+        pointer-events:auto;
+      }
       #${FLOAT_ID} {
         position:fixed;
         left:18px;
@@ -2525,6 +2533,21 @@ export async function initWanbanXiaowu() {
     btn.style.right = 'auto';
     btn.style.bottom = 'auto';
   }
+  function stopFloatEvent(e) {
+    if (!e) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+  }
+  function armPopupOpenGuard() {
+    const shell = qs('#' + SHELL_ID, getHostDocument());
+    if (!shell) return;
+    shell.classList.add('wb-open-guard');
+    setTimeout(() => {
+      const latest = qs('#' + SHELL_ID, getHostDocument());
+      if (latest) latest.classList.remove('wb-open-guard');
+    }, 320);
+  }
   function bindFloatingBall(btn) {
     if (!btn || btn.dataset.wbBound) return;
     btn.dataset.wbBound = '1';
@@ -2545,7 +2568,7 @@ export async function initWanbanXiaowu() {
       originY = rect.top;
       btn.classList.add('dragging');
       try { btn.setPointerCapture(e.pointerId); } catch(e2) {}
-      e.preventDefault();
+      stopFloatEvent(e);
     });
     btn.addEventListener('pointermove', e => {
       if (!dragging) return;
@@ -2553,7 +2576,7 @@ export async function initWanbanXiaowu() {
       const dy = e.clientY - startY;
       if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
       placeFloatingBall(btn, originX + dx, originY + dy);
-      e.preventDefault();
+      stopFloatEvent(e);
     });
     const finish = e => {
       if (!dragging) return;
@@ -2564,8 +2587,8 @@ export async function initWanbanXiaowu() {
       const pos = clampFloatingBallPosition(rect.left, rect.top);
       setSettings({ floatingBallX: pos.x, floatingBallY: pos.y });
       placeFloatingBall(btn, pos.x, pos.y);
-      if (!moved) buildPopup();
-      e.preventDefault();
+      if (!moved) { buildPopup(); armPopupOpenGuard(); }
+      stopFloatEvent(e);
     };
     btn.addEventListener('pointerup', finish);
     btn.addEventListener('pointercancel', e => {
@@ -2573,8 +2596,11 @@ export async function initWanbanXiaowu() {
       dragging = false;
       btn.classList.remove('dragging');
       try { btn.releasePointerCapture(e.pointerId); } catch(e2) {}
-      e.preventDefault();
+      stopFloatEvent(e);
     });
+    btn.addEventListener('click', stopFloatEvent, true);
+    btn.addEventListener('touchstart', stopFloatEvent, { capture:true, passive:false });
+    btn.addEventListener('touchend', stopFloatEvent, { capture:true, passive:false });
   }
   function syncFloatingBall() {
     const doc = getHostDocument();
@@ -6349,24 +6375,36 @@ function showGameRecords(game, page) {
           ctx.stroke();
         }
       } else if(l===7){
-        ctx.strokeStyle='rgba(132,96,18,.42)';
-        ctx.lineWidth=Math.max(1.2,r*.035);
-        for(let k=-6;k<=6;k++){
-          ctx.beginPath();
-          ctx.moveTo(x-r*.95,y+(k*.2-.9)*r);
-          ctx.lineTo(x+(k*.2+.9)*r,y+r*.95);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(x+r*.95,y+(k*.2-.9)*r);
-          ctx.lineTo(x-(k*.2+.9)*r,y+r*.95);
-          ctx.stroke();
-        }
-        ctx.fillStyle='rgba(120,82,20,.22)';
-        for(let yy=-.55;yy<=.55;yy+=.28){
-          for(let xx=-.55;xx<=.55;xx+=.28){
-            if(xx*xx+yy*yy>.72) continue;
+        ctx.strokeStyle='rgba(126,82,18,.62)';
+        ctx.lineWidth=Math.max(1.1,r*.026);
+        const gap = r * .24;
+        [-Math.PI / 4, Math.PI / 4].forEach(rot => {
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(rot);
+          for(let off=-r*1.45; off<=r*1.45; off+=gap){
             ctx.beginPath();
-            ctx.arc(x+xx*r,y+yy*r,Math.max(1.2,r*.025),0,Math.PI*2);
+            ctx.moveTo(-r*1.55, off);
+            ctx.lineTo(r*1.55, off);
+            ctx.stroke();
+          }
+          ctx.restore();
+        });
+        const dotR = Math.max(1.25,r*.024);
+        for(let a=-6;a<=5;a++){
+          for(let b=-6;b<=5;b++){
+            const u = (a + .5) * gap;
+            const v = (b + .5) * gap;
+            const px = (u - v) / Math.SQRT2;
+            const py = (u + v) / Math.SQRT2;
+            if(px*px + py*py > r*r*.68) continue;
+            ctx.fillStyle='rgba(92,60,17,.58)';
+            ctx.beginPath();
+            ctx.ellipse(x+px,y+py,dotR*1.05,dotR*.78,-Math.PI/4,0,Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle='rgba(255,235,126,.32)';
+            ctx.beginPath();
+            ctx.ellipse(x+px-dotR*.28,y+py-dotR*.32,dotR*.62,dotR*.34,-Math.PI/4,0,Math.PI*2);
             ctx.fill();
           }
         }
@@ -6396,7 +6434,35 @@ function showGameRecords(game, page) {
       ctx.beginPath();
       ctx.ellipse(x-r*.28,y-r*.34,r*.18,r*.1,-.55,0,Math.PI*2);
       ctx.fill();
-      if(l>=2){
+      if(l===7){
+        ctx.save();
+        ctx.translate(x,y-r*.94);
+        ctx.strokeStyle='rgba(35,91,34,.54)';
+        ctx.lineWidth=Math.max(.9,r*.018);
+        function crownLeaf(angle,len,width,color){
+          ctx.save();
+          ctx.rotate(angle);
+          ctx.fillStyle=color;
+          ctx.beginPath();
+          ctx.moveTo(0,0);
+          ctx.quadraticCurveTo(-width*r*.55,-len*r*.42,0,-len*r);
+          ctx.quadraticCurveTo(width*r*.55,-len*r*.42,0,0);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+        crownLeaf(-.68,.55,.18,'rgba(66,132,50,.92)');
+        crownLeaf(-.42,.72,.2,'rgba(77,150,58,.95)');
+        crownLeaf(-.18,.86,.18,'rgba(54,124,47,.94)');
+        crownLeaf(.08,.9,.2,'rgba(85,162,61,.96)');
+        crownLeaf(.34,.72,.2,'rgba(61,136,50,.94)');
+        crownLeaf(.62,.56,.18,'rgba(74,145,55,.92)');
+        ctx.fillStyle='rgba(69,122,42,.95)';
+        ctx.beginPath();
+        ctx.ellipse(0,r*.03,r*.18,r*.075,0,0,Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      } else if(l>=2){
         ctx.strokeStyle='#5f7f3d';
         ctx.lineWidth=Math.max(1.2,r*.06);
         ctx.beginPath();
@@ -6410,7 +6476,7 @@ function showGameRecords(game, page) {
       const s = scale || 1;
       const key = l + ':' + s;
       if (fruitCanvasCache[key]) return fruitCanvasCache[key];
-      const f = fruits[l], r = f.r * s, pad = Math.ceil(Math.max(8, r * .18));
+      const f = fruits[l], r = f.r * s, pad = Math.ceil(Math.max(8, r * (l === 7 ? .36 : .18)));
       const size = Math.ceil((r + pad) * 2);
       const off = getHostDocument().createElement('canvas');
       off.width = size;
