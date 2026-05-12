@@ -84,6 +84,9 @@ export async function initWanbanXiaowu() {
   const STORAGE_PROGRESS = SCRIPT_ID + '_progress_v1';
   const STORAGE_RECORDS = SCRIPT_ID + '_records_v1';
   const STORAGE_WORD_GUESS_BANK = SCRIPT_ID + '_wordGuessBank_v1';
+  const STORAGE_WORD_GUESS_BANK_SOURCE = SCRIPT_ID + '_wordGuessBankSource_v1';
+  const STORAGE_WORD_GUESS_BANK_FILTER = SCRIPT_ID + '_wordGuessBankFilter_v1';
+  const WORD_GUESS_DEFAULT_BANK_URL = new URL('./wanban-wordguess-bank.txt', import.meta.url).href;
   const FLAG = SCRIPT_ID + '_Loaded_v1_0_1';
   const MENU_SELECTORS = [
     '#extensionsMenu',
@@ -117,6 +120,7 @@ export async function initWanbanXiaowu() {
   let currentRoundTheaterInfo = null;
   let progressSaveTimers = {};
   let progressSaveCache = {};
+  let defaultWordGuessBankCache = null;
   let theaterCache = safeObject(loadJSON(STORAGE_THEATERS, {}));
   let lastMenuOpenAt = 0;
   let floatingBallResizeBound = false;
@@ -452,6 +456,73 @@ export async function initWanbanXiaowu() {
     const store = Array.isArray(raw) ? {} : (raw || {});
     store[normalizePresetName(roleName || companionName())] = Array.isArray(arr) ? arr : [];
     saveJSON(STORAGE_WORD_GUESS_BANK, store);
+  }
+  function wordGuessBankSource() {
+    const v = localStorage.getItem(STORAGE_WORD_GUESS_BANK_SOURCE);
+    return v === 'default' ? 'default' : 'role';
+  }
+  function saveWordGuessBankSource(v) {
+    localStorage.setItem(STORAGE_WORD_GUESS_BANK_SOURCE, v === 'default' ? 'default' : 'role');
+  }
+  function wordGuessBankFilter() {
+    return localStorage.getItem(STORAGE_WORD_GUESS_BANK_FILTER) || '';
+  }
+  function saveWordGuessBankFilter(v) {
+    localStorage.setItem(STORAGE_WORD_GUESS_BANK_FILTER, String(v || '').trim());
+  }
+  function selectedWordGuessRoleName() {
+    const select = qs('#wb-line-preset-select');
+    if (select && select.value && select.value.indexOf('world::') === 0) {
+      const pr = worldPresets()[parseInt(select.value.slice(7), 10)];
+      if (pr && pr.name) return normalizePresetName(pr.name);
+    }
+    if (select && select.value) return normalizePresetName(select.value.replace(/^line::/, ''));
+    return normalizePresetName(currentLinePreset('wordguess') || companionName());
+  }
+  async function defaultWordGuessBank() {
+    if (defaultWordGuessBankCache) return defaultWordGuessBankCache.slice();
+    try {
+      const res = await fetch(WORD_GUESS_DEFAULT_BANK_URL, { cache:'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = parseGeneratedJson(await res.text());
+      const arr = (Array.isArray(data) ? data : (Array.isArray(data?.word_bank) ? data.word_bank : []))
+        .map(normalizeWordGuessRoundData).filter(Boolean);
+      if (arr.length) {
+        defaultWordGuessBankCache = arr;
+        return arr.slice();
+      }
+    } catch(e) {
+      console.warn('[玩伴小屋] default wordguess bank txt load failed:', e);
+    }
+    defaultWordGuessBankCache = [
+      { word:'漏刻', type:'旧时代计时器具', length:2, clues:['它和时间有关，但不依赖钟表。','它把流逝变成一种能被看见的秩序。','它常借助水的变化来标记时辰。','如果角色总是冷静地等你，它会像一种不催促的陪伴。','古代用滴水来计时的器具就是它。'] },
+      { word:'榫卯', type:'传统建筑结构', length:2, clues:['它和连接有关，却不靠显眼的外物。','它讲究咬合、分寸和彼此成全。','木构之间不用钉子也能牢牢相扣。','如果你和角色的关系是嘴上不说却彼此卡准位置，它很合适。','中国传统木作中凸凹相接的结构就是它。'] },
+      { word:'潮汐', type:'自然现象', length:2, clues:['它和来去有关，也和某种遥远牵引有关。','它看似重复，却每次都有细微差别。','它受月亮和引力影响，让海水涨落。','如果角色总被你一句话牵动情绪，这种规律会很像。','海水周期性上涨和退落的现象就是它。'] }
+    ].map(normalizeWordGuessRoundData).filter(Boolean);
+    return defaultWordGuessBankCache.slice();
+  }
+  function filterWordGuessBank(bank, filterText) {
+    const arr = Array.isArray(bank) ? bank.filter(Boolean) : [];
+    const text = String(filterText || '').trim();
+    if (!text) return arr;
+    const range = text.match(/^\s*(\d+)\s*(?:-|~|到|至|,|，)\s*(\d+)\s*$/);
+    if (range) {
+      const a = Math.max(1, parseInt(range[1], 10));
+      const b = Math.max(1, parseInt(range[2], 10));
+      return arr.slice(Math.min(a, b) - 1, Math.max(a, b));
+    }
+    const first = text.match(/^前\s*(\d+)\s*(?:条|题)?$/);
+    if (first) return arr.slice(0, Math.max(1, parseInt(first[1], 10)));
+    const keys = text.split(/[\s,，、;；|]+/).map(x => x.trim()).filter(Boolean);
+    if (!keys.length) return arr;
+    const matched = arr.filter(item => {
+      const hay = [item.word, item.type].concat(item.clues || []).join(' ');
+      return keys.some(k => hay.indexOf(k) >= 0);
+    });
+    return matched.length ? matched : arr;
+  }
+  function selectWordGuessRounds(bank, count, filterText) {
+    return shuffleArray(filterWordGuessBank(bank, filterText).slice()).slice(0, Math.max(1, count || 5));
   }
   function hasPlayableProgress(game, state) {
     if (!state) return false;
@@ -948,7 +1019,7 @@ export async function initWanbanXiaowu() {
   }
 	  function themeClass(value) {
 	    const t = value || settings().theme || 'day';
-	    return ({ day:'wb-day', night:'wb-night', spring:'wb-spring', cyber:'wb-cyber' })[t] || 'wb-day';
+	    return ({ day:'wb-day', night:'wb-night', spring:'wb-spring', cyber:'wb-cyber', mono:'wb-mono' })[t] || 'wb-day';
 	  }
 	  function customFonts() {
 	    const cfg = settings();
@@ -978,6 +1049,7 @@ export async function initWanbanXiaowu() {
   }
   function canvasThemePalette() {
     const t = settings().theme || 'day';
+    if (t === 'mono') return { top:'#f4f4f4', mid:'#dedede', bottom:'#c8c8c8', pattern:'rgba(0,0,0,.06)', grid:'rgba(0,0,0,.24)', border:'rgba(0,0,0,.48)', text:'#171717' };
     if (t === 'spring') return { top:'#F4F1D3', mid:'#EAF6D4', bottom:'#D8EDB2', pattern:'rgba(111,168,90,.075)', grid:'rgba(76,59,42,.16)', border:'rgba(111,83,45,.32)', text:'#4C3B2A' };
     if (t === 'cyber') return { top:'#101A1D', mid:'#14201B', bottom:'#0D1512', pattern:'rgba(241,232,91,.07)', grid:'rgba(25,211,197,.18)', border:'rgba(241,232,91,.34)', text:'#F6F5DE' };
     if (t === 'night') return { top:'#1b1020', mid:'#211426', bottom:'#120b17', pattern:'rgba(244,194,215,.04)', grid:'rgba(244,194,215,.12)', border:'rgba(244,194,215,.16)', text:'#f7dce7' };
@@ -1331,6 +1403,7 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-day { --wb-bg:#fff7fb; --wb-panel:#fffefd; --wb-soft:#ffeaf1; --wb-text:#2f2430; --wb-sub:#8a6470; --wb-border:#e8b9c5; --wb-accent:#c65b7c; --wb-accent2:#3a8f91; --wb-board:#fff2e6; --wb-input:#fff9fb; --wb-glow:rgba(198,91,124,.26); --wb-gold:#c99738; --wb-screen:#fff9f2; }
       #${POPUP_ID}.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; }
       #${POPUP_ID}.wb-night { --wb-bg:#11121d; --wb-panel:#191a28; --wb-soft:#252033; --wb-text:#f5eafa; --wb-sub:#bba8c7; --wb-border:#54425f; --wb-accent:#ff7aa8; --wb-accent2:#6ed6d1; --wb-board:#111827; --wb-input:#151620; --wb-glow:rgba(255,122,168,.28); --wb-gold:#f3c56a; --wb-screen:#111827; }
+      #${POPUP_ID}.wb-mono { --wb-bg:#f2f2f2; --wb-panel:#ffffff; --wb-soft:#dcdcdc; --wb-text:#151515; --wb-sub:#565656; --wb-border:#8f8f8f; --wb-accent:#111111; --wb-accent2:#4d4d4d; --wb-board:#e6e6e6; --wb-input:#f7f7f7; --wb-glow:rgba(0,0,0,.12); --wb-gold:#2e2e2e; --wb-screen:#eeeeee; }
       #${POPUP_ID}.wb-cyber { --wb-bg:#0D1512; --wb-panel:#18231E; --wb-soft:#24352D; --wb-text:#F6F5DE; --wb-sub:#B9C4B8; --wb-border:#4C5B4A; --wb-accent:#F1E85B; --wb-accent2:#19D3C5; --wb-board:#101A1D; --wb-input:#14201B; --wb-glow:rgba(241,232,91,.22); --wb-gold:#FF8A3D; --wb-screen:#1A221D; }
       .wb-head { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 12px; border-bottom:1px solid var(--wb-border); background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.02)); }
       .wb-title { font-size:20px; font-weight:800; letter-spacing:2px; color:var(--wb-accent); white-space:nowrap; }
@@ -1602,6 +1675,7 @@ export async function initWanbanXiaowu() {
       .wb-modal-mask { position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; z-index:1000000; background:rgba(0,0,0,.88); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; animation:wbFadeIn .25s ease; --wb-bg:#fff7fb; --wb-panel:#fffefd; --wb-soft:#ffeaf1; --wb-text:#2f2430; --wb-sub:#8a6470; --wb-border:#e8b9c5; --wb-accent:#c65b7c; --wb-accent2:#3a8f91; --wb-board:#fff2e6; --wb-input:#fff9fb; --wb-glow:rgba(198,91,124,.26); --wb-gold:#c99738; --wb-screen:#fff9f2; }
       .wb-modal-mask.wb-night { --wb-bg:#11121d; --wb-panel:#191a28; --wb-soft:#252033; --wb-text:#f5eafa; --wb-sub:#bba8c7; --wb-border:#54425f; --wb-accent:#ff7aa8; --wb-accent2:#6ed6d1; --wb-board:#111827; --wb-input:#151620; --wb-glow:rgba(255,122,168,.28); --wb-gold:#f3c56a; --wb-screen:#111827; }
       .wb-modal-mask.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; }
+      .wb-modal-mask.wb-mono { --wb-bg:#f2f2f2; --wb-panel:#ffffff; --wb-soft:#dcdcdc; --wb-text:#151515; --wb-sub:#565656; --wb-border:#8f8f8f; --wb-accent:#111111; --wb-accent2:#4d4d4d; --wb-board:#e6e6e6; --wb-input:#f7f7f7; --wb-glow:rgba(0,0,0,.12); --wb-gold:#2e2e2e; --wb-screen:#eeeeee; }
       .wb-modal-mask.wb-cyber { --wb-bg:#0D1512; --wb-panel:#18231E; --wb-soft:#24352D; --wb-text:#F6F5DE; --wb-sub:#B9C4B8; --wb-border:#4C5B4A; --wb-accent:#F1E85B; --wb-accent2:#19D3C5; --wb-board:#101A1D; --wb-input:#14201B; --wb-glow:rgba(241,232,91,.22); --wb-gold:#FF8A3D; --wb-screen:#1A221D; }
       @keyframes wbFadeIn{from{opacity:0}to{opacity:1}}
       .wb-modal { background:linear-gradient(180deg, var(--wb-panel), var(--wb-bg)); color:var(--wb-text); border:1px solid var(--wb-border); border-top:3px solid var(--wb-accent); width:100%; max-width:560px; max-height:85vh; overflow-y:auto; animation:wbSlideUp .3s cubic-bezier(.34,1.56,.64,1); box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px var(--wb-glow); padding:18px 22px; border-radius:0; }
@@ -1635,6 +1709,13 @@ export async function initWanbanXiaowu() {
           var(--wb-bg);
         box-shadow:0 28px 80px rgba(76,59,42,.22), 0 0 0 1px rgba(255,255,255,.32) inset, 0 0 44px rgba(111,168,90,.18);
       }
+      #${POPUP_ID}.wb-mono {
+        font-family:'WanbanCyberPixel','Microsoft YaHei',system-ui,sans-serif;
+        letter-spacing:0;
+        image-rendering:pixelated;
+        background:#fff;
+        box-shadow:none;
+      }
       #${POPUP_ID}.wb-cyber {
         font-family:'WanbanCyberPixel','Microsoft YaHei',system-ui,sans-serif;
         letter-spacing:0;
@@ -1667,6 +1748,10 @@ export async function initWanbanXiaowu() {
           repeating-linear-gradient(90deg, rgba(76,59,42,.06) 0 4px, transparent 4px 14px),
           linear-gradient(180deg, rgba(255,255,255,.40), rgba(246,231,200,.36)),
           var(--wb-panel);
+      }
+      #${POPUP_ID}.wb-mono .wb-head {
+        background:#fff;
+        border-bottom:2px solid #111;
       }
       #${POPUP_ID}.wb-cyber .wb-head {
         background:
@@ -1844,6 +1929,11 @@ export async function initWanbanXiaowu() {
           linear-gradient(180deg, rgba(255,255,255,.36), rgba(246,231,200,.42)),
           var(--wb-panel);
       }
+      #${POPUP_ID}.wb-mono .wb-panel {
+        background:#fff;
+        border-color:#111;
+        box-shadow:none;
+      }
       #${POPUP_ID}.wb-cyber .wb-panel {
         background:linear-gradient(180deg, rgba(25,211,197,.07), rgba(241,232,91,.025)), var(--wb-panel);
         box-shadow:0 14px 34px rgba(0,0,0,.32), 0 0 0 1px rgba(25,211,197,.08) inset;
@@ -1882,6 +1972,11 @@ export async function initWanbanXiaowu() {
         border-color:#BFA372;
         box-shadow:0 16px 34px rgba(76,59,42,.12) inset;
       }
+      #${POPUP_ID}.wb-mono .wb-board-wrap {
+        background:#fff;
+        border:2px solid #111;
+        box-shadow:none;
+      }
       #${POPUP_ID}.wb-cyber .wb-board-wrap {
         background:
           linear-gradient(135deg, rgba(25,211,197,.08), rgba(241,232,91,.05)),
@@ -1893,6 +1988,15 @@ export async function initWanbanXiaowu() {
         border:7px solid #9E7846;
         border-color:#B98A54 #6F4F2C #6F4F2C #C99A5F;
         box-shadow:0 0 0 2px rgba(255,246,220,.55) inset, 0 10px 22px rgba(76,59,42,.20);
+      }
+      #${POPUP_ID}.wb-mono :is(.wb-canvas,.wb-ludo,.wb-territory-board,.wb-grid2048,.wb-gomoku,.wb-board3) {
+        border:4px solid #111;
+        border-color:#111;
+        box-shadow:none;
+        image-rendering:pixelated;
+      }
+      #${POPUP_ID}.wb-mono :is(.wb-canvas,.wb-jump-canvas,.wb-plank-canvas,.wb-tetris-canvas) {
+        filter:grayscale(1) contrast(1.12);
       }
       #${POPUP_ID}.wb-cyber :is(.wb-canvas,.wb-ludo,.wb-territory-board) {
         border:4px solid #4C5B4A;
@@ -1926,6 +2030,11 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-spring .wb-ludo-cell.path { background:#D8EDB2; }
       #${POPUP_ID}.wb-spring .wb-ludo-cell.home-red { background:#E3C56A; }
       #${POPUP_ID}.wb-spring .wb-ludo-cell.home-blue { background:#BDE0E9; }
+      #${POPUP_ID}.wb-mono .wb-ludo { background-color:#d0d0d0; border-color:#111; background-image:none; }
+      #${POPUP_ID}.wb-mono .wb-ludo-cell { background:#f2f2f2; border-color:#999; }
+      #${POPUP_ID}.wb-mono .wb-ludo-cell.path { background:#c9c9c9; }
+      #${POPUP_ID}.wb-mono .wb-ludo-cell.home-red { background:#777; }
+      #${POPUP_ID}.wb-mono .wb-ludo-cell.home-blue { background:#aaa; }
       #${POPUP_ID}.wb-cyber .wb-ludo { background-color:#101A1D; border-color:#4C5B4A; box-shadow:0 0 18px rgba(25,211,197,.14); }
       #${POPUP_ID}.wb-cyber .wb-ludo-cell { background:#14201B; border-color:rgba(25,211,197,.16); }
       #${POPUP_ID}.wb-cyber .wb-ludo-cell.path { background:#24352D; }
@@ -1959,10 +2068,43 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-spring .wb-companion.on { background:linear-gradient(135deg, rgba(255,248,220,.88), rgba(199,225,160,.78)); border-top-color:rgba(217,123,84,.58); box-shadow:0 10px 22px rgba(76,59,42,.12), 0 1px 0 rgba(255,255,255,.55) inset; }
       #${POPUP_ID}.wb-spring .wb-speech { background:rgba(255,248,220,.70); border:1px solid rgba(111,168,90,.24); color:#4C3B2A; }
       #${POPUP_ID}.wb-spring .wb-comp-name { color:#D97B54; }
+      #${POPUP_ID}.wb-mono .wb-side-companion { background:#fff; border-color:#111; box-shadow:none; }
+      #${POPUP_ID}.wb-mono .wb-companion.on { background:#fff; border-top-color:#111; box-shadow:none; }
+      #${POPUP_ID}.wb-mono .wb-speech { background:#f6f6f6; border:1px solid #777; color:#151515; }
+      #${POPUP_ID}.wb-mono .wb-comp-name { color:#111; }
       #${POPUP_ID}.wb-cyber .wb-side-companion { background:linear-gradient(155deg, #24152e, #171a32 72%); border-color:rgba(255,79,163,.34); box-shadow:0 14px 34px rgba(0,0,0,.36), 0 0 24px rgba(255,79,163,.10) inset; }
       #${POPUP_ID}.wb-cyber .wb-companion.on { background:linear-gradient(135deg, rgba(255,79,163,.18), rgba(139,107,255,.16)), #171a32; border-top-color:rgba(255,79,163,.68); box-shadow:0 0 22px rgba(255,79,163,.12), 0 1px 0 rgba(255,255,255,.08) inset; }
       #${POPUP_ID}.wb-cyber .wb-speech { background:rgba(255,79,163,.10); border:1px solid rgba(255,79,163,.24); color:#F6F5DE; }
       #${POPUP_ID}.wb-cyber .wb-comp-name { color:#FF8A3D; }
+      #${POPUP_ID}.wb-mono .wb-btn,
+      #${POPUP_ID}.wb-mono .wb-iconbtn,
+      #${POPUP_ID}.wb-mono .wb-tab,
+      #${POPUP_ID}.wb-mono .wb-input,
+      #${POPUP_ID}.wb-mono .wb-select,
+      #${POPUP_ID}.wb-mono .wb-textarea,
+      #${POPUP_ID}.wb-mono .wb-pill,
+      #${POPUP_ID}.wb-mono .wb-game-card,
+      #${POPUP_ID}.wb-mono .wb-tag {
+        border-radius:0;
+        border-color:#111;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-btn.primary,
+      #${POPUP_ID}.wb-mono .wb-tab.active,
+      #${POPUP_ID}.wb-mono .wb-tag.active {
+        background:#111;
+        color:#fff;
+        border-color:#111;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono :is(.wb-grid2048,.wb-gomoku,.wb-board3,.wb-territory-board) {
+        background:#d8d8d8;
+        filter:grayscale(1) contrast(1.08);
+      }
+      #${POPUP_ID}.wb-mono .wb-territory-dot { background:#111; border-color:#555; }
+      #${POPUP_ID}.wb-mono .wb-territory-cell { background:#eeeeee; border-color:#aaa; color:#111; }
+      #${POPUP_ID}.wb-mono .wb-territory-cell.user { background:#555; color:#fff; }
+      #${POPUP_ID}.wb-mono .wb-territory-cell.ta { background:#999; color:#111; }
       .wb-avatar { border-radius:8px; border-color:color-mix(in srgb, var(--wb-accent2) 45%, var(--wb-border) 55%); box-shadow:0 6px 14px rgba(0,0,0,.16); }
       .wb-speech { border-radius:8px; background:color-mix(in srgb, var(--wb-soft) 78%, var(--wb-panel) 22%); }
       .wb-input, .wb-textarea, .wb-select {
@@ -2091,6 +2233,245 @@ export async function initWanbanXiaowu() {
         .wb-settings-grid { grid-template-columns:1fr; }
         .wb-modal-mask { padding:20px; }
         .wb-modal { max-height:85vh; }
+      }
+
+      #${POPUP_ID}.wb-mono,
+      #${POPUP_ID}.wb-mono .wb-body,
+      #${POPUP_ID}.wb-mono .wb-head,
+      #${POPUP_ID}.wb-mono .wb-panel,
+      #${POPUP_ID}.wb-mono .wb-board-wrap,
+      #${POPUP_ID}.wb-mono .wb-game-card,
+      #${POPUP_ID}.wb-mono .wb-toolbar,
+      #${POPUP_ID}.wb-mono .wb-side-companion,
+      #${POPUP_ID}.wb-mono .wb-companion.on,
+      #${POPUP_ID}.wb-mono .wb-speech,
+      #${POPUP_ID}.wb-mono .wb-worldbook-list,
+      #${POPUP_ID}.wb-mono .wb-api-status,
+      #${POPUP_ID}.wb-mono .wb-sticky-actions {
+        background:#fff;
+        background-image:none;
+        color:#111;
+        box-shadow:none;
+        text-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono {
+        border:4px solid #111;
+        border-top:4px solid #111;
+        font-family:'WanbanCyberPixel','Microsoft YaHei',system-ui,sans-serif;
+        image-rendering:pixelated;
+      }
+      #${POPUP_ID}.wb-mono::before { background:rgba(0,0,0,.35); backdrop-filter:none; -webkit-backdrop-filter:none; }
+      #${POPUP_ID}.wb-mono .wb-head { border-bottom:4px solid #111; }
+      #${POPUP_ID}.wb-mono .wb-title { color:#111; letter-spacing:0; }
+      #${POPUP_ID}.wb-mono .wb-title::before {
+        border-radius:0;
+        border:3px solid #111;
+        background:url('${APP_ICON_URL}') center / cover no-repeat, #fff;
+        filter:grayscale(1) contrast(1.25);
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-title::after { display:block; background:#111; opacity:1; }
+      #${POPUP_ID}.wb-mono :is(.wb-panel,.wb-board-wrap,.wb-game-card,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-toolbar,.wb-worldbook-list,.wb-api-status,.wb-record-table-wrap,.wb-guess-history,.wb-clue-box,.wb-oldmaid-hand,.wb-oldmaid-log) {
+        border:3px solid #111;
+        border-radius:0;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-tabs {
+        background:#fff;
+        border:3px solid #111;
+        border-radius:0;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-tabs .wb-tab { border-right:3px solid #111; }
+      #${POPUP_ID}.wb-mono .wb-tabs .wb-tab:last-child { border-right:0; }
+      #${POPUP_ID}.wb-mono :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag,.wb-memory-face,.wb-oldmaid-card,.wb-bomb-cell,.wb-sudoku-cell) {
+        background:#fff;
+        background-image:none;
+        color:#111;
+        border:3px solid #111;
+        border-radius:0;
+        box-shadow:none;
+        text-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono :is(.wb-btn.primary,.wb-tab.active,.wb-tag.active,.wb-bomb-cell.boom,.wb-bomb-cell.chosen) {
+        background:#111;
+        background-image:none;
+        color:#fff;
+        border-color:#111;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono :is(.wb-btn:hover,.wb-iconbtn:hover,.wb-tab:hover,.wb-game-card:hover,.wb-cell:hover,.wb-gcell:hover,.wb-ludo-piece:hover) {
+        transform:none;
+        filter:none;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-game-card::before { display:none; }
+      #${POPUP_ID}.wb-mono .wb-game-icon {
+        background:#fff;
+        background-image:none;
+        color:#111;
+        border:3px solid #111;
+        border-radius:0;
+        box-shadow:none;
+        filter:grayscale(1) contrast(1.15);
+      }
+      #${POPUP_ID}.wb-mono .wb-game-icon.has-image { background:#fff; }
+      #${POPUP_ID}.wb-mono .wb-game-icon.has-image img { border-radius:0; filter:grayscale(1) contrast(1.15); }
+      #${POPUP_ID}.wb-mono .wb-avatar {
+        border:3px solid #111;
+        border-radius:0;
+        box-shadow:none;
+        filter:grayscale(1) contrast(1.15);
+      }
+      #${POPUP_ID}.wb-mono :is(.wb-canvas,.wb-watermelon-canvas,.wb-jump-canvas,.wb-plank-canvas,.wb-tetris-canvas,.wb-ludo,.wb-territory-board,.wb-grid2048,.wb-gomoku,.wb-board3,.wb-reversi,.wb-c4d,.wb-c4d-mask) {
+        background:#d9d9d9;
+        background-image:none;
+        border:4px solid #111;
+        border-radius:0;
+        box-shadow:none;
+        filter:grayscale(1) contrast(1.12);
+        image-rendering:pixelated;
+      }
+      #${POPUP_ID}.wb-mono :is(.wb-cell,.wb-gcell,.wb-ludo-cell,.wb-reversi-cell,.wb-c4d-cell,.wb-memory-front,.wb-memory-back,.wb-tile) {
+        background:#fff;
+        background-image:none;
+        border:2px solid #111;
+        border-radius:0;
+        box-shadow:none;
+        color:#111;
+      }
+      #${POPUP_ID}.wb-mono .wb-gcell.black,
+      #${POPUP_ID}.wb-mono .wb-reversi-cell.ta span,
+      #${POPUP_ID}.wb-mono .wb-c4d-disc.ta,
+      #${POPUP_ID}.wb-mono .wb-c4d-falling.ta { background:#111; border-color:#111; box-shadow:none; }
+      #${POPUP_ID}.wb-mono .wb-gcell.white,
+      #${POPUP_ID}.wb-mono .wb-reversi-cell.user span,
+      #${POPUP_ID}.wb-mono .wb-c4d-disc.user,
+      #${POPUP_ID}.wb-mono .wb-c4d-falling.user { background:#fff; border:2px solid #111; box-shadow:none; }
+      #${POPUP_ID}.wb-mono .wb-ludo-cell.path,
+      #${POPUP_ID}.wb-mono .wb-cell.fixed,
+      #${POPUP_ID}.wb-mono .wb-territory-cell { background:#d9d9d9; color:#111; }
+      #${POPUP_ID}.wb-mono .wb-ludo-cell.home-red,
+      #${POPUP_ID}.wb-mono .wb-ludo-cell.home-blue,
+      #${POPUP_ID}.wb-mono .wb-territory-cell.ta { background:#999; color:#111; }
+      #${POPUP_ID}.wb-mono .wb-territory-cell.user,
+      #${POPUP_ID}.wb-mono .wb-territory-edge.user,
+      #${POPUP_ID}.wb-mono .wb-territory-edge.ta,
+      #${POPUP_ID}.wb-mono .wb-ludo-piece.red,
+      #${POPUP_ID}.wb-mono .wb-ludo-piece.blue { background:#111; color:#fff; border-color:#111; box-shadow:none; }
+      #${POPUP_ID}.wb-mono .wb-territory-edge.legal,
+      #${POPUP_ID}.wb-mono .wb-territory-edge:hover:not(:disabled) { background:#d9d9d9; box-shadow:none; }
+      #${POPUP_ID}.wb-mono .wb-territory-dot { background:#111; border-color:#111; }
+      #${POPUP_ID}.wb-mono .wb-pause-overlay { background:rgba(0,0,0,.75); color:#fff; text-shadow:none; }
+      .wb-modal-mask.wb-mono .wb-modal,
+      .wb-modal-mask.wb-mono .wb-sticky-actions {
+        background:#fff;
+        background-image:none;
+        color:#111;
+        border:4px solid #111;
+        border-radius:0;
+        box-shadow:none;
+      }
+      .wb-modal-mask.wb-mono :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag,.wb-api-status,.wb-worldbook-list) {
+        background:#fff;
+        background-image:none;
+        color:#111;
+        border:3px solid #111;
+        border-radius:0;
+        box-shadow:none;
+        text-shadow:none;
+      }
+      .wb-modal-mask.wb-mono :is(.wb-btn.primary,.wb-tab.active,.wb-tag.active) {
+        background:#111;
+        background-image:none;
+        color:#fff;
+        border-color:#111;
+        box-shadow:none;
+      }
+      .wb-modal-mask.wb-mono .wb-countdown-num {
+        background:#111;
+        background-image:none;
+        color:#fff;
+        border:3px solid #111;
+        border-radius:0;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-gomoku {
+        background:linear-gradient(135deg, #d7b06e, #b98b5e);
+        border:2px solid #5f3d20;
+        box-shadow:none;
+        filter:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-gcell {
+        background:#d7b37c;
+        border:0;
+        border-radius:50%;
+        box-shadow:0 1px 1px rgba(255,255,255,.28) inset;
+        filter:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-gcell.black { background:#222; box-shadow:inset 0 0 0 2px #000; }
+      #${POPUP_ID}.wb-mono .wb-gcell.white { background:#f7f2e9; box-shadow:inset 0 0 0 2px #ddd; }
+      #${POPUP_ID}.wb-mono .wb-reversi {
+        background:#276749;
+        border:2px solid #174b35;
+        box-shadow:none;
+        filter:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-reversi-cell {
+        background:#348a61;
+        border:1px solid rgba(0,0,0,.18);
+        border-radius:0;
+        box-shadow:none;
+        filter:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-reversi-cell.user span { background:#f8fafc; border:0; box-shadow:0 2px 6px rgba(0,0,0,.28); }
+      #${POPUP_ID}.wb-mono .wb-reversi-cell.ta span { background:#111827; border:0; box-shadow:0 2px 6px rgba(0,0,0,.28); }
+      #${POPUP_ID}.wb-mono .wb-reversi-cell.legal::after { background:rgba(255,255,255,.45); }
+      #${POPUP_ID}.wb-mono .wb-oldmaid-hand {
+        background:var(--wb-soft);
+        border:1px solid var(--wb-border);
+      }
+      #${POPUP_ID}.wb-mono .wb-oldmaid-card {
+        background:#fff;
+        color:#111827;
+        border:1px solid var(--wb-border);
+        border-radius:0;
+        box-shadow:0 2px 8px rgba(15,23,42,.12);
+      }
+      #${POPUP_ID}.wb-mono .wb-oldmaid-card.big { box-shadow:0 8px 20px rgba(15,23,42,.22); }
+      #${POPUP_ID}.wb-mono .wb-oldmaid-card.back {
+        color:transparent;
+        background:url('${OLDMAID_BACK_URL}') center / 100% 100% no-repeat, #1f2937;
+      }
+      #${POPUP_ID}.wb-mono .wb-oldmaid-card.joker {
+        color:transparent;
+        background:url('${OLDMAID_CARD_URL}') center / 100% 100% no-repeat, #1f2937;
+        border-color:#111827;
+      }
+      #${POPUP_ID}.wb-mono .wb-oldmaid-log {
+        background:var(--wb-panel);
+        border:1px solid var(--wb-border);
+      }
+      #${POPUP_ID}.wb-mono .wb-territory-board {
+        background:#e6e6e6;
+        border:4px solid #111;
+      }
+      #${POPUP_ID}.wb-mono .wb-territory-edge.legal {
+        background:#c4c4c4;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-territory-edge.legal:hover {
+        background:#9e9e9e;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-territory-edge.claimed { background:#777; }
+      #${POPUP_ID}.wb-mono .wb-territory-edge.user { background:#111; }
+      #${POPUP_ID}.wb-mono .wb-territory-edge.ta { background:#bdbdbd; box-shadow:0 0 0 1px #111 inset; }
+      #${POPUP_ID}.wb-mono .wb-territory-cell.user { background:#111; color:#fff; }
+      #${POPUP_ID}.wb-mono .wb-territory-cell.ta { background:#777; color:#fff; }
+      #${POPUP_ID}.wb-mono .wb-watermelon-canvas {
+        filter:none;
+        background:#f7efe3;
       }
     `;
 
@@ -2384,7 +2765,7 @@ export async function initWanbanXiaowu() {
       + '<label class="wb-switch"><input id="wb-message-notify" type="checkbox" ' + (cfg.messageNotify ? 'checked' : '') + '>RP正文完成提醒</label>'
       + '<div class="wb-muted" style="font-size:11px;margin-top:-10px;padding-left:24px;line-height:1;">防沉迷系统（不是）</div>'
       + '<div class="wb-preset-row"><span class="wb-muted" style="flex:1;">正文标签：&lt;' + esc(cfg.messageNotifyTag || 'content') + '&gt;...&lt;/' + esc(cfg.messageNotifyTag || 'content') + '&gt;</span><button class="wb-btn" id="wb-message-tag-btn">设置正文标签</button></div>'
-	      + '<div class="wb-field"><label>美化主题</label><select class="wb-select" id="wb-theme"><option value="day">【日】梦幻掌机</option><option value="spring">【日】春野物语</option><option value="night">【夜】霓虹游戏舱</option><option value="cyber">【夜】赛博街机</option></select></div>'
+	      + '<div class="wb-field"><label>美化主题</label><select class="wb-select" id="wb-theme"><option value="day">【日】梦幻掌机</option><option value="spring">【日】春野物语</option><option value="mono">【日】黑白像素</option><option value="night">【夜】霓虹游戏舱</option><option value="cyber">【夜】赛博街机</option></select></div>'
 	      + '<div class="wb-field"><label>全局字体</label><div class="wb-preset-row"><select class="wb-select" id="wb-font-select">' + fontOptions + '</select><button class="wb-btn" id="wb-font-edit" type="button">编辑</button></div></div>'
       + '</div>'
       + '<div class="wb-panel"><div class="wb-section-title">API 配置</div>'
@@ -2440,7 +2821,7 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
 	      + '</div>'
-	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.2<br>本游戏发布者：Gloria</div>'
+	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.3<br>本游戏发布者：Gloria</div>'
 	      + '</div>';
 	    qs('#wb-theme').value = cfg.theme;
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
@@ -2716,7 +3097,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.2', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.3', exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -3583,6 +3964,7 @@ export async function initWanbanXiaowu() {
     }
     function themePlatformColors() {
       const t = settings().theme || 'day';
+      if(t === 'mono') return ['#1b1b1b','#5d5d5d','#9a9a9a','#cfcfcf','#ffffff'];
       if(t === 'spring') return ['#B77B42','#8FBF68','#D8B15E','#78A6C8','#A7784F'];
       if(t === 'cyber') return ['#F1E85B','#19D3C5','#FF4FA3','#FF8A3D','#8B6BFF'];
       if(t === 'night') return ['#8B6BFF','#FF4FA3','#19D3C5','#F1E85B','#6f7dff'];
@@ -4218,15 +4600,25 @@ export async function initWanbanXiaowu() {
     syncPopupModeClass();
     const g = GAME_META[id]; const cfg = settings(); const body = qs('#wb-body'); body.className = 'wb-body wb-game-mode';
     const lineTools = cfg.companion ? '<div class="wb-line-tools"><select class="wb-select" id="wb-line-preset-select"></select><button class="wb-btn primary" id="wb-generate-lines">生成</button></div>' : '';
+    const wordBankTools = id === 'wordguess' ? '<select class="wb-select" id="wb-word-bank-source-inline" title="我说你猜题库"><option value="role">角色题库</option><option value="default">默认题库</option></select>' : '';
     const pauseBtn = g.mode === 'double' ? '' : '<button class="wb-btn" id="wb-pause">暂停</button>';
     const companionPanel = cfg.companion ? '<div class="wb-panel wb-side-companion">' + companionHTML() + '</div>' : '';
-    body.innerHTML = '<div class="wb-layout ' + (cfg.companion ? '' : 'no-companion') + '"><div class="wb-panel"><div class="wb-toolbar"><button class="wb-btn" id="wb-back">返回</button><div class="wb-stat"><span class="wb-pill wb-title-row"><span class="wb-game-title-text">' + esc(g.name) + '</span><button class="wb-rule-btn" id="wb-game-rules" title="游戏介绍" aria-label="游戏介绍" type="button">💡</button></span><span class="wb-pill" id="wb-score">本局：0</span><span class="wb-pill" id="wb-high">' + esc(scoreDisplay(id)) + '</span></div><div class="wb-actions">' + lineTools + '<button class="wb-btn" id="wb-game-records">记录</button>' + pauseBtn + '<button class="wb-btn" id="wb-restart">重开</button></div></div><div class="wb-board-wrap wb-gamebox-' + esc(id) + '" id="wb-gamebox"><div class="wb-start-cover"><div>准备开始</div><button class="wb-btn primary" id="wb-start-cover-btn">开始游戏</button></div></div></div>' + companionPanel + '</div>';
+    body.innerHTML = '<div class="wb-layout ' + (cfg.companion ? '' : 'no-companion') + '"><div class="wb-panel"><div class="wb-toolbar"><button class="wb-btn" id="wb-back">返回</button><div class="wb-stat"><span class="wb-pill wb-title-row"><span class="wb-game-title-text">' + esc(g.name) + '</span><button class="wb-rule-btn" id="wb-game-rules" title="游戏介绍" aria-label="游戏介绍" type="button">💡</button></span><span class="wb-pill" id="wb-score">本局：0</span><span class="wb-pill" id="wb-high">' + esc(scoreDisplay(id)) + '</span></div><div class="wb-actions">' + wordBankTools + lineTools + '<button class="wb-btn" id="wb-game-records">记录</button>' + pauseBtn + '<button class="wb-btn" id="wb-restart">重开</button></div></div><div class="wb-board-wrap wb-gamebox-' + esc(id) + '" id="wb-gamebox"><div class="wb-start-cover"><div>准备开始</div><button class="wb-btn primary" id="wb-start-cover-btn">开始游戏</button></div></div></div>' + companionPanel + '</div>';
     primeMessageNotifyBaseline();
     gameStarted = false; gamePaused = true;
     qs('#wb-back').onclick = () => { stopGame(); currentGame = null; saveWindowState(currentTab, ''); syncPopupModeClass(); renderSelect(currentTab); };
     qs('#wb-start-cover-btn').onclick = () => startCurrentGame(id);
     qs('#wb-game-rules').onclick = e => { e.stopPropagation(); showGameRules(id); };
     qs('#wb-game-records').onclick = () => showGameRecords(id);
+    const wordBankSelect = qs('#wb-word-bank-source-inline');
+    if (wordBankSelect) {
+      wordBankSelect.value = wordGuessBankSource();
+      wordBankSelect.onchange = () => {
+        saveWordGuessBankSource(wordBankSelect.value);
+        clearProgress('wordguess');
+        renderGame('wordguess');
+      };
+    }
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.onclick = togglePause;
     qs('#wb-restart').onclick = () => { commitGameActiveDuration(true); gamePaused = true; showGamePauseOverlay(); const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续'; showConfirm('确认重开', '确定要重开当前游戏吗？当前进度会丢失。', () => { clearProgress(id); renderGame(id); }, () => startPauseResumeCountdown()); };
     renderLinePresetSelect(id);
@@ -4682,12 +5074,13 @@ function showGameRecords(game, page) {
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-single-generate-mask';
-    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">生成' + esc(GAME_META[game].name) + '数据</div><div class="wb-api-status" style="margin-bottom:12px;">请选择要生成并覆盖的内容。</div><div class="wb-actions"><button class="wb-btn primary" data-kind="all">全部</button><button class="wb-btn" data-kind="lines">语录</button><button class="wb-btn" data-kind="theater">小剧场</button><button class="wb-btn" id="wb-single-gen-cancel">取消</button></div></div>';
+    const wordScope = game === 'wordguess' ? '<label class="wb-field"><span>题库生成内容和范围</span><textarea class="wb-textarea" id="wb-word-gen-scope" style="min-height:86px;" placeholder="例如：只生成古代器物和自然意象；或：围绕当前角色的世界观生成20题；或粘贴希望使用的词语范围。">' + esc(wordGuessBankFilter()) + '</textarea><div class="wb-muted">填写后，AI会优先按这个范围生成角色题库；生成后的角色题库会保存到当前角色。</div></label>' : '';
+    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">生成' + esc(GAME_META[game].name) + '数据</div><div class="wb-api-status" style="margin-bottom:12px;">请选择要生成并覆盖的内容。</div>' + wordScope + '<div class="wb-actions"><button class="wb-btn primary" data-kind="all">全部</button><button class="wb-btn" data-kind="lines">语录</button><button class="wb-btn" data-kind="theater">小剧场</button><button class="wb-btn" id="wb-single-gen-cancel">取消</button></div></div>';
     appendModalMask(mask);
-    qsa('[data-kind]', mask).forEach(btn => btn.onclick = () => { const kind = btn.dataset.kind; mask.remove(); generateLines(game, kind); });
+    qsa('[data-kind]', mask).forEach(btn => btn.onclick = () => { const kind = btn.dataset.kind; const scope = qs('#wb-word-gen-scope', mask)?.value || ''; mask.remove(); generateLines(game, kind, { wordGuessScope: scope.trim() }); });
     qs('#wb-single-gen-cancel', mask).onclick = () => mask.remove();
   }
-  async function generateLines(game, kind) {
+  async function generateLines(game, kind, options) {
     if (lineGenerationBusy) { toast('已有角色数据生成任务正在进行'); return; }
     const cfg = settings(); const btn = qs('#wb-generate-lines'); if (!btn) return; btn.disabled = true; btn.textContent = '生成中';
     let preset = currentLinePreset(game);
@@ -4702,6 +5095,10 @@ function showGameRecords(game, page) {
 	        preset = normalizePresetName(select.value.replace(/^line::/, ''));
 	        promptCfg = rolePromptConfig(preset, cfg);
 	      }
+      if (game === 'wordguess' && options && options.wordGuessScope) {
+        promptCfg = Object.assign({}, promptCfg, { wordGuessScope: String(options.wordGuessScope || '').trim() });
+        saveWordGuessBankFilter(options.wordGuessScope);
+      }
       setCurrentLinePreset(game, preset);
       const total = aiCallCountForGames([game], promptCfg);
       const progress = makeLineGenerationProgress('正在生成' + GAME_META[game].name + '数据', total);
@@ -4713,7 +5110,9 @@ function showGameRecords(game, page) {
           catch(apiErr) { console.warn('[玩伴小屋] line API failed, fallback used:', apiErr); toast('语录API失败，已使用本地语录：' + (apiErr && apiErr.message ? apiErr.message : apiErr)); }
         }
         if (!data) data = fallbackGenerated(game, promptCfg);
-        data = normalizeGeneratedLines(game, data);
+        const generatedWordBank = game === 'wordguess' && data && Array.isArray(data.word_bank) && data.word_bank.length;
+        data = normalizeGeneratedLines(game, data, preset);
+        if (generatedWordBank) saveWordGuessBankSource('role');
         saveRoleLineSet(game, preset, data);
         saveRoleLineSetForName(game, preset, preset, data);
         renderLinePresetSelect(game);
@@ -4741,12 +5140,14 @@ function showGameRecords(game, page) {
     const intimacyText = cfg.intimacyMode ? '开启。允许成年角色之间更亲近、更暧昧、更依赖，允许含蓄的NSFW暗示；禁止未成年人相关性内容、强迫、失控或违法内容。' : '关闭。保持自然陪伴和轻松亲近，禁止色情行为和露骨内容。';
 	    const prefix = (cfg.breakLimitPrompt || '').trim();
 	    const languagePrompt = specialLanguageRequirement('line', cfg);
+	    const wordGuessScope = String(cfg.wordGuessScope || '').trim();
 	    if (game === 'wordguess') {
 	      return [
 	        prefix,
 	        languagePrompt,
 	        ...(tpl.header || []),
 	        '游戏：' + GAME_META[game].name,
+        wordGuessScope ? '【题库生成内容和范围】\n' + wordGuessScope + '\n必须优先围绕这个内容和范围生成 word_bank；如果用户给出具体词语、主题、编号范围或限定类别，题目必须从这些范围内选择或贴合这些范围。' : '',
         '这是“我说你猜”的题库、每题专属语录、以及整局常规胜负语录生成。顶层常规事件键只能包含 random、user_win、user_lose。',
         '输出JSON顶层必须且只能包含 word_bank、random、user_win、user_lose。禁止输出 start、clue、clue_late、guess、reveal 等顶层事件键。',
         'word_bank 必须是数组，至少7道题。每道题必须完整包含：word、length、type、clues、start_line、wrong_lines、next_lines、win_line、reveal_line。',
@@ -4976,6 +5377,7 @@ function showGameRecords(game, page) {
     scheduleSnake();
     function draw(){
       const night = isNightTheme();
+      const mono = (settings().theme || 'day') === 'mono';
       const pal = canvasThemePalette();
       const bg = ctx.createLinearGradient(0,0,420,420);
       bg.addColorStop(0, pal.top);
@@ -4987,20 +5389,20 @@ function showGameRecords(game, page) {
       ctx.strokeStyle = pal.grid;
       ctx.lineWidth = 1;
       for(let i=0;i<=n;i++){ const p=i*size+.5; ctx.beginPath(); ctx.moveTo(p,0); ctx.lineTo(p,420); ctx.moveTo(0,p); ctx.lineTo(420,p); ctx.stroke(); }
-      ctx.strokeStyle = night ? 'rgba(255,255,255,.2)' : 'rgba(80,55,48,.2)';
+      ctx.strokeStyle = mono ? 'rgba(0,0,0,.42)' : (night ? 'rgba(255,255,255,.2)' : 'rgba(80,55,48,.2)');
       ctx.lineWidth = 3;
       ctx.strokeRect(1.5,1.5,417,417);
       const fx = food.x*size + size/2, fy = food.y*size + size/2;
-      ctx.fillStyle = '#ef8f7a';
+      ctx.fillStyle = mono ? '#333333' : '#ef8f7a';
       ctx.beginPath(); ctx.arc(fx, fy, 8.5, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#ffd4c8';
+      ctx.fillStyle = mono ? '#f7f7f7' : '#ffd4c8';
       ctx.beginPath(); ctx.arc(fx-3, fy-3, 2.4, 0, Math.PI*2); ctx.fill();
       snake.forEach((s,i)=>{
         const x=s.x*size+2, y=s.y*size+2, r=7;
-        ctx.fillStyle = i===0 ? '#76c7b5' : (i%2 ? '#9ccbbb' : '#8fc5ad');
+        ctx.fillStyle = mono ? (i===0 ? '#111111' : (i%2 ? '#2f2f2f' : '#4a4a4a')) : (i===0 ? '#76c7b5' : (i%2 ? '#9ccbbb' : '#8fc5ad'));
         ctx.beginPath();
         ctx.moveTo(x+r,y); ctx.lineTo(x+16-r,y); ctx.quadraticCurveTo(x+16,y,x+16,y+r); ctx.lineTo(x+16,y+16-r); ctx.quadraticCurveTo(x+16,y+16,x+16-r,y+16); ctx.lineTo(x+r,y+16); ctx.quadraticCurveTo(x,y+16,x,y+16-r); ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.fill();
-        if(i===0){ ctx.fillStyle=night?'#101010':'#fffaf2'; const ex1=x+7+(dir.x*3)+(dir.y*-3), ey1=y+7+(dir.y*3)+(dir.x*3), ex2=x+9+(dir.x*3)+(dir.y*3), ey2=y+9+(dir.y*3)+(dir.x*-3); ctx.beginPath(); ctx.arc(ex1,ey1,1.7,0,Math.PI*2); ctx.arc(ex2,ey2,1.7,0,Math.PI*2); ctx.fill(); }
+        if(i===0){ ctx.fillStyle=mono?'#ffffff':(night?'#101010':'#fffaf2'); const ex1=x+7+(dir.x*3)+(dir.y*-3), ey1=y+7+(dir.y*3)+(dir.x*3), ex2=x+9+(dir.x*3)+(dir.y*3), ey2=y+9+(dir.y*3)+(dir.x*-3); ctx.beginPath(); ctx.arc(ex1,ey1,1.7,0,Math.PI*2); ctx.arc(ex2,ey2,1.7,0,Math.PI*2); ctx.fill(); }
       });
     }
     draw(); save();
@@ -5521,8 +5923,30 @@ function showGameRecords(game, page) {
       ctx.fillRect(0,groundY+54,520,38);
     }
     function drawPillar(x,w,pal,active){
-      if(isNightTheme()) drawPixelPillar(x,w,pal,active);
+      if((settings().theme || 'day') === 'mono') drawMonoPillar(x,w,active);
+      else if(isNightTheme()) drawPixelPillar(x,w,pal,active);
       else drawWoodPillar(x,w,pal,active);
+    }
+    function drawMonoPillar(x,w,active){
+      const top = groundY, h = 106, ix = Math.round(x), iw = Math.round(w);
+      ctx.fillStyle='#bcbcbc';
+      ctx.fillRect(ix + 8, top + h + 4, iw, 8);
+      ctx.fillStyle='#111';
+      ctx.fillRect(ix, top - 8, iw, h + 18);
+      ctx.fillStyle=active ? '#efefef' : '#d6d6d6';
+      ctx.fillRect(ix + 5, top - 4, iw - 10, h + 10);
+      ctx.fillStyle='#8a8a8a';
+      ctx.fillRect(ix + 5, top + h - 20, iw - 10, 14);
+      ctx.fillStyle='#fff';
+      ctx.fillRect(ix + 8, top - 1, iw - 16, 8);
+      ctx.fillStyle='#111';
+      for(let yy=top+14; yy<top+h-18; yy+=18) ctx.fillRect(ix + 10, yy, iw - 20, 4);
+      for(let xx=ix+14; xx<ix+iw-8; xx+=18) ctx.fillRect(xx, top + 12, 4, h - 26);
+      if(active){
+        ctx.fillStyle='#111';
+        ctx.fillRect(ix + iw + 6, top + h - 18, 8, 8);
+        ctx.fillRect(ix + iw + 16, top + h - 10, 5, 5);
+      }
     }
     function drawWoodPillar(x,w,pal,active){
       const top = groundY, h = 106, cx = x + w / 2;
@@ -5599,7 +6023,18 @@ function showGameRecords(game, page) {
       ctx.save();
       ctx.translate(baseX,baseY);
       ctx.rotate(-Math.PI/2 + angle);
-      if(isNightTheme()){
+      if((settings().theme || 'day') === 'mono'){
+        const len = Math.max(0, Math.round(bridge));
+        ctx.fillStyle='#111';
+        ctx.fillRect(0,-7,len,14);
+        ctx.fillStyle='#f2f2f2';
+        for(let x=6;x<len;x+=18) ctx.fillRect(x,-5,8,10);
+        ctx.fillStyle='#777';
+        for(let x=0;x<len;x+=18) ctx.fillRect(x,-7,3,14);
+        ctx.strokeStyle='#111';
+        ctx.lineWidth=3;
+        ctx.strokeRect(0,-7,len,14);
+      } else if(isNightTheme()){
         const neon = settings().theme === 'cyber' ? '#F1E85B' : '#f4c2d7';
         ctx.fillStyle=settings().theme === 'cyber' ? '#18231E' : '#211426';
         ctx.fillRect(0,-6,bridge,12);
@@ -5685,13 +6120,15 @@ function showGameRecords(game, page) {
       board.className = 'wb-sudoku-board';
       board.style.cssText = 'width:100%;max-width:min(390px,64cqh);max-height:100%;aspect-ratio:1/1;position:relative;box-sizing:border-box;border:2px solid var(--wb-text);background:var(--wb-text);overflow:hidden;flex:0 0 auto;';
       const selectedFixed = selected >= 0 && !!puzzle[selected];
+      const mono = (settings().theme || 'day') === 'mono';
       const same = selectedFixed ? puzzle[selected] : 0, sr=row(selected), sc=col(selected);
       board.innerHTML = Array.from({length:81},(_,i)=>{
         const r = row(i), c = col(i), v = grid[i] || 0;
         const fixed = !!puzzle[i], sel = i === selected, peer = selected >= 0 && (r === sr || c === sc);
         const sameNum = !!(same && fixed && puzzle[i] === same), wrong = !fixed && hasRuleConflict(i);
-        const bg = sameNum ? 'var(--wb-gold)' : (peer ? (fixed ? 'var(--wb-soft)' : 'var(--wb-panel)') : (fixed ? 'var(--wb-soft)' : 'var(--wb-panel)'));
-        const color = wrong ? '#ef4444' : 'var(--wb-text)';
+        const monoDarkFixed = mono && selectedFixed && (sameNum || sel);
+        const bg = monoDarkFixed ? '#111' : (sameNum ? 'var(--wb-gold)' : (peer ? (fixed ? 'var(--wb-soft)' : 'var(--wb-panel)') : (fixed ? 'var(--wb-soft)' : 'var(--wb-panel)')));
+        const color = wrong ? '#ef4444' : (monoDarkFixed ? '#fff' : 'var(--wb-text)');
         const border = 'border-left:'+(c%3===0?'1.5px solid var(--wb-text)':'1px solid var(--wb-border)')+';border-right:'+(c%3===2?'1.5px solid var(--wb-text)':'1px solid var(--wb-border)')+';border-top:'+(r%3===0?'1.5px solid var(--wb-text)':'1px solid var(--wb-border)')+';border-bottom:'+(r%3===2?'1.5px solid var(--wb-text)':'1px solid var(--wb-border)')+';';
         const outline = sel ? 'outline:2px solid var(--wb-accent);outline-offset:-3px;' : '';
         const shadow = wrong ? 'box-shadow:inset 0 0 0 2px #ef4444;' : (peer && !sameNum ? 'box-shadow:inset 0 0 0 999px rgba(125,185,216,.10);' : '');
@@ -6155,39 +6592,31 @@ function showGameRecords(game, page) {
     function draw(){ const h=qs('#wb-num-history'); h.innerHTML = history.length ? history.map(x=>'<div class="wb-guess-item"><b>'+esc(x.guess)+'</b>　'+esc(hintText(x.guess, x.nums, x.pos))+'</div>').join('') : '<div class="wb-muted">还没有猜测记录。</div>'; }
   }
 
-  async function createWordGuessRounds(count, forceFallback) {
+  async function createWordGuessRounds(count, forceFallback, scope) {
     const cfg=settings();
     const role = displayCharName();
-	    const fallbackWords = [
-	      {word:'漏刻', type:'旧时代计时器具', clues:['它和时间有关，但不依赖钟表。','它把流逝变成一种能被看见的秩序。','它常借助水的变化来标记时辰。','如果角色总是冷静地等你，它会像一种不催促的陪伴。','古代用滴水来计时的器具就是它。']},
-	      {word:'晕珥', type:'天文气象现象', clues:['它属于天空，却不是星月本身。','它常让普通光源显得像被某种边界包围。','它与冰晶折射有关，偶尔会围绕日月出现。','如果角色说话总带一点疏离的光，它会像那层不易靠近的边。','日月周围出现的彩色光环现象就是它。']},
-	      {word:'榫卯', type:'传统建筑结构', clues:['它和连接有关，却不靠显眼的外物。','它讲究咬合、分寸和彼此成全。','木构之间不用钉子也能牢牢相扣。','如果你和角色的关系是嘴上不说却彼此卡准位置，它很合适。','中国传统木作中凸凹相接的结构就是它。']},
-	      {word:'歧路', type:'文学意象', clues:['它和选择有关，也和走散有关。','它不是终点，而是让人迟疑的分叉。','在故事里，它常暗示命运、分别或错过。','如果角色曾假装不在意你的决定，这个词会藏着那种试探。','道路分岔、前路不同的意象就是它。']},
-	      {word:'苔痕', type:'植物痕迹', clues:['它很安静，常和被时间放慢的地方有关。','它不是主角，却会让空间显得旧而湿润。','它常出现在石阶、墙角或少人经过处。','如果角色记得某个你们停留过的旧地方，它可能还留在那里。','青苔留下的痕迹就是它。']},
-	      {word:'经纬', type:'地理/织造概念', clues:['它和秩序有关，也和定位有关。','它把看似散乱的东西分成纵横两种方向。','它既可以指织物的线，也可以指地图上的坐标。','如果角色总能在混乱里找到你的位置，这个词很贴切。','纵线和横线构成的定位或织造系统就是它。']},
-	      {word:'檐铃', type:'建筑装饰物', clues:['它和边缘有关，也和风有关。','它通常不主动发声，却会被经过的气流叫醒。','它常挂在屋檐或塔檐下，声音清而细。','如果角色表面冷淡，心绪却被你轻轻碰响，它很像这个东西。','挂在檐角、随风作响的小铃就是它。']},
-	      {word:'潮汐', type:'自然现象', clues:['它和来去有关，也和某种遥远牵引有关。','它看似重复，却每次都有细微差别。','它受月亮和引力影响，让海水涨落。','如果角色总被你一句话牵动情绪，这种规律会很像。','海水周期性上涨和退落的现象就是它。']}
-	    ];
-    const normalize = item => { const word=String(item?.word||'').trim(); if(!word) return null; const clues=Array.isArray(item.clues)?item.clues.map(x=>String(x).trim()).filter(Boolean).slice(0,5):[]; while(clues.length<5) clues.push(clues[clues.length-1] || '这个词和现在的场景有关，你再靠近一点想。'); const raw=item.interactions||{}; const interactions={ start:String(raw.start||('我把“' + word + '”藏好了，先给你一条不太好猜的线。')), clue:String(raw.clue||'我再换一种说法，你听听是不是离它近一点。'), clue_late:String(raw.clue_late||'这个提示已经很近了，再往前一点就要碰到答案了。'), guess:String(raw.guess||'这个答案还没贴到它的影子，我再把线索往它身边推一点。'), win:String(raw.win||('猜中了。' + role + '把“' + word + '”轻轻重复了一遍，像确认你们刚才抓住了同一个小秘密。')), reveal:String(raw.reveal||('答案是“' + word + '”。' + role + '把它说出来时，语气里带着一点只属于这个词的温柔。')) }; return { word, type:String(item.type||'未分类'), length:parseInt(item.length,10)||word.length, clues, interactions }; };
-    const fallback = () => shuffleArray(fallbackWords.slice()).slice(0, Math.max(5, count||5)).map(normalize).filter(Boolean);
+    const normalize = item => normalizeWordGuessRoundData(item) || (() => { const word=String(item?.word||'').trim(); if(!word) return null; const clues=Array.isArray(item.clues)?item.clues.map(x=>String(x).trim()).filter(Boolean).slice(0,5):[]; while(clues.length<5) clues.push(clues[clues.length-1] || '这个词和现在的场景有关，你再靠近一点想。'); const raw=item.interactions||{}; const interactions={ start:String(raw.start||('我把“' + word + '”藏好了，先给你一条不太好猜的线。')), clue:String(raw.clue||'我再换一种说法，你听听是不是离它近一点。'), clue_late:String(raw.clue_late||'这个提示已经很近了，再往前一点就要碰到答案了。'), guess:String(raw.guess||'这个答案还没贴到它的影子，我再把线索往它身边推一点。'), win:String(raw.win||('猜中了。' + role + '把“' + word + '”轻轻重复了一遍，像确认你们刚才抓住了同一个小秘密。')), reveal:String(raw.reveal||('答案是“' + word + '”。' + role + '把它说出来时，语气里带着一点只属于这个词的温柔。')) }; return { word, type:String(item.type||'未分类'), length:parseInt(item.length,10)||word.length, clues, interactions }; })();
+    const fallback = async () => selectWordGuessRounds((await defaultWordGuessBank()).map(normalize).filter(Boolean), Math.max(5, count || 5), scope);
     if (forceFallback || !cfg.apiUrl || !cfg.apiModel) return fallback();
-	    const prompt = [...(promptTemplates().wordGuess || PROMPT_TEMPLATES.wordGuess), '角色描述：'+currentCharDescription(cfg), '世界背景：'+(selectedWorldText(cfg)||'无'), '大总结：'+(selectedSummaryText(cfg)||'无')].join('\n');
-	    try { const txt = await callApiText(cfg, prompt, promptTemplates().systems.wordGuess || PROMPT_TEMPLATES.systems.wordGuess); const data = parseGeneratedJson(txt); const arr = Array.isArray(data) ? data : (Array.isArray(data?.rounds) ? data.rounds : []); const seenWords = {}; const rounds = arr.map(normalize).filter(Boolean).filter(r=>{ if(seenWords[r.word]) return false; seenWords[r.word]=1; return true; }); if(rounds.length>=5) return rounds; return rounds.concat(fallback().filter(r=>!seenWords[r.word])).slice(0,5); } catch(e) { console.warn('[玩伴小屋] word rounds failed:', e); }
+	    const prompt = [...(promptTemplates().wordGuess || PROMPT_TEMPLATES.wordGuess), scope ? ('题库生成内容和范围：' + scope + '\n请只围绕这个范围出题。') : '', '角色描述：'+currentCharDescription(cfg), '世界背景：'+(selectedWorldText(cfg)||'无'), '大总结：'+(selectedSummaryText(cfg)||'无')].filter(Boolean).join('\n');
+	    try { const txt = await callApiText(cfg, prompt, promptTemplates().systems.wordGuess || PROMPT_TEMPLATES.systems.wordGuess); const data = parseGeneratedJson(txt); const arr = Array.isArray(data) ? data : (Array.isArray(data?.rounds) ? data.rounds : []); const seenWords = {}; const rounds = arr.map(normalize).filter(Boolean).filter(r=>{ if(seenWords[r.word]) return false; seenWords[r.word]=1; return true; }); if(rounds.length>=5) return rounds; const fb = await fallback(); return rounds.concat(fb.filter(r=>!seenWords[r.word])).slice(0,5); } catch(e) { console.warn('[玩伴小屋] word rounds failed:', e); }
     return fallback();
   }
 
 	  async function startWordGuess(state) {
 	    const cfg=settings(); const box=qs('#wb-gamebox');
 	    const role = displayCharName();
-		    const bank = !state ? wordGuessBank() : [];
-	    if (!state && !bank.length) box.innerHTML='<div class="wb-guess-panel"><div class="wb-guess-title">我说你猜</div><div class="wb-api-status wb-clue-box">当前为随机题库，请点击生成为该角色生成题库。正在抽取默认题库...</div></div>';
+		    const roleKey = selectedWordGuessRoleName();
+		    const source = wordGuessBankSource();
+		    const rawBank = !state ? (source === 'default' ? await defaultWordGuessBank() : wordGuessBank(roleKey)) : [];
+		    const bank = !state ? selectWordGuessRounds(rawBank, 5, '') : [];
+	    if (!state && !rawBank.length) box.innerHTML='<div class="wb-guess-panel"><div class="wb-guess-title">我说你猜</div><div class="wb-api-status wb-clue-box">当前角色题库为空，正在抽取默认题库...</div></div>';
 		    function normalizeWordRound(item){ const normalized=normalizeWordGuessRoundData(item); if(normalized) return normalized; const word=String(item?.word||'').trim(); if(!word) return null; const clues=Array.isArray(item.clues)?item.clues.map(x=>String(x).trim()).filter(Boolean).slice(0,5):[]; while(clues.length<5) clues.push(clues[clues.length-1] || '这个词和现在的场景有关，你再靠近一点想。'); const raw=item.interactions||{}; return { word, type:String(item.type||'未分类'), length:parseInt(item.length,10)||word.length, clues, interactions:{ start:String(raw.start||('我把“' + word + '”藏好了，先从很远的地方说起。')), clue:Array.isArray(raw.clue)?raw.clue:String(raw.clue||'我再换一种说法，你听听是不是离它近一点。'), clue_late:String(raw.clue_late||'这个提示已经很近了，再往前一点就要碰到答案了。'), guess:Array.isArray(raw.guess)?raw.guess:String(raw.guess||'这个方向还差一点，我把线索再往它身边推近些。'), win:String(raw.win||('猜中了，答案就是“' + word + '”。')), reveal:String(raw.reveal||('答案是“' + word + '”。' + role + '把它念出来，像把这题轻轻收好。')) } }; }
 	    const roundLimit = 5;
-		    let rounds = Array.isArray(state?.rounds) && state.rounds.length ? state.rounds : (state?.round ? [state.round] : (bank.length ? bank.slice(0, roundLimit) : await createWordGuessRounds(roundLimit, true)));
+		    let rounds = Array.isArray(state?.rounds) && state.rounds.length ? state.rounds : (state?.round ? [state.round] : (bank.length ? bank.slice(0, roundLimit) : await createWordGuessRounds(roundLimit, true, '')));
 		    rounds = rounds.map(normalizeWordRound).filter(Boolean);
-		    if (!state && rounds.length < roundLimit) { const seen={}; rounds.forEach(r=>seen[r.word]=1); const more=(await createWordGuessRounds(roundLimit, true)).map(normalizeWordRound).filter(r=>r&&!seen[r.word]); rounds = rounds.concat(more).slice(0,roundLimit); }
-		    if (!rounds.length && !state) rounds = await createWordGuessRounds(roundLimit, true);
-		    if (!state && rounds.length && bank.length) saveWordGuessBank(rounds);
+		    if (!state && rounds.length < roundLimit) { const seen={}; rounds.forEach(r=>seen[r.word]=1); const more=(await createWordGuessRounds(roundLimit, true, '')).map(normalizeWordRound).filter(r=>r&&!seen[r.word]); rounds = rounds.concat(more).slice(0,roundLimit); }
+		    if (!rounds.length && !state) rounds = await createWordGuessRounds(roundLimit, true, '');
 	    if (currentGame !== 'wordguess') return;
 		    let round = rounds[0];
 	    round = normalizeWordRound(round) || round;
@@ -6280,8 +6709,8 @@ function showGameRecords(game, page) {
       tetrisBgCache = { key:theme, canvas:off };
       return off;
     }
-    function drawPreview(night){ const panel={x:206,y:10,w:84,h:84}, s=nextPiece.s, cell=13; ctx.fillStyle=night?'rgba(17,24,39,.88)':'rgba(255,250,242,.92)'; ctx.fillRect(panel.x,panel.y,panel.w,panel.h); ctx.strokeStyle=night?'rgba(255,255,255,.2)':'rgba(80,55,48,.22)'; ctx.strokeRect(panel.x+.5,panel.y+.5,panel.w-1,panel.h-1); ctx.fillStyle=night?'#f5eafa':'#5d4038'; ctx.font='12px Georgia, serif'; ctx.fillText('下一块', panel.x+10, panel.y+17); const ox=panel.x+(panel.w-s[0].length*cell)/2, oy=panel.y+34+(42-s.length*cell)/2; s.forEach((r,y)=>r.forEach((v,x)=>{ if(v){ ctx.fillStyle='#ef8f7a'; ctx.fillRect(ox+x*cell+1,oy+y*cell+1,cell-2,cell-2); } })); }
-    function draw(){ const night=isNightTheme(); ctx.drawImage(tetrisBackground(),0,0); const drawCell=(x,y,col)=>{ ctx.fillStyle=col; ctx.fillRect(x*S+1,y*S+1,S-2,S-2); }; board.forEach((r,y)=>r.forEach((v,x)=>v&&drawCell(x,y,'#9ccbbb'))); piece.s.forEach((r,y)=>r.forEach((v,x)=>v&&drawCell(piece.x+x,piece.y+y,'#ef8f7a'))); drawPreview(night); }
+    function drawPreview(night, mono){ const panel={x:206,y:10,w:84,h:84}, s=nextPiece.s, cell=13; ctx.fillStyle=mono?'#f7f7f7':(night?'rgba(17,24,39,.88)':'rgba(255,250,242,.92)'); ctx.fillRect(panel.x,panel.y,panel.w,panel.h); ctx.strokeStyle=mono?'#111':(night?'rgba(255,255,255,.2)':'rgba(80,55,48,.22)'); ctx.strokeRect(panel.x+.5,panel.y+.5,panel.w-1,panel.h-1); ctx.fillStyle=mono?'#111':(night?'#f5eafa':'#5d4038'); ctx.font='12px Georgia, serif'; ctx.fillText('下一块', panel.x+10, panel.y+17); const ox=panel.x+(panel.w-s[0].length*cell)/2, oy=panel.y+34+(42-s.length*cell)/2; s.forEach((r,y)=>r.forEach((v,x)=>{ if(v){ ctx.fillStyle=mono?'#111111':'#ef8f7a'; ctx.fillRect(ox+x*cell+1,oy+y*cell+1,cell-2,cell-2); } })); }
+    function draw(){ const night=isNightTheme(), mono=(settings().theme || 'day') === 'mono'; ctx.drawImage(tetrisBackground(),0,0); const drawCell=(x,y,col)=>{ ctx.fillStyle=col; ctx.fillRect(x*S+1,y*S+1,S-2,S-2); }; board.forEach((r,y)=>r.forEach((v,x)=>v&&drawCell(x,y,mono?'#3b3b3b':'#9ccbbb'))); piece.s.forEach((r,y)=>r.forEach((v,x)=>v&&drawCell(piece.x+x,piece.y+y,mono?'#111111':'#ef8f7a'))); drawPreview(night, mono); }
   }
 
   function addSwipe(el, cb) { el.ontouchstart = e => { const t=e.touches[0]; touchStart={x:t.clientX,y:t.clientY}; }; el.ontouchend = e => { if(!touchStart) return; const t=e.changedTouches[0], dx=t.clientX-touchStart.x, dy=t.clientY-touchStart.y; if(Math.max(Math.abs(dx),Math.abs(dy))<24) return; cb(Math.abs(dx)>Math.abs(dy) ? (dx>0?'right':'left') : (dy>0?'down':'up')); touchStart=null; }; }
