@@ -974,7 +974,12 @@
   filter:grayscale(1) contrast(1.15);
 }
 #wanbanXiaowu-popup.wb-mono .wb-game-icon.has-image { background:#fff; }
-#wanbanXiaowu-popup.wb-mono .wb-game-icon.has-image img { border-radius:0; filter:grayscale(1) contrast(1.15); }
+#wanbanXiaowu-popup.wb-mono .wb-game-card img,
+#wanbanXiaowu-popup.wb-mono .wb-game-icon.has-image img,
+#wanbanXiaowu-popup.wb-mono .wb-intimacy-image {
+  border-radius:0;
+  filter:grayscale(1) contrast(1.15)!important;
+}
 #wanbanXiaowu-popup.wb-mono .wb-avatar {
   border:3px solid #111;
   border-radius:0;

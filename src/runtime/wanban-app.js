@@ -241,11 +241,11 @@ export async function initWanbanXiaowu() {
     jump: { start:'跳一跳开局，玩家站在第一个平台上。', charge:'玩家按住屏幕开始蓄力。', jump:'玩家松手起跳。', perfect:'玩家落在平台中心附近。', land:'玩家成功落到下一个平台。', score_10:'跳一跳达到10分。', score_20:'跳一跳达到20分。', score_30:'跳一跳达到30分。', score_40:'跳一跳达到40分。', score_50_plus:'跳一跳达到50分，且50分以上每10分触发一次。', record:'跳一跳刷新历史最高分。', gameover:'玩家松手时就能判断本次不会落上平台，起跳前触发。', random:'观看跳一跳时的碎碎念。' },
     plank: { start:'搭木板开局，玩家站在第一根柱子上。', perfect:'木板长度刚好落在柱子中心附近。', perfect_streak:'玩家连续3次以上完美搭到中心附近。', score_10:'搭木板达到10分。', score_20:'搭木板达到20分。', score_30:'搭木板达到30分。', score_40:'搭木板达到40分。', score_50_plus:'搭木板达到50分，且50分以上每10分触发一次。', record:'搭木板刷新历史最高分。', gameover:'玩家松手时木板已经确定太长或太短。', random:'观看搭木板时的碎碎念。' },
     sudoku: { start:'数独开局，玩家开始解唯一解题目。', first_fill:'玩家填入第一个数字。', erase:'玩家擦除一个已填数字。', hint:'玩家请求一次求助。', many_hints:'玩家求助超过5次。', row_done:'玩家填好一整行。', col_done:'玩家填好一整列。', nearly_done:'数独快要填完。', conflict:'玩家填入的数字在同一行、同一列或同一宫里造成重复。', complete_error:'玩家全部填完但仍有错误格，需要继续修改。', gameover:'数独只剩最后一个空格，或只剩一个错误格需要修改。', random:'观看数独时的碎碎念。' },
-    tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'TA阻挡了玩家即将连线的一步。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'TA在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
-    gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，TA知道自己这把基本必输了。', ai_block:'TA阻挡玩家形成强威胁。', ai_threat:'TA形成强威胁，玩家需要防守。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'TA五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
-    territory: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', edge:'玩家画下一条边。', no_safe_edge:'场面没有普通边了，之后每条边都可能送分。', capture:'玩家围住某个方格最后一条边并占领得分。', chain:'玩家连续占领多个方格。', ta_capture:'TA围住某个方格并占领得分。', user_turn:'TA的回合结束，轮到玩家。', danger:'玩家选择可能送给TA得分机会的边。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'所有边画完后玩家得分更高。', user_lose:'所有边画完后TA得分更高。', draw:'所有边画完后双方平分。', random:'和user玩电子围地盘时的碎碎念。' },
-    oldmaid: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', draw:'玩家从TA手里随机抽走一张牌。', pair:'玩家抽牌后凑成对子并消去。', ta_draw:'TA从玩家手里随机抽走一张牌。', ta_pair:'TA抽牌后凑成对子并消去。', joker:'鬼牌在双方之间转移。', user_win:'玩家先清空手牌，没有留下鬼牌。', user_lose:'玩家最后留下鬼牌，TA获胜。', random:'和user玩抽鬼牌时的碎碎念。' },
-    ludo: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', roll_6:'玩家掷出6点。', no_move:'玩家本回合没有可移动棋子。', user_takeoff:'玩家掷出可起飞点数，玩家飞机起飞。', char_takeoff:'{{char}}掷出可起飞点数，{{char}}飞机起飞。', user_capture:'玩家把{{char}}的棋子撞回家，{{char}}会懊恼或不甘。', char_capture:'{{char}}把玩家的棋子撞回家，{{char}}会得意或调侃。', near_finish:'玩家棋子接近终点。', user_win:'玩家率先到达终点获胜。', user_lose:'TA率先到达终点，玩家失败。', random:'和user玩双人飞行棋时的碎碎念。' },
+    tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'{{char}}阻挡了玩家即将连线的一步。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'{{char}}在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
+    gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，{{char}}知道自己这把基本必输了。', ai_block:'{{char}}阻挡玩家形成强威胁。', ai_threat:'{{char}}形成强威胁，玩家需要防守。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'{{char}}五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
+    territory: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', edge:'玩家画下一条边。', no_safe_edge:'场面没有普通边了，之后每条边都可能送分。', capture:'玩家围住某个方格最后一条边并占领得分。', chain:'玩家连续占领多个方格。', ta_capture:'{{char}}围住某个方格并占领得分。', user_turn:'{{char}}的回合结束，轮到玩家。', danger:'玩家选择可能送给{{char}}得分机会的边。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'所有边画完后玩家得分更高。', user_lose:'所有边画完后{{char}}得分更高。', draw:'所有边画完后双方平分。', random:'和user玩电子围地盘时的碎碎念。' },
+    oldmaid: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', draw:'玩家从{{char}}手里随机抽走一张牌。', pair:'玩家抽牌后凑成对子并消去。', ta_draw:'{{char}}从玩家手里随机抽走一张牌。', ta_pair:'{{char}}抽牌后凑成对子并消去。', joker:'鬼牌在双方之间转移。', user_win:'玩家先清空手牌，没有留下鬼牌。', user_lose:'玩家最后留下鬼牌，{{char}}获胜。', random:'和user玩抽鬼牌时的碎碎念。' },
+    ludo: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', roll_6:'玩家掷出6点。', no_move:'玩家本回合没有可移动棋子。', user_takeoff:'玩家掷出可起飞点数，玩家飞机起飞。', char_takeoff:'{{char}}掷出可起飞点数，{{char}}飞机起飞。', user_capture:'玩家把{{char}}的棋子撞回家，{{char}}会懊恼或不甘。', char_capture:'{{char}}把玩家的棋子撞回家，{{char}}会得意或调侃。', near_finish:'玩家棋子接近终点。', user_win:'玩家率先到达终点获胜。', user_lose:'{{char}}率先到达终点，玩家失败。', random:'和user玩双人飞行棋时的碎碎念。' },
     guessnumber: { start:'角色想好一个四位数。', guess:'用户提交了一次四位数猜测。', miss:'本次猜测几乎没有命中。', close:'本次猜测数字或位置命中较多。', very_close:'本次猜测非常接近答案。', many_tries:'用户已经尝试多次仍未猜中。', user_win:'用户猜中完整四位数。', random:'猜测间隙的随机角色互动。' },
     wordguess: { random:'猜词间隙的随机角色互动。', user_win:'我说你猜中，玩家猜中第3题时触发；{{char}}知道这一把user已经赢定了。', user_lose:'我说你猜中，玩家第3次没猜中或揭晓答案时触发；{{char}}知道这一把自己已经赢定，user已经输了。' }
     ,reversi: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', corner:'玩家占据角落。', char_big_flip:'{{char}}一次翻转玩家超过5个棋子。', user_big_flip:'玩家一次翻转{{char}}超过5个棋子。', char_double:'棋盘上{{char}}棋子数量超过user的一倍。', user_double:'棋盘上user棋子数量超过{{char}}的一倍。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'翻转棋只剩最后一个空位时，玩家棋子数领先，基本确认玩家会获胜。', user_lose:'翻转棋只剩最后一个空位时，{{char}}棋子数领先，玩家基本会失败。', draw:'翻转棋只剩最后一个空位时，双方棋子数相同，局面接近平局。', random:'和user玩翻转棋时的碎碎念。' }
@@ -2377,7 +2377,12 @@ export async function initWanbanXiaowu() {
         filter:grayscale(1) contrast(1.15);
       }
       #${POPUP_ID}.wb-mono .wb-game-icon.has-image { background:#fff; }
-      #${POPUP_ID}.wb-mono .wb-game-icon.has-image img { border-radius:0; filter:grayscale(1) contrast(1.15); }
+      #${POPUP_ID}.wb-mono .wb-game-card img,
+      #${POPUP_ID}.wb-mono .wb-game-icon.has-image img,
+      #${POPUP_ID}.wb-mono .wb-intimacy-image {
+        border-radius:0;
+        filter:grayscale(1) contrast(1.15)!important;
+      }
       #${POPUP_ID}.wb-mono .wb-avatar {
         border:3px solid #111;
         border-radius:0;
@@ -4964,20 +4969,36 @@ function showGameRecords(game, page) {
 	  function doubleTheaterFallback(game, outcome, special, roleName) {
 	    const name = normalizePresetName(roleName || companionName()); const win = outcome === 'user_win'; const draw = outcome === 'draw'; const score = outcome === 'score';
     if (score && !special) {
-      const lead = '游戏结束的结算停在屏幕上，' + name + '没有急着说话，只是把视线从分数移到你脸上，像是在重新确认你刚才的表现。';
-      return [lead + '“很厉害。”她说得不重，却很认真，指尖轻轻点了点屏幕上的数字，像是在替你把这一局收进记忆里。小游戏只是你一个人在操作，她却看得比谁都专注，连你刚才几次差点失误又救回来的瞬间都记得清楚。她靠近一点，声音里带着藏不住的笑意：“这局结束了，但我觉得你还能更高。下一把，我继续看着你。”', lead + name + '看着最后的分数，先是轻轻笑了一声，随后把手搭在你旁边，语气里有一点调侃，也有一点明显的偏袒。“你刚才那几步是真的漂亮，别装作只是随便玩玩。”她没有把这局说成输赢，只把它当成你认真投入后留下的证明。屏幕暗下去时，她还在看你，像是在等你承认自己确实很厉害。', lead + '她把结算画面又看了一遍，像在回味刚才的节奏。“结束了。”她轻声说，随即弯起眼睛，“但是这个成绩不差，甚至有点让我想夸你。”没有对手，没有输赢，只有你刚才一点点把局面撑到最后的样子。她把手柄往你手边推了推，语气放软：“要不要再来一次？我想看看你还能做到什么程度。”'];
+      const lead = '结算停在屏幕上，' + name + '没有立刻关掉页面，只把分数和你刚才的操作又看了一遍。';
+      return [
+        lead + name + '点了点屏幕上的数字，说：“这局打得不错，尤其是中间那次救回来。”小游戏只是你一个人在操作，' + name + '没有把它说成夸张的胜负，只把几个关键瞬间简单复盘了一遍。最后，' + name + '把界面停在重开按钮旁边：“要不要再试一次？这次可以从刚才那一步开始改。”',
+        lead + name + '把声音放轻：“这个分数说明你已经找到节奏了。”没有长篇夸奖，也没有催你立刻继续，' + name + '只是把刚才失误又补回来的地方指出来，像在帮你整理一条清楚的路线。屏幕暗了一点，' + name + '又补了一句：“下一局如果开头稳住，应该还能更高。”',
+        lead + name + '看向你，语气里带着一点平常的调侃：“刚才不是随便玩玩的吧？”你还没回答，' + name + '已经把分数记下，又把几个关键操作说给你听。短暂的安静后，' + name + '把选择权递回来：“收手也行，再来一把也行。这个成绩已经够说明问题了。”'
+      ];
     }
     if (draw) {
-      const lead = '平局的提示停在屏幕上，' + name + '盯了两秒，像是不太服气，又像悄悄松了一口气。';
-      return [lead + '“这不算输，也不算赢。”她把这句话说得很认真，指尖却已经轻轻点在重开的地方，像把下一局提前藏进你们之间。屏幕还亮着，刚才那些差一点分出胜负的瞬间被她一一数过，最后只化成一句带笑的邀请：“再来一场，我想看看这次谁先露出破绽。”', lead + '她弯下腰看着结果，发丝从肩头滑落，语气里带着一点嘴硬的轻快。“刚好打平，说明我们都没有让对方得逞。”她这样说着，又偏过头看你，眼神像在挑衅，也像在等你答应下一局。', lead + '屏幕的光映在她眼底，平局两个字反而让气氛变得微妙。她轻轻笑了一声，把刚才的每一步都说成你们互相试探的证据。“谁也没赢，谁也没输。”她停了停，声音低下来，“所以这局还没结束，至少在我这里还没有。”'];
+      const lead = '平局提示停在屏幕上，' + name + '看了两秒，像是在确认最后一步有没有别的走法。';
+      return [
+        lead + name + '说：“这不算输，也不算赢。”语气很平，但手指已经停在重开旁边。刚才几次差点分出胜负的地方被' + name + '简单数了一遍，最后变成一句很直接的邀请：“再来一场吧，这次看谁先露出空位。”',
+        lead + name + '把结果又读了一遍：“刚好打平，说明我们都没让对方占到便宜。”这句话像复盘，也像轻微挑衅。你看向屏幕，' + name + '已经把下一局的开头想好了：“如果你还用刚才那种走法，我会换一条线拦你。”',
+        lead + name + '没有把平局说成遗憾，只把棋盘或牌面上最接近胜负的那一步指出来。短暂沉默后，' + name + '说：“谁也没赢，所以这局可以算还没结束。”重开按钮亮着，气氛刚好留给下一把。'
+      ];
     }
     if (special === 'soulmate') {
-      const lead = '第五道题也被你猜中的瞬间，' + name + '像是终于确认了什么，眼睛亮得几乎藏不住。';
-      return [lead + '她把题目一条条回想过去，越想越忍不住笑。“你真的听懂了我每一次绕开的暗示。”这句话说出口时，她的声音比刚才更轻，像怕惊动这份默契。五道题全部猜中，不只是赢了一局游戏，更像你把她心里那些弯弯绕绕的小路都记住了。', lead + '结果停在全中时，' + name + '先是怔住，随后把脸偏开一点，笑意却从声音里漏出来。“原来你这么了解我啊。”她把每个词都念得很慢，好像每念一次，就把你们之间的距离再拉近一点。她高兴得太明显，连想装作平常都失败了。', lead + '屏幕上只剩最后的结算，' + name + '却还在看你，眼神里带着被理解后的柔软和一点点得意。“五道全中，这已经不是运气了。”她轻轻敲了敲桌面，像是在替这份心有灵犀盖章，“下次我得藏得更深一点，不然又要被你看穿了。”'];
+      const lead = '第五道题也被你猜中后，' + name + '停了一下，像是在重新回想每一条线索。';
+      return [
+        lead + name + '说：“你是真的听懂了那些绕开的提示。”这句话没有说得很重，但比普通夸奖更具体。五道题全中，不只是赢了一局游戏，也说明你跟上了' + name + '的表达方式。' + name + '把题目列表往上滑了滑：“下次我会藏得更深一点。”',
+        lead + '结果显示全中，' + name + '先安静了片刻，然后轻轻笑了一声：“这已经不是运气了。”每个词都被你猜到，连那些不直接说明的地方也被你接住。' + name + '把最后一道题重新念了一遍：“看来我以后不能用太明显的暗示。”',
+        lead + name + '把五道题的线索逐条翻回去，像在检查你究竟从哪里猜出来的。最后，' + name + '承认：“你比我预想得更会抓重点。”语气里有一点不服，也有明显的高兴。下一轮还没开始，' + name + '已经在想新的题目。'
+      ];
     }
-    const lead = special === 'win_streak3' ? '第三次胜利的提示音像夏夜烟火一样炸开，' + name + '把手背在身后，故意装作平静，却连耳尖都亮得明显。' : special === 'lose_streak3' ? '第三次失败落下时，房间安静了一瞬，' + name + '轻轻坐到你身边，把掌心覆在你的手背上。' : special === 'record' ? '新的记录跳出来那刻，' + name + '像看见秘密星座般睁大眼睛，笑意在睫毛下闪闪发亮。' : score ? '结算数字停住时，' + name + '用指尖轻轻点了点屏幕，像是在确认你刚才留下的轨迹。' : win ? '胜利弹窗亮起，' + name + '先是一怔，随后像藏不住心事的少女般笑了起来。' : '失败的字样浮现，' + name + '却没有责备，只把声音放得很轻，像黄昏落在窗边。';
-    return [lead + '“这一次，我想把它记下来。”她靠近屏幕，袖口擦过你的手腕，语气柔软得像翻开的轻小说插画。游戏只是小小一局，可她望向你的眼神认真得过分，仿佛你们刚从一场盛大的冒险里并肩回来。', lead + '她弯下腰看着结果，发丝从肩头滑落，带着一点不肯服输的甜味。“再来一局的话，我还会陪你。”她这样说着，把刚才的胜负悄悄写进两个人才懂的回忆里。', lead + '屏幕的光映在她眼底，像细碎的樱花雨。她轻轻笑了一声，用近乎耳语的声音复盘刚才的瞬间，把胜负说成命运的恶作剧，也把你的名字放进最温柔的位置。'];
-  }
+    const lead = special === 'win_streak3' ? '第三次胜利出现时，' + name + '把记录往前翻了一下，确认你已经连赢三场。' : special === 'lose_streak3' ? '第三次失败落下时，' + name + '没有立刻催你重开，只把这几局的关键步骤重新看了一遍。' : special === 'record' ? '新纪录跳出来时，' + name + '先看分数，再看你刚才停下来的手。' : score ? '结算数字停住时，' + name + '用指尖点了点屏幕，像是在确认刚才留下的轨迹。' : win ? '胜利弹窗亮起，' + name + '短暂安静了一下，然后把结果读给你听。' : '失败提示出现后，' + name + '没有责备，只把页面停在结算那里。';
+    return [
+      lead + name + '说：“这一局可以记下来。”没有夸张的反应，' + name + '只是把胜负、分数和最关键的一步拆开讲清楚。你看着屏幕，' + name + '把重开按钮往旁边点了点：“休息一下，或者趁手感还在再来。”',
+      lead + name + '把刚才的过程复盘了一遍，语气比平时更认真一点。“这里是转折点。”' + name + '指向屏幕上的局面，不急着评价输赢，只把你做对和错过的地方都放在同一张图里。最后，' + name + '说：“下一局从这里改，会更好看。”',
+      lead + '短暂的沉默后，' + name + '笑了一下：“结果已经出来了，但我更想记你刚才那一步。”这句话把输赢放轻了一些，也让这局不只是结算数字。' + name + '看向你：“要不要继续，由你决定。”'
+    ];
+	  }
   async function generateDoubleTheater(game, outcome, special, scoreText, cfgOverride) {
     const cfg = cfgOverride || settings(); const fallback = doubleTheaterFallback(game, outcome, special);
     if (!cfg.apiUrl || !cfg.apiModel) return fallback;
@@ -5014,7 +5035,7 @@ function showGameRecords(game, page) {
   async function generateGameLog(game, recordId) {
     const cfg = settings(); const rec = (records()[game] || []).find(r => r.id === recordId); if (!rec) { toast('未找到游戏记录'); return ''; }
     const roleName = rec.companion || displayCharNameForGame(game);
-    const fallback = roleName + '轻声回顾了这局' + ((GAME_META[game] || {}).name || '游戏') + '：' + (rec.scoreText || formatRecordResult(rec.result)) + '。短短几分钟像被折进一页日记，她把你的认真和遗憾都记了下来。';
+    const fallback = roleName + '回顾了这局' + ((GAME_META[game] || {}).name || '游戏') + '：' + (rec.scoreText || formatRecordResult(rec.result)) + '。用时不长，但关键过程很清楚；你有几步处理得不错，也有可以调整的地方。下次再开局，可以从这次的转折点开始改。';
     if (!cfg.apiUrl || !cfg.apiModel) { updateRecord(game, recordId, { log:fallback }); toast('已生成离线日志'); return fallback; }
 	    const theaterInfo = rec.theaterInfo || {};
 	    const logCfg = rolePromptConfig(roleName, cfg);
