@@ -197,6 +197,9 @@ export async function initWanbanXiaowu() {
     messageNotifyTag: 'content',
     theaterEnabled: false,
     autoLog: false,
+    companionDock: 'end',
+    companionDockPc: 'right',
+    companionDockMobile: 'bottom',
 	    batchLinePromptOverride: '',
 	    batchTheaterPromptOverride: '',
 	    batchAttempts: 1,
@@ -271,6 +274,12 @@ export async function initWanbanXiaowu() {
   function safeArray(v) { return Array.isArray(v) ? v : []; }
   function settings() { return Object.assign({}, DEFAULT_SETTINGS, safeObject(loadJSON(STORAGE_SETTINGS, {}))); }
   function setSettings(next) { saveJSON(STORAGE_SETTINGS, Object.assign(settings(), next)); }
+  function companionDockSide(cfg) {
+    cfg = cfg || settings();
+    if (cfg.companionDock === 'start' || cfg.companionDock === 'end') return cfg.companionDock;
+    if (cfg.companionDockPc === 'left' || cfg.companionDockMobile === 'top') return 'start';
+    return 'end';
+  }
   function saveWindowState(tab, game) {
     const cfg = settings();
     if (!cfg.rememberWindow) return;
@@ -1302,7 +1311,7 @@ export async function initWanbanXiaowu() {
     if (canvas) {
       const rawW = canvas.width || 300;
       const rawH = canvas.height || rawW;
-      const allowGrow = canvas.classList.contains('wb-snake-canvas');
+      const allowGrow = canvas.classList.contains('wb-snake-canvas') && getHostWindow().matchMedia('(max-width: 768px)').matches;
       const scale = Math.min(maxW / rawW, maxH / rawH, allowGrow ? 10 : 1);
       canvas.style.width = Math.floor(rawW * scale) + 'px';
       canvas.style.height = Math.floor(rawH * scale) + 'px';
@@ -1356,6 +1365,16 @@ export async function initWanbanXiaowu() {
         z-index:1000003;
         background:transparent;
         pointer-events:auto;
+      }
+      #${POPUP_ID}, #${POPUP_ID} *,
+      .wb-modal-mask, .wb-modal-mask * {
+        writing-mode:horizontal-tb;
+        text-orientation:mixed;
+      }
+      #${POPUP_ID} :is(.wb-switch,.wb-btn,.wb-tab,.wb-iconbtn,.wb-pill,.wb-tag,label,span),
+      .wb-modal-mask :is(.wb-switch,.wb-btn,.wb-tab,.wb-iconbtn,.wb-pill,.wb-tag,label,span) {
+        word-break:keep-all;
+        overflow-wrap:normal;
       }
       #${FLOAT_ID} {
         position:fixed;
@@ -1451,6 +1470,11 @@ export async function initWanbanXiaowu() {
       .wb-word-meta { color:var(--wb-sub); font-size:13px; line-height:1.35; display:block; }
       .wb-layout { flex:1 1 auto; min-height:0; height:auto; display:grid; grid-template-columns:minmax(0, 1fr) minmax(250px, 300px); grid-template-rows:minmax(0, 1fr); gap:12px; align-items:stretch; }
       .wb-layout.no-companion { grid-template-columns:minmax(0, 1fr); }
+      .wb-layout.companion-pc-left { grid-template-columns:minmax(250px, 300px) minmax(0, 1fr); }
+      .wb-layout.companion-pc-left .wb-game-main { grid-column:2; grid-row:1; }
+      .wb-layout.companion-pc-left .wb-side-companion { grid-column:1; grid-row:1; }
+      .wb-layout.companion-pc-right .wb-game-main { grid-column:1; grid-row:1; }
+      .wb-layout.companion-pc-right .wb-side-companion { grid-column:2; grid-row:1; }
       .wb-panel { background:var(--wb-panel); border:1px solid var(--wb-border); border-radius:0; padding:12px; min-height:0; }
       .wb-body.wb-game-mode > .wb-layout > .wb-panel:first-child { display:flex; flex-direction:column; overflow:hidden; }
       .wb-body.wb-game-mode > .wb-layout > .wb-panel:last-child { overflow:hidden; display:flex; flex-direction:column; }
@@ -1470,18 +1494,21 @@ export async function initWanbanXiaowu() {
       .wb-snake-controls .right { grid-column:3; grid-row:2; }
       .wb-canvas.wb-tetris-canvas { aspect-ratio:1 / 2; max-height:min(100%, 100cqh); }
       .wb-canvas.wb-tetris-canvas { background:var(--wb-board); box-shadow:none; }
-      .wb-jump-shell { position:relative; width:100%; height:100%; min-width:0; min-height:0; display:grid; place-items:center; }
-      .wb-jump-canvas { aspect-ratio:13 / 16; max-height:min(100%, 100cqh); background:#e9f8ff; touch-action:none; }
-      .wb-plank-shell { position:relative; width:100%; height:100%; min-width:0; min-height:0; display:grid; place-items:center; }
-      .wb-plank-canvas { aspect-ratio:13 / 9; max-height:min(100%, 100cqh); background:#e9f8ff; touch-action:none; border:6px solid color-mix(in srgb, var(--wb-accent) 36%, #6b4328 64%); box-shadow:0 18px 36px rgba(74,49,31,.18), inset 0 0 0 2px rgba(255,255,255,.24); }
+      .wb-jump-shell { position:relative; width:100%; height:100%; min-width:0; min-height:0; display:grid; place-items:center; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
+      .wb-jump-canvas { aspect-ratio:13 / 16; max-height:min(100%, 100cqh); background:#e9f8ff; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+      .wb-plank-shell { position:relative; width:100%; height:100%; min-width:0; min-height:0; display:grid; place-items:center; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
+      .wb-plank-canvas { aspect-ratio:13 / 9; max-height:min(100%, 100cqh); background:#e9f8ff; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; border:6px solid color-mix(in srgb, var(--wb-accent) 36%, #6b4328 64%); box-shadow:0 18px 36px rgba(74,49,31,.18), inset 0 0 0 2px rgba(255,255,255,.24); }
       #${POPUP_ID}.wb-night .wb-plank-canvas,
       #${POPUP_ID}.wb-cyber .wb-plank-canvas { border-color:color-mix(in srgb, var(--wb-accent) 70%, #101A1D 30%); box-shadow:0 0 24px rgba(25,211,197,.18), inset 0 0 0 2px rgba(241,232,91,.16); }
-      .wb-jump-help { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:2; padding:4px 10px; border:1px solid color-mix(in srgb, var(--wb-border) 70%, transparent 30%); background:color-mix(in srgb, var(--wb-panel) 82%, transparent 18%); color:var(--wb-sub); font-size:12px; font-weight:800; line-height:1.2; pointer-events:none; box-shadow:0 6px 16px rgba(0,0,0,.12); }
+      .wb-jump-help { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:2; padding:4px 10px; border:1px solid color-mix(in srgb, var(--wb-border) 70%, transparent 30%); background:color-mix(in srgb, var(--wb-panel) 82%, transparent 18%); color:var(--wb-sub); font-size:12px; font-weight:800; line-height:1.2; pointer-events:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; box-shadow:0 6px 16px rgba(0,0,0,.12); }
       #${POPUP_ID}.wb-night .wb-jump-canvas { background:#000; }
       #${POPUP_ID}.wb-cyber .wb-jump-help { border-color:rgba(25,211,197,.35); color:#F1E85B; box-shadow:0 0 14px rgba(25,211,197,.16); }
       .wb-tetris-shell { width:100%; height:100%; min-width:0; min-height:0; display:flex; align-items:center; justify-content:center; gap:8px; }
       .wb-tetris-controls { display:none; flex:0 0 auto; gap:6px; }
-      .wb-tetris-controls .wb-btn { writing-mode:vertical-rl; min-width:34px; min-height:74px; padding:8px 5px; letter-spacing:1px; }
+      .wb-tetris-controls .wb-btn { position:relative; display:inline-flex; align-items:center; justify-content:center; gap:5px; writing-mode:horizontal-tb; min-width:68px; min-height:40px; padding:8px 12px; letter-spacing:1px; line-height:1.1; border-left:3px solid var(--wb-accent2); box-shadow:0 4px 12px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.26); }
+      .wb-tetris-controls .wb-btn::before { font-size:13px; opacity:.82; line-height:1; }
+      #wb-tetris-rotate::before { content:'↻'; }
+      #wb-tetris-softdrop::before { content:'↓'; }
       .wb-2048-panel { width:100%; height:100%; min-height:0; display:grid; place-items:center; overflow:hidden; }
       .wb-grid2048 { width:min(430px, 100%, 82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); grid-template-rows:repeat(4,minmax(0,1fr)); gap:8px; background:#b8a89f; padding:8px; border-radius:0; box-sizing:border-box; }
       .wb-tile { display:grid; place-items:center; border-radius:0; background:#cdc0b6; font-weight:900; font-size:clamp(16px, 3.2vh, 26px); color:#4f4039; min-width:0; min-height:0; aspect-ratio:1; overflow:hidden; line-height:1; }
@@ -1659,6 +1686,10 @@ export async function initWanbanXiaowu() {
       .wb-input, .wb-textarea, .wb-select { width:100%; background:var(--wb-input); color:var(--wb-text); border:1px solid var(--wb-border); border-radius:0; padding:8px 10px; outline:none; font-family:inherit; }
       .wb-textarea { min-height:76px; resize:vertical; }
       .wb-switch { display:flex; align-items:center; gap:8px; font-weight:800; }
+      .wb-inline-select-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:34px; font-weight:800; }
+      .wb-inline-select-row > span { flex:1 1 auto; min-width:0; }
+      .wb-inline-select-row .wb-inline-hint { color:var(--wb-sub); font-size:11px; font-weight:700; opacity:.82; margin-left:6px; }
+      .wb-inline-select-row .wb-select { flex:0 0 132px; width:132px; min-height:32px; padding:6px 9px; font-weight:700; }
       .wb-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
       .wb-line-tools { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
       .wb-line-tools .wb-select, .wb-line-tools .wb-input { width:auto; min-width:126px; max-width:180px; min-height:34px; padding:7px 9px; }
@@ -2167,10 +2198,30 @@ export async function initWanbanXiaowu() {
         #${POPUP_ID}.wb-playing .wb-title::after { display:none; }
         #${POPUP_ID}.wb-playing .wb-tabs { display:none; }
         .wb-body.wb-game-mode { flex:1 1 auto!important; min-height:0!important; display:flex; flex-direction:column; overflow:hidden!important; padding:3px 5px 5px; height:auto; }
-        .wb-layout { flex:1 1 auto; height:100%; min-height:0; grid-template-columns:1fr; grid-template-rows:minmax(0,1fr) auto; gap:4px; overflow:hidden; }
+        .wb-layout { flex:1 1 auto; width:100%; height:100%; min-height:0; grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr) auto; gap:4px; overflow:hidden; }
+        .wb-layout.companion-pc-left,
+        .wb-layout.companion-pc-right { grid-template-columns:minmax(0,1fr); }
         .wb-layout.no-companion { grid-template-rows:minmax(0,1fr); }
+        .wb-layout.companion-mobile-top { grid-template-rows:auto auto minmax(0,1fr); }
+        .wb-layout.companion-mobile-top .wb-game-main { display:contents; }
+        .wb-layout.companion-mobile-top .wb-toolbar { grid-column:1; grid-row:1; min-width:0; margin-bottom:0; }
+        .wb-layout.companion-mobile-top .wb-side-companion { grid-column:1; grid-row:2; }
+        .wb-layout.companion-mobile-top .wb-board-wrap { grid-column:1; grid-row:3; width:100%; height:100%; min-height:0; overflow:hidden; }
+        .wb-layout.companion-mobile-bottom .wb-game-main { grid-column:1; grid-row:1; }
+        .wb-layout.companion-mobile-bottom .wb-side-companion { grid-column:1; grid-row:2; }
         .wb-body.wb-game-mode > .wb-layout > .wb-panel:first-child { min-height:0; height:auto; padding:4px; display:flex; flex-direction:column; overflow:hidden; }
-        .wb-body.wb-game-mode > .wb-layout > .wb-panel:last-child { max-height:72px; min-height:0; padding:4px 5px; overflow:hidden; }
+        .wb-body.wb-game-mode > .wb-layout > .wb-panel:last-child { max-height:90px; min-height:0; padding:4px 6px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+        #${POPUP_ID} .wb-body.wb-game-mode > .wb-layout > .wb-side-companion {
+          height:88px;
+          max-height:88px;
+          padding:0!important;
+          border:0!important;
+          background:transparent!important;
+          background-image:none!important;
+          box-shadow:none!important;
+        }
+        .wb-body.wb-game-mode > .wb-layout.companion-mobile-top > .wb-game-main { display:contents!important; padding:0; }
+        .wb-body.wb-game-mode > .wb-layout.companion-mobile-top > .wb-side-companion { width:100%; max-height:90px; }
         .wb-body.wb-game-mode > .wb-layout.no-companion > .wb-panel:first-child { max-height:none; padding:4px; }
         .wb-board-wrap { flex:1 1 0; height:auto; min-height:0; padding:4px; overflow:hidden; }
         .wb-toolbar { flex-shrink:0; display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-rows:auto auto; gap:3px 5px; margin-bottom:3px; align-items:center; padding:3px; border:1px solid color-mix(in srgb, var(--wb-border) 70%, transparent 30%); border-radius:2px; background:color-mix(in srgb, var(--wb-soft) 72%, var(--wb-panel) 28%); }
@@ -2222,18 +2273,20 @@ export async function initWanbanXiaowu() {
         .wb-snake-controls { display:grid; }
         .wb-canvas.wb-tetris-canvas { height:auto; width:auto; max-height:100%; max-width:100%; }
         .wb-tetris-controls { display:flex; flex-direction:column; }
+        .wb-tetris-controls .wb-btn { min-width:54px; min-height:52px; padding:11px 8px; gap:3px; border-left-width:2px; box-shadow:0 1px 0 rgba(255,255,255,.28) inset; }
+        .wb-tetris-controls .wb-btn::before { font-size:11px; }
         .wb-watermelon-canvas { max-height:100%; }
         .wb-gomoku { gap:1px; padding:4px; }
         .wb-guess-panel { max-height:100%; overflow:hidden; gap:6px; }
         .wb-guess-history { max-height:86px; padding:5px; }
         .wb-clue-box { min-height:44px; max-height:none; overflow:visible; }
-        .wb-side-companion { align-self:stretch; box-sizing:border-box; }
-        .wb-side-companion .wb-companion { margin-bottom:0; }
-        .wb-companion { max-height:76px; min-height:0; height:74px; margin-top:0; margin-bottom:0; padding:5px 6px; box-sizing:border-box; overflow:hidden; }
+        .wb-side-companion { align-self:stretch; box-sizing:border-box; display:flex; align-items:center; justify-content:center; }
+        .wb-side-companion .wb-companion { margin:0; width:100%; height:88px; }
+        .wb-companion { max-height:88px; min-height:0; height:88px; margin-top:0; margin-bottom:0; padding:5px 7px; box-sizing:border-box; overflow:hidden; }
         .wb-avatar { width:40px; height:40px; }
         .wb-comp-main { gap:2px; }
         .wb-comp-name { font-size:11px; }
-        .wb-speech { min-height:0; max-height:58px; font-size:12px; padding:4px 7px; line-height:1.32; overflow:hidden; }
+        .wb-speech { min-height:0; max-height:70px; font-size:12px; padding:5px 8px; line-height:1.3; overflow:hidden; }
         .wb-body.wb-game-mode .wb-muted { display:none; }
         .wb-body.wb-game-mode .wb-word-meta { display:block!important; }
         .wb-body.wb-game-mode .wb-field { display:none; }
@@ -2785,6 +2838,7 @@ export async function initWanbanXiaowu() {
       + '<div id="wb-companion-suboptions" style="' + (cfg.companion ? '' : 'display:none;') + '">'
       + '<label class="wb-switch"><input id="wb-theater-toggle" type="checkbox" ' + (cfg.theaterEnabled ? 'checked' : '') + '>开启小剧场</label>'
       + '<label class="wb-switch"><input id="wb-auto-log-toggle" type="checkbox" ' + (cfg.autoLog ? 'checked' : '') + '>自动记录日志</label>'
+      + '<label class="wb-inline-select-row"><span>陪伴对话位置<span class="wb-inline-hint">电脑端左右，移动端上下</span></span><select class="wb-select" id="wb-companion-dock"><option value="end">右 / 下</option><option value="start">左 / 上</option></select></label>'
       + '</div>'
       + '<label class="wb-switch"><input id="wb-remember-window" type="checkbox" ' + (cfg.rememberWindow ? 'checked' : '') + '>保留上一次窗口</label>'
       + '<label class="wb-switch"><input id="wb-floating-ball" type="checkbox" ' + (cfg.floatingBallEnabled ? 'checked' : '') + '>开启悬浮球入口</label>'
@@ -2847,7 +2901,7 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
 	      + '</div>'
-	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.3<br>本游戏发布者：Gloria</div>'
+	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.4<br>本游戏发布者：Gloria</div>'
 	      + '</div>';
 	    qs('#wb-theme').value = cfg.theme;
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
@@ -2870,6 +2924,7 @@ export async function initWanbanXiaowu() {
     };
     const theaterToggle = qs('#wb-theater-toggle'); if (theaterToggle) theaterToggle.onchange = autoSaveBasicSettingsFromUI;
     const autoLogToggle = qs('#wb-auto-log-toggle'); if (autoLogToggle) autoLogToggle.onchange = autoSaveBasicSettingsFromUI;
+    const dock = qs('#wb-companion-dock'); if (dock) { dock.value = companionDockSide(cfg); dock.onchange = autoSaveBasicSettingsFromUI; }
     const rememberWindowToggle = qs('#wb-remember-window'); if (rememberWindowToggle) rememberWindowToggle.onchange = autoSaveBasicSettingsFromUI;
     const floatingBallToggle = qs('#wb-floating-ball'); if (floatingBallToggle) floatingBallToggle.onchange = autoSaveBasicSettingsFromUI;
     const messageNotifyToggle = qs('#wb-message-notify'); if (messageNotifyToggle) messageNotifyToggle.onchange = () => { autoSaveBasicSettingsFromUI(); bindMessageNotifyEvents(); };
@@ -2944,7 +2999,10 @@ export async function initWanbanXiaowu() {
 	    const messageNotify = !!(qs('#wb-message-notify') && qs('#wb-message-notify').checked);
 	    const theaterEnabled = companion && !!(qs('#wb-theater-toggle') && qs('#wb-theater-toggle').checked);
 	    const autoLog = companion && !!(qs('#wb-auto-log-toggle') && qs('#wb-auto-log-toggle').checked);
-	    const patch = { companion, theme, selectedFont, rememberWindow, floatingBallEnabled, messageNotify, theaterEnabled, autoLog };
+	    const companionDock = qs('#wb-companion-dock') && qs('#wb-companion-dock').value === 'start' ? 'start' : 'end';
+	    const companionDockPc = companionDock === 'start' ? 'left' : 'right';
+	    const companionDockMobile = companionDock === 'start' ? 'top' : 'bottom';
+	    const patch = { companion, theme, selectedFont, rememberWindow, floatingBallEnabled, messageNotify, theaterEnabled, autoLog, companionDock, companionDockPc, companionDockMobile };
 	    if (rememberWindow) { patch.lastTab = currentTab || 'single'; patch.lastGame = currentGame || ''; }
 	    setSettings(patch);
 	    syncPopupModeClass();
@@ -3123,7 +3181,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.3', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.4', exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -4629,7 +4687,9 @@ export async function initWanbanXiaowu() {
     const wordBankTools = id === 'wordguess' ? '<select class="wb-select" id="wb-word-bank-source-inline" title="我说你猜题库"><option value="role">角色题库</option><option value="default">默认题库</option></select>' : '';
     const pauseBtn = g.mode === 'double' ? '' : '<button class="wb-btn" id="wb-pause">暂停</button>';
     const companionPanel = cfg.companion ? '<div class="wb-panel wb-side-companion">' + companionHTML() + '</div>' : '';
-    body.innerHTML = '<div class="wb-layout ' + (cfg.companion ? '' : 'no-companion') + '"><div class="wb-panel"><div class="wb-toolbar"><button class="wb-btn" id="wb-back">返回</button><div class="wb-stat"><span class="wb-pill wb-title-row"><span class="wb-game-title-text">' + esc(g.name) + '</span><button class="wb-rule-btn" id="wb-game-rules" title="游戏介绍" aria-label="游戏介绍" type="button">💡</button></span><span class="wb-pill" id="wb-score">本局：0</span><span class="wb-pill" id="wb-high">' + esc(scoreDisplay(id)) + '</span></div><div class="wb-actions">' + wordBankTools + lineTools + '<button class="wb-btn" id="wb-game-records">记录</button>' + pauseBtn + '<button class="wb-btn" id="wb-restart">重开</button></div></div><div class="wb-board-wrap wb-gamebox-' + esc(id) + '" id="wb-gamebox"><div class="wb-start-cover"><div>准备开始</div><button class="wb-btn primary" id="wb-start-cover-btn">开始游戏</button></div></div></div>' + companionPanel + '</div>';
+    const dockSide = companionDockSide(cfg);
+    const layoutClass = cfg.companion ? ('companion-pc-' + (dockSide === 'start' ? 'left' : 'right') + ' companion-mobile-' + (dockSide === 'start' ? 'top' : 'bottom')) : 'no-companion';
+    body.innerHTML = '<div class="wb-layout ' + layoutClass + '"><div class="wb-panel wb-game-main"><div class="wb-toolbar"><button class="wb-btn" id="wb-back">返回</button><div class="wb-stat"><span class="wb-pill wb-title-row"><span class="wb-game-title-text">' + esc(g.name) + '</span><button class="wb-rule-btn" id="wb-game-rules" title="游戏介绍" aria-label="游戏介绍" type="button">💡</button></span><span class="wb-pill" id="wb-score">本局：0</span><span class="wb-pill" id="wb-high">' + esc(scoreDisplay(id)) + '</span></div><div class="wb-actions">' + wordBankTools + lineTools + '<button class="wb-btn" id="wb-game-records">记录</button>' + pauseBtn + '<button class="wb-btn" id="wb-restart">重开</button></div></div><div class="wb-board-wrap wb-gamebox-' + esc(id) + '" id="wb-gamebox"><div class="wb-start-cover"><div>准备开始</div><button class="wb-btn primary" id="wb-start-cover-btn">开始游戏</button></div></div></div>' + companionPanel + '</div>';
     primeMessageNotifyBaseline();
     gameStarted = false; gamePaused = true;
     qs('#wb-back').onclick = () => { stopGame(); currentGame = null; saveWindowState(currentTab, ''); syncPopupModeClass(); renderSelect(currentTab); };
