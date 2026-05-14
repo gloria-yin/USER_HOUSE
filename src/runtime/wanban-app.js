@@ -561,6 +561,14 @@ export async function initWanbanXiaowu() {
     return out;
   }
   function displayCharText(text) { return displayCharTextForGame(text, currentGame); }
+  function preventLongPressSelection(el) {
+    if (!el) return;
+    const stop = e => e.preventDefault();
+    ['selectstart','contextmenu','dragstart'].forEach(type => el.addEventListener(type, stop));
+    el.onselectstart = () => false;
+    el.oncontextmenu = () => false;
+    el.ondragstart = () => false;
+  }
   function roleGameStats(game, roleName) {
     const who = roleName || companionName();
     const arr = (records()[game] || []).filter(r => (r.companion || '') === who);
@@ -573,9 +581,17 @@ export async function initWanbanXiaowu() {
     const vals = stats.records.filter(r => resultOutcome(r.result) === 'user_win').map(guessNumberTries).map(x => parseInt(x, 10)).filter(Boolean);
     return vals.length ? Math.min(...vals) : 0;
   }
-  function sudokuBestDuration() {
-    const vals = (records().sudoku || []).map(r => Number(r.durationMs || 0)).filter(Boolean);
-    return vals.length ? Math.min(...vals) : 0;
+  function sudokuScore(durationMs, hints) {
+    const seconds = Math.max(0, Math.round((durationMs || 0) / 1000));
+    return Math.max(0, 3000 - seconds * 3 - Math.max(0, hints || 0) * 250);
+  }
+  function sudokuBestScore() {
+    const stored = Number(scores().sudoku || 0);
+    const vals = (records().sudoku || []).map(r => {
+      if (r?.result && typeof r.result === 'object' && r.result.outcome === 'score') return Number(r.result.score || 0);
+      return sudokuScore(Number(r?.durationMs || 0), extractNumber(r?.scoreText || '', /求助\s*(\d+)\s*次/, 0));
+    }).filter(n => n > 0);
+    return Math.max(stored, vals.length ? Math.max(...vals) : 0);
   }
   function memoryBestMoves() {
     const sc = scores();
@@ -609,8 +625,8 @@ export async function initWanbanXiaowu() {
     const sorted = Array.from(groups.values()).sort((a,b) => b.best - a.best || b.wins - a.wins || b.total - a.total || b.last - a.last);
     return sorted[0]?.name || '';
   }
-  function scoreDisplay(game) { const g = GAME_META[game] || {}; const sc = scores()[game]; if (game === 'sudoku') { const best = sudokuBestDuration(); return '最短时长：' + (best ? formatDuration(best) : '无'); } if (g.mode === 'double') { const st = roleGameStats(game); return '胜率：' + st.wins + '/' + st.total; } return '最高：' + ((sc || 0) + (g.unit || '分')); }
-  function cardScoreDisplay(game) { const g = GAME_META[game] || {}; const sc = scores()[game]; if (game === 'memory') { const best = memoryBestMoves(); return '最短次数：' + (best ? best + '次' : '无'); } if (game === 'wordguess') { const name = wordGuessBestCompanion(); return '最默契：' + (name || '无'); } if (game === 'guessnumber') { const best = guessNumberBestTries(); return '最小次数：' + (best ? best + '次' : '无'); } if (game === 'sudoku') { const best = sudokuBestDuration(); return '最短时长：' + (best ? formatDuration(best) : '无'); } if (g.mode === 'double') { const st = roleGameStats(game); return '胜率：' + st.wins + '/' + st.total; } return '当前最高分：' + ((sc || 0) + (g.unit || '分')); }
+  function scoreDisplay(game) { const g = GAME_META[game] || {}; const sc = scores()[game]; if (game === 'sudoku') return '最高：' + sudokuBestScore() + '分'; if (g.mode === 'double') { const st = roleGameStats(game); return '胜率：' + st.wins + '/' + st.total; } return '最高：' + ((sc || 0) + (g.unit || '分')); }
+  function cardScoreDisplay(game) { const g = GAME_META[game] || {}; const sc = scores()[game]; if (game === 'memory') { const best = memoryBestMoves(); return '最短次数：' + (best ? best + '次' : '无'); } if (game === 'wordguess') { const name = wordGuessBestCompanion(); return '最默契：' + (name || '无'); } if (game === 'guessnumber') { const best = guessNumberBestTries(); return '最小次数：' + (best ? best + '次' : '无'); } if (game === 'sudoku') return '当前最高分：' + sudokuBestScore() + '分'; if (g.mode === 'double') { const st = roleGameStats(game); return '胜率：' + st.wins + '/' + st.total; } return '当前最高分：' + ((sc || 0) + (g.unit || '分')); }
   function gameIconHTML(g) {
     const fallback = '<span>' + esc(g.icon || '') + '</span>';
     if (!g.iconImage) return '<div class="wb-game-icon">' + fallback + '</div>';
@@ -644,6 +660,12 @@ export async function initWanbanXiaowu() {
     const m = String(r?.scoreText || '').match(/(\d+)\s*分/);
     return (m ? parseInt(m[1], 10) : 0) + '分';
   }
+  function sudokuRecordPoints(r) {
+    const resultScore = r?.result && typeof r.result === 'object' && r.result.outcome === 'score' ? Number(r.result.score || 0) : 0;
+    if (resultScore) return resultScore + '分';
+    const hints = extractNumber(r?.scoreText || '', /求助\s*(\d+)\s*次/, 0);
+    return sudokuScore(Number(r?.durationMs || 0), hints) + '分';
+  }
   function userOutcomeText(result) {
     const out = resultOutcome(result);
     if (out === 'user_win') return '胜';
@@ -672,7 +694,7 @@ export async function initWanbanXiaowu() {
     if (game === 'territory') return ['时间','用时','胜负','回合数','格子数','陪伴者','日志','操作'];
     if (game === 'reversi') return ['时间','用时','胜负','回合数','格子数','陪伴者','日志','操作'];
     if (game === 'guessnumber') return ['时间','用时','胜负','猜几次','陪伴者','日志','操作'];
-    if (game === 'sudoku') return ['时间','用时','求助次数','陪伴者','日志','操作'];
+    if (game === 'sudoku') return ['时间','用时','分数','求助次数','陪伴者','日志','操作'];
     if (game === 'wordguess') return ['时间','用时','猜中题数','陪伴者','日志','操作'];
     if (isRoundCountGame(game)) return ['时间','用时','胜负','回合数','陪伴者','日志','操作'];
     if ((GAME_META[game] || {}).mode === 'double') return ['时间','用时','胜负','陪伴者','日志','操作'];
@@ -683,7 +705,7 @@ export async function initWanbanXiaowu() {
     if (game === 'territory') return base.concat([userOutcomeText(r.result), recordRoundCount(r), territoryUserCells(r), recordCompanionDisplay(r)]);
     if (game === 'reversi') return base.concat([userOutcomeText(r.result), recordRoundCount(r), territoryUserCells(r), recordCompanionDisplay(r)]);
     if (game === 'guessnumber') return base.concat([userOutcomeText(r.result), guessNumberTries(r), recordCompanionDisplay(r)]);
-    if (game === 'sudoku') return base.concat([String(extractNumber(r?.scoreText || '', /求助\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
+    if (game === 'sudoku') return base.concat([sudokuRecordPoints(r), String(extractNumber(r?.scoreText || '', /求助\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
     if (game === 'wordguess') return base.concat([wordGuessHits(r), recordCompanionDisplay(r)]);
     if (isRoundCountGame(game)) return base.concat([userOutcomeText(r.result), recordRoundCount(r), recordCompanionDisplay(r)]);
     if ((GAME_META[game] || {}).mode === 'double') return base.concat([userOutcomeText(r.result), recordCompanionDisplay(r)]);
@@ -699,7 +721,7 @@ export async function initWanbanXiaowu() {
     if (game === 'territory' || game === 'reversi') return '字段说明：胜负是user的胜负；回合数表示本局双方行动总数；格子数只表示user占领的格子数，不包含' + role + '的格子。';
     if (isRoundCountGame(game)) return '字段说明：胜负是user的胜负；回合数表示本局双方行动总数。';
     if (game === 'guessnumber') return '字段说明：胜负是user的胜负；猜几次只表示user猜了几次。';
-    if (game === 'sudoku') return '字段说明：求助次数只表示user本局点击提示/修改的次数。';
+    if (game === 'sudoku') return '字段说明：分数由用时和求助次数共同计算，用时越短、求助越少，分数越高；求助次数只表示user本局点击提示/修改的次数。';
     if (game === 'wordguess') return '字段说明：猜中题数只表示user猜中的题数。';
     if ((GAME_META[game] || {}).mode === 'double') return '字段说明：胜负是user的胜负，胜表示user赢，负表示' + role + '赢。';
     return '字段说明：结果是user本局获得的分数。';
@@ -739,7 +761,7 @@ export async function initWanbanXiaowu() {
     ].join('\n');
     if (game === 'memory') return '翻牌一次就消除的牌数：' + (d.firstTryPairs || 0) + '对；翻牌3次及以上才消除的牌数：' + (d.threePlusTryPairs || 0) + '对；翻牌最多那张牌的次数：' + (d.maxFlipsForOneCard || 0) + '次。';
     if (game === 'jump' || game === 'plank') return '完美次数：' + (d.perfects || 0) + '次；差点掉下去次数：' + (d.nearMisses || 0) + '次。';
-    if (game === 'sudoku') return '提示次数：' + (d.hints || 0) + '次；修改次数：' + (d.edits || 0) + '次；修改最多的格子修改次数：' + (d.maxEditsOneCell || 0) + '次；全部完成后错误次数：' + (d.finalErrors || 0) + '格。';
+    if (game === 'sudoku') return '分数：' + sudokuRecordPoints(rec) + '；提示次数：' + (d.hints || 0) + '次；修改次数：' + (d.edits || 0) + '次；修改最多的格子修改次数：' + (d.maxEditsOneCell || 0) + '次；全部完成后错误次数：' + (d.finalErrors || 0) + '格。';
     if (game === 'ludo') return 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
     if (game === 'guessnumber') return '每次猜测：\n' + ((d.guesses || []).map((x,i) => (i+1) + '. 猜“' + x.guess + '”：数字对' + x.nums + '个，位置对' + x.pos + '个').join('\n') || '无');
     if (game === 'wordguess') return '每题记录：\n' + ((d.rounds || []).map((r,i) => (i+1) + '. 题目：' + r.word + '；5条提示：' + (r.clues || []).join(' / ') + '；user猜过：' + ((r.guesses || []).join('、') || '无') + '；第几条提示猜中：' + (r.winClueIndex || '未猜中')).join('\n') || '无');
@@ -1357,7 +1379,7 @@ export async function initWanbanXiaowu() {
         -webkit-backdrop-filter:blur(3px);
         overscroll-behavior:contain;
       }
-      #${SHELL_ID}.wb-shell-visible { display:flex; justify-content:center; align-items:stretch; padding:16px; }
+      #${SHELL_ID}.wb-shell-visible { display:flex; justify-content:center; align-items:stretch; padding:calc(16px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px)); }
       #${SHELL_ID}.wb-open-guard::after {
         content:'';
         position:fixed;
@@ -1404,14 +1426,14 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}, #${POPUP_ID} * { box-sizing: border-box; }
       #${POPUP_ID} {
         position: fixed;
-        top: 16px;
-        right: 16px;
-        bottom: 16px;
-        left: 16px;
+        top: calc(16px + env(safe-area-inset-top, 0px));
+        right: calc(16px + env(safe-area-inset-right, 0px));
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        left: calc(16px + env(safe-area-inset-left, 0px));
         width: auto;
         height: auto;
-        max-width: calc(100vw - 32px);
-        max-height: calc(100dvh - 32px);
+        max-width: calc(100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+        max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
         z-index: 1;
         color: var(--wb-text);
         background: var(--wb-bg);
@@ -1494,13 +1516,16 @@ export async function initWanbanXiaowu() {
       .wb-snake-controls .right { grid-column:3; grid-row:2; }
       .wb-canvas.wb-tetris-canvas { aspect-ratio:1 / 2; max-height:min(100%, 100cqh); }
       .wb-canvas.wb-tetris-canvas { background:var(--wb-board); box-shadow:none; }
-      .wb-jump-shell { position:relative; width:100%; height:100%; min-width:0; min-height:0; display:grid; place-items:center; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
-      .wb-jump-canvas { aspect-ratio:13 / 16; max-height:min(100%, 100cqh); background:#e9f8ff; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
-      .wb-plank-shell { position:relative; width:100%; height:100%; min-width:0; min-height:0; display:grid; place-items:center; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
-      .wb-plank-canvas { aspect-ratio:13 / 9; max-height:min(100%, 100cqh); background:#e9f8ff; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; border:6px solid color-mix(in srgb, var(--wb-accent) 36%, #6b4328 64%); box-shadow:0 18px 36px rgba(74,49,31,.18), inset 0 0 0 2px rgba(255,255,255,.24); }
+      .wb-jump-shell { position:relative; width:100%; height:100%; min-width:0; min-height:0; display:grid; place-items:center; user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; -webkit-touch-callout:none; -webkit-user-drag:none; touch-action:none; }
+      .wb-jump-shell * { user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; -webkit-touch-callout:none; -webkit-user-drag:none; }
+      .wb-jump-canvas { aspect-ratio:13 / 16; max-height:min(100%, 100cqh); background:#e9f8ff; touch-action:none; user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; -webkit-touch-callout:none; -webkit-user-drag:none; }
+      .wb-plank-shell { position:relative; width:100%; height:100%; min-width:0; min-height:0; display:grid; place-items:center; user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; -webkit-touch-callout:none; -webkit-user-drag:none; touch-action:none; }
+      .wb-plank-shell * { user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; -webkit-touch-callout:none; -webkit-user-drag:none; }
+      .wb-plank-canvas { aspect-ratio:13 / 9; max-height:min(100%, 100cqh); background:#e9f8ff; touch-action:none; user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; -webkit-touch-callout:none; -webkit-user-drag:none; border:6px solid color-mix(in srgb, var(--wb-accent) 36%, #6b4328 64%); box-shadow:0 18px 36px rgba(74,49,31,.18), inset 0 0 0 2px rgba(255,255,255,.24); }
       #${POPUP_ID}.wb-night .wb-plank-canvas,
       #${POPUP_ID}.wb-cyber .wb-plank-canvas { border-color:color-mix(in srgb, var(--wb-accent) 70%, #101A1D 30%); box-shadow:0 0 24px rgba(25,211,197,.18), inset 0 0 0 2px rgba(241,232,91,.16); }
-      .wb-jump-help { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:2; padding:4px 10px; border:1px solid color-mix(in srgb, var(--wb-border) 70%, transparent 30%); background:color-mix(in srgb, var(--wb-panel) 82%, transparent 18%); color:var(--wb-sub); font-size:12px; font-weight:800; line-height:1.2; pointer-events:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; box-shadow:0 6px 16px rgba(0,0,0,.12); }
+      .wb-jump-help { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:2; padding:4px 10px; border:1px solid color-mix(in srgb, var(--wb-border) 70%, transparent 30%); background:color-mix(in srgb, var(--wb-panel) 82%, transparent 18%); color:var(--wb-sub); font-size:12px; font-weight:800; line-height:1.2; pointer-events:none; user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; -webkit-touch-callout:none; -webkit-user-drag:none; box-shadow:0 6px 16px rgba(0,0,0,.12); }
+      .wb-jump-help::before { content:attr(data-label); }
       #${POPUP_ID}.wb-night .wb-jump-canvas { background:#000; }
       #${POPUP_ID}.wb-cyber .wb-jump-help { border-color:rgba(25,211,197,.35); color:#F1E85B; box-shadow:0 0 14px rgba(25,211,197,.16); }
       .wb-tetris-shell { width:100%; height:100%; min-width:0; min-height:0; display:flex; align-items:center; justify-content:center; gap:8px; }
@@ -2181,8 +2206,8 @@ export async function initWanbanXiaowu() {
         background:linear-gradient(135deg, rgba(255,255,255,.18), rgba(255,255,255,.04));
       }
       @media (max-width: 768px) {
-        #${SHELL_ID}.wb-shell-visible { display:block!important; position:fixed!important; top:0!important; left:0!important; right:0!important; bottom:0!important; width:100%!important; height:100vh; height:100dvh; overflow-y:auto; padding:0!important; box-sizing:border-box; background:rgba(0,0,0,.45); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); -webkit-overflow-scrolling:touch; }
-        #${POPUP_ID} { position:relative!important; top:auto!important; left:auto!important; right:auto!important; bottom:auto!important; transform:none!important; min-width:unset!important; max-width:100%!important; width:100%!important; min-height:100vh; min-height:100dvh; height:auto!important; max-height:none!important; margin:0!important; display:flex!important; flex-direction:column!important; overflow:visible!important; border-radius:0!important; border-left:0!important; border-right:0!important; }
+        #${SHELL_ID}.wb-shell-visible { display:block!important; position:fixed!important; top:0!important; left:0!important; right:0!important; bottom:0!important; width:100%!important; height:100vh; height:100dvh; overflow-y:auto; padding:env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)!important; box-sizing:border-box; background:rgba(0,0,0,.45); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); -webkit-overflow-scrolling:touch; }
+        #${POPUP_ID} { position:relative!important; top:auto!important; left:auto!important; right:auto!important; bottom:auto!important; transform:none!important; min-width:unset!important; max-width:100%!important; width:100%!important; min-height:calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); min-height:calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height:auto!important; max-height:none!important; margin:0!important; display:flex!important; flex-direction:column!important; overflow:visible!important; border-radius:0!important; border-left:0!important; border-right:0!important; }
         .wb-head { flex-shrink:0; display:grid; grid-template-columns:1fr auto; align-items:center; padding:4px 7px; gap:4px; min-height:0; }
         .wb-title { font-size:15px; grid-column:1; grid-row:1; letter-spacing:1px; }
         .wb-title::after { width:44px; margin-top:1px; }
@@ -2192,7 +2217,7 @@ export async function initWanbanXiaowu() {
         .wb-body { flex:1 1 0!important; min-height:0!important; padding:6px; gap:6px; overflow-y:auto!important; -webkit-overflow-scrolling:touch; }
         .wb-body.wb-settings-mode { max-height:none; padding-bottom:32px; }
         .wb-cardgrid { grid-template-columns:1fr; }
-        #${POPUP_ID}.wb-playing { min-height:100vh; min-height:100dvh; height:100vh!important; height:100dvh!important; overflow:hidden!important; }
+        #${POPUP_ID}.wb-playing { min-height:calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); min-height:calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height:calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))!important; height:calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))!important; overflow:hidden!important; }
         #${POPUP_ID}.wb-playing .wb-head { grid-template-columns:1fr auto; grid-template-rows:auto; padding:2px 6px; }
         #${POPUP_ID}.wb-playing .wb-title { font-size:13px; }
         #${POPUP_ID}.wb-playing .wb-title::after { display:none; }
@@ -2906,7 +2931,7 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
 	      + '</div>'
-	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.4<br>本游戏发布者：Gloria</div>'
+	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.5<br>本游戏发布者：Gloria</div>'
 	      + '</div>';
 	    qs('#wb-theme').value = cfg.theme;
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
@@ -3186,7 +3211,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.4', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.5', exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -4022,8 +4047,9 @@ export async function initWanbanXiaowu() {
   }
   function startJump(state) {
     const box = qs('#wb-gamebox');
-    box.innerHTML = '<div class="wb-jump-shell"><canvas class="wb-canvas wb-jump-canvas" id="wb-jump" width="520" height="640"></canvas><div class="wb-jump-help">长按空格/屏幕蓄力</div></div>';
-    const c = qs('#wb-jump'), ctx = c.getContext('2d');
+    box.innerHTML = '<div class="wb-jump-shell"><canvas class="wb-canvas wb-jump-canvas" id="wb-jump" width="520" height="640"></canvas><div class="wb-jump-help" data-label="长按空格/屏幕蓄力" aria-label="长按空格/屏幕蓄力"></div></div>';
+    const c = qs('#wb-jump'), shell = qs('.wb-jump-shell', box), ctx = c.getContext('2d');
+    preventLongPressSelection(shell);
     const W = 520, H = 640;
     let score = state?.score || 0;
     let details = state?.details || { perfects:0, nearMisses:0 };
@@ -5932,8 +5958,9 @@ function showGameRecords(game, page) {
 
   function startPlank(state) {
     const box = qs('#wb-gamebox');
-    box.innerHTML = '<div class="wb-plank-shell"><canvas class="wb-canvas wb-plank-canvas" id="wb-plank" width="520" height="360"></canvas><div class="wb-jump-help">长按空格/屏幕生成木板</div></div>';
+    box.innerHTML = '<div class="wb-plank-shell"><canvas class="wb-canvas wb-plank-canvas" id="wb-plank" width="520" height="360"></canvas><div class="wb-jump-help" data-label="长按空格/屏幕生成木板" aria-label="长按空格/屏幕生成木板"></div></div>';
     const c = qs('#wb-plank'), shell = qs('.wb-plank-shell', box), ctx = c.getContext('2d');
+    preventLongPressSelection(shell);
     let score = state?.score || 0, bridge = state?.bridge || 0, charging = false, over = false, seen = state?.seen || {}, perfectStreak = state?.perfectStreak || 0, bestPerfectStreak = state?.bestPerfectStreak || state?.perfectStreak || 0;
     let phase = 'ready', angle = 0, walk = 0, drop = 0, scroll = 0, failMode = '';
     let leftW = 76, gap = state?.gap || rand(80, 190), rightW = state?.rightW || rand(55, 95);
@@ -6247,7 +6274,7 @@ function showGameRecords(game, page) {
     function input(n){ if(gamePaused||over||selected<0||puzzle[selected]) return; if(!seen.first){ seen.first=1; speak('sudoku','first_fill'); } markEdit(selected); grid[selected]=n; if(hasRuleConflict(selected)) speak('sudoku','conflict'); if(completeLine('r',row(selected))&&!seen['r'+row(selected)]){ seen['r'+row(selected)]=1; speak('sudoku','row_done'); } if(completeLine('c',col(selected))&&!seen['c'+col(selected)]){ seen['c'+col(selected)]=1; speak('sudoku','col_done'); } const blanks=grid.filter(v=>!v).length; if(blanks<=5&&!seen.near){ seen.near=1; speak('sudoku','nearly_done'); } const errors=solutionErrors(); maybeSudokuGameoverLine(blanks, errors); if(blanks===0) details.finalErrors = errors; draw(); save(); if(blanks===0 && errors===0) done(); else if(blanks===0){ speak('sudoku','complete_error'); toast('已填满，当前错误 ' + errors + ' 格，可以继续修改'); } }
     function erase(){ if(selected<0||puzzle[selected]) return; markEdit(selected); grid[selected]=0; speak('sudoku','erase'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(); }
     function hint(){ let i = selected>=0 && !puzzle[selected] && grid[selected]!==solution[selected] ? selected : -1; if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && v && v!==solution[k]); if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && !v); if(i<0) return; hints++; details.hints = hints; selected=i; markEdit(i); grid[i]=solution[i]; puzzle[i]=solution[i]; speak('sudoku', hints>5?'many_hints':'hint'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(); if(grid.every(Boolean) && solutionErrors()===0) done(); }
-    function done(){ const duration = currentGameDurationMs(), oldBest = sudokuBestDuration(); if(oldBest && duration < oldBest) currentRoundRecord = true; details.finalErrors = solutionErrors(); over=true; clearProgress('sudoku'); if(!seen.gameover) speak('sudoku','gameover'); showGameOver('sudoku','数独完成','求助'+hints+'次', null, { hints, details }); }
+    function done(){ const duration = currentGameDurationMs(), finalScore = sudokuScore(duration, hints); setScore('sudoku', finalScore); details.finalErrors = solutionErrors(); over=true; clearProgress('sudoku'); if(!seen.gameover) speak('sudoku','gameover'); showGameOver('sudoku','数独完成','本局分数：'+finalScore+'分，求助'+hints+'次', null, { hints, score:finalScore, details }); }
     qs('#wb-sudoku-erase', box).onclick=erase; qs('#wb-sudoku-hint', box).onclick=hint; qsa('.wb-sudoku-nums .wb-btn', box).forEach(b=>b.onclick=()=>input(+b.dataset.n));
     getHostDocument().onkeydown=e=>{ if(/^[1-9]$/.test(e.key)) input(+e.key); if(e.key==='Backspace'||e.key==='Delete') erase(); };
     function parseSudoku(str){ return String(str).replace(/\./g,'0').split('').map(x=>parseInt(x,10)||0); }
@@ -6818,21 +6845,26 @@ function showGameRecords(game, page) {
     let board = Array.isArray(state?.board) && state.board.length === H ? state.board : Array.from({length:H},()=>Array(W).fill(0));
     let piece = state?.piece || newPiece(), nextPiece = state?.nextPiece || newPiece(), score = state?.score || 0, tetrisSeen = state?.seen || {}, totalLines = state?.totalLines || 0, over=false;
     let details = state?.details || { lineClears:{1:0,2:0,3:0,4:0}, rescues:0 };
+    let actionLineAt = state?.actionLineAt || {};
+    const firstActionLineAt = Date.now() + 60000;
+    if (!actionLineAt.rotate) actionLineAt.rotate = firstActionLineAt;
+    if (!actionLineAt.soft_drop) actionLineAt.soft_drop = firstActionLineAt;
     let tetrisBgCache = null;
     setScore('tetris', score);
     function cloneShape(s){ return s.map(r=>r.slice()); }
     function newPiece(){ const s=cloneShape(shapes[Math.floor(Math.random()*shapes.length)]); return {s,x:3,y:0}; }
-    function save(){ if(!over) saveProgress('tetris', { board, piece, nextPiece, score, seen:tetrisSeen, totalLines, details }); }
+    function save(){ if(!over) saveProgress('tetris', { board, piece, nextPiece, score, seen:tetrisSeen, totalLines, actionLineAt, details }); }
     function markTetris(k){ if(!tetrisSeen[k]){ tetrisSeen[k]=1; speak('tetris',k); } }
-    getHostDocument().onkeydown=e=>{ if(over || gamePaused) return; let changed=false, handledByTick=false; if(e.key==='ArrowLeft'||e.key==='a') changed=move(-1,0); if(e.key==='ArrowRight'||e.key==='d') changed=move(1,0); if(e.key==='ArrowDown'||e.key==='s') { markTetris('soft_drop'); tick(); changed=true; handledByTick=true; } if(e.key==='ArrowUp'||e.key==='w') { rot(); changed=true; } if(changed && !handledByTick){ draw(); save(); } };
-    addSwipe(box, d=>{ if(over || gamePaused) return; if(d==='down'){ markTetris('soft_drop'); tick(); return; } if(d==='left') move(-1,0); if(d==='right') move(1,0); if(d==='up') rot(); draw(); save(); });
-    const bindBtn = (sel, fn, eventKey) => { const btn=qs(sel, box); if(!btn) return; btn.onclick=e=>{ e.preventDefault(); if(over||gamePaused) return; if(eventKey) markTetris(eventKey); fn(); if(eventKey !== 'soft_drop'){ draw(); save(); } scheduleFitGameSurface(); }; };
+    function markTimedTetrisAction(k){ const now=Date.now(); if(now >= (actionLineAt[k] || 0)){ speak('tetris', k); actionLineAt[k]=now + 60000; } }
+    getHostDocument().onkeydown=e=>{ if(over || gamePaused) return; let changed=false, handledByTick=false; if(e.key==='ArrowLeft'||e.key==='a') changed=move(-1,0); if(e.key==='ArrowRight'||e.key==='d') changed=move(1,0); if(e.key==='ArrowDown'||e.key==='s') { markTimedTetrisAction('soft_drop'); tick(); changed=true; handledByTick=true; } if(e.key==='ArrowUp'||e.key==='w') { markTimedTetrisAction('rotate'); rot(); changed=true; } if(changed && !handledByTick){ draw(); save(); } };
+    addSwipe(box, d=>{ if(over || gamePaused) return; if(d==='down'){ markTimedTetrisAction('soft_drop'); tick(); return; } if(d==='left') move(-1,0); if(d==='right') move(1,0); if(d==='up'){ markTimedTetrisAction('rotate'); rot(); } draw(); save(); });
+    const bindBtn = (sel, fn, eventKey) => { const btn=qs(sel, box); if(!btn) return; btn.onclick=e=>{ e.preventDefault(); if(over||gamePaused) return; if(eventKey) markTimedTetrisAction(eventKey); fn(); if(eventKey !== 'soft_drop'){ draw(); save(); } scheduleFitGameSurface(); }; };
     bindBtn('#wb-tetris-rotate', () => rot(), 'rotate');
     bindBtn('#wb-tetris-softdrop', () => tick(), 'soft_drop');
     tetrisTimer=setInterval(tick,500); draw(); save();
     function hit(p){ return p.s.some((r,y)=>r.some((v,x)=>v && (p.x+x<0||p.x+x>=W||p.y+y>=H||board[p.y+y]?.[p.x+x]))); }
     function move(dx,dy){ if (gamePaused) return false; const p={s:piece.s,x:piece.x+dx,y:piece.y+dy}; if(!hit(p)){ piece=p; if(dx) markTetris('move'); return true; } return false; }
-    function rot(){ const s=piece.s[0].map((_,i)=>piece.s.map(r=>r[i]).reverse()); const p={s,x:piece.x,y:piece.y}; if(!hit(p)){ piece=p; markTetris('rotate'); } }
+    function rot(){ const s=piece.s[0].map((_,i)=>piece.s.map(r=>r[i]).reverse()); const p={s,x:piece.x,y:piece.y}; if(!hit(p)) piece=p; }
     function pileHeight(){ const first=board.findIndex(r=>r.some(Boolean)); return first < 0 ? 0 : H - first; }
     function tick(){ if(over || gamePaused) return; if(!move(0,1)){ piece.s.forEach((r,y)=>r.forEach((v,x)=>{ if(v&&piece.y+y>=0) board[piece.y+y][piece.x+x]=1; })); const beforeHeight=pileHeight(); let cleared=0; board=board.filter(r=>{ if(r.every(Boolean)){ cleared++; return false; } return true; }); while(board.length<H) board.unshift(Array(W).fill(0)); const afterHeight=pileHeight(); if(beforeHeight >= Math.ceil(H * 2 / 3) && afterHeight <= Math.floor(H / 3)) details.rescues++; if(cleared){ details.lineClears[cleared] = (details.lineClears[cleared] || 0) + 1; totalLines += cleared; score += [0,100,300,500,800][cleared]; setScore('tetris',score); speak('tetris','line_'+cleared); if(score>=500&&score<600) speak('tetris','score_500'); if(score>=1500&&score<1600) speak('tetris','score_1500'); const milestone = Math.floor(score / 500) * 500; if(milestone >= 2000 && !tetrisSeen['score_'+milestone]){ tetrisSeen['score_'+milestone]=1; speak('tetris','score_2000_plus'); } } if(!tetrisSeen.danger && board.slice(0,5).some(r=>r.some(Boolean))){ markTetris('danger'); } piece=nextPiece; nextPiece=newPiece(); if(hit(piece)){ over=true; clearInterval(tetrisTimer); speak('tetris','gameover'); showGameOver('tetris', '游戏结束', '本局分数：' + score + '分', null, { lines: totalLines, details }); return; } } draw(); save(); }
     function tetrisBackground(){
