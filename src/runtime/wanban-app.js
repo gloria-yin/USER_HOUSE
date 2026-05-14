@@ -70,6 +70,7 @@ export async function initWanbanXiaowu() {
   const SHELL_ID = SCRIPT_ID + '-shell';
   const MENU_ID = SCRIPT_ID + '-menu-item';
   const FLOAT_ID = SCRIPT_ID + '-float-ball';
+  const PET_FLOAT_ID = SCRIPT_ID + '-pet-float';
   const STYLE_ID = SCRIPT_ID + '-css';
   const STORAGE_SETTINGS = SCRIPT_ID + '_settings_v1';
   const STORAGE_SCORES = SCRIPT_ID + '_scores_v1';
@@ -124,6 +125,12 @@ export async function initWanbanXiaowu() {
   let theaterCache = safeObject(loadJSON(STORAGE_THEATERS, {}));
   let lastMenuOpenAt = 0;
   let floatingBallResizeBound = false;
+  let petDesktopResizeBound = false;
+  let petIdleTimer = null;
+  let petSadTimer = null;
+  let petAnimationTimer = null;
+  let petStateReturnTimer = null;
+  let petReturnHouseOnRender = false;
   let lineGenerationBusy = false;
   let lineGenerationStatus = '当前状态：空闲';
   let lineGenerationKind = '';
@@ -134,6 +141,9 @@ export async function initWanbanXiaowu() {
   let mainSwipeAnimation = '';
 
   const GAME_ICON_BASE = new URL('../../assets/game-icons/', import.meta.url).href;
+  const PET_ASSET_BASE = new URL('../../assets/pets/', import.meta.url).href;
+  const FOX_ASSET_BASE = PET_ASSET_BASE + 'fox/';
+  const FOX_HOUSE_DAY_URL = PET_ASSET_BASE + 'scene/house-day.png';
   const APP_ICON_URL = GAME_ICON_BASE + 'wanban.png';
   const CONTINUE_IMAGE_URL = GAME_ICON_BASE + 'continue.png';
   const OLDMAID_CARD_URL = GAME_ICON_BASE + 'oldmaid-card.jpg';
@@ -153,6 +163,7 @@ export async function initWanbanXiaowu() {
     jump: { id: 'jump', name: '跳一跳', mode: 'single', unit: '分', icon: '跳', iconImage: GAME_ICON_BASE + 'jump.jpg' },
     plank: { id: 'plank', name: '搭木板', mode: 'single', unit: '分', icon: '板', iconImage: GAME_ICON_BASE + 'plank.jpg' },
     sudoku: { id: 'sudoku', name: '数独', mode: 'single', unit: '分', icon: '9', iconImage: GAME_ICON_BASE + 'sudoku.jpg' },
+    uyangle: { id: 'uyangle', name: 'U了个U', mode: 'single', unit: '分', icon: 'U', iconImage: GAME_ICON_BASE + 'sheep.png' },
     ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: GAME_ICON_BASE + 'ludo.jpg' },
     guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: GAME_ICON_BASE + 'guessnumber.jpg' },
     wordguess: { id: 'wordguess', name: '我说你猜', mode: 'double', unit: '胜', icon: '谜', iconImage: GAME_ICON_BASE + 'wordguess.jpg' },
@@ -193,6 +204,12 @@ export async function initWanbanXiaowu() {
     floatingBallEnabled: false,
     floatingBallX: 18,
     floatingBallY: 180,
+    petDesktopEnabled: false,
+    petDesktopX: 78,
+    petDesktopY: 240,
+    petDesktopState: 'normal',
+    petInteractCount: 0,
+    petForm: 'baby',
     messageNotify: false,
     messageNotifyTag: 'content',
     theaterEnabled: false,
@@ -220,6 +237,7 @@ export async function initWanbanXiaowu() {
     jump: '按住蓄力，松开跳跃。落到下一个平台得分，越靠近中心越好；没落上平台就结束。',
     plank: '长按屏幕或空格生成木板，松开后木板会倒下成为桥。木板必须刚好搭到下一根柱子上，太短或太长都会掉下去。',
     sudoku: '每局自动生成唯一解数独。点击空格后输入1-9，已有数字会高亮同行同列和相同数字。可擦除、求助；填满但不正确时会高亮错误，并可帮你修改一个数字。',
+    uyangle: '三消叠牌小游戏。点击没有被上层遮挡的卡牌放入下方7格槽，同图标凑满3张会消除；槽位超过7格且没有消除时失败。可使用移出把槽内一张牌放到上方暂存区，最多3次；可不限次数打乱剩余牌面。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '你执黑，{{char}}执白，双方轮流落子。任意方向先连成五子的一方获胜。',
     territory: '在点阵之间画边，规则类似围方格。谁画下一个小方格的第4条边，谁就占领该格并继续行动。所有边画完后，占领格子多的一方获胜。',
@@ -241,6 +259,7 @@ export async function initWanbanXiaowu() {
     jump: { start:'跳一跳开局，玩家站在第一个平台上。', charge:'玩家按住屏幕开始蓄力。', jump:'玩家松手起跳。', perfect:'玩家落在平台中心附近。', land:'玩家成功落到下一个平台。', score_10:'跳一跳达到10分。', score_20:'跳一跳达到20分。', score_30:'跳一跳达到30分。', score_40:'跳一跳达到40分。', score_50_plus:'跳一跳达到50分，且50分以上每10分触发一次。', record:'跳一跳刷新历史最高分。', gameover:'玩家松手时就能判断本次不会落上平台，起跳前触发。', random:'观看跳一跳时的碎碎念。' },
     plank: { start:'搭木板开局，玩家站在第一根柱子上。', perfect:'木板长度刚好落在柱子中心附近。', perfect_streak:'玩家连续3次以上完美搭到中心附近。', score_10:'搭木板达到10分。', score_20:'搭木板达到20分。', score_30:'搭木板达到30分。', score_40:'搭木板达到40分。', score_50_plus:'搭木板达到50分，且50分以上每10分触发一次。', record:'搭木板刷新历史最高分。', gameover:'玩家松手时木板已经确定太长或太短。', random:'观看搭木板时的碎碎念。' },
     sudoku: { start:'数独开局，玩家开始解唯一解题目。', first_fill:'玩家填入第一个数字。', erase:'玩家擦除一个已填数字。', hint:'玩家请求一次求助。', many_hints:'玩家求助超过5次。', row_done:'玩家填好一整行。', col_done:'玩家填好一整列。', nearly_done:'数独快要填完。', conflict:'玩家填入的数字在同一行、同一列或同一宫里造成重复。', complete_error:'玩家全部填完但仍有错误格，需要继续修改。', gameover:'数独只剩最后一个空格，或只剩一个错误格需要修改。', random:'观看数独时的碎碎念。' },
+    uyangle: { start:'U了个U开局。这是一个三消叠牌小游戏，玩家点击未被遮挡的卡牌放入7格槽，同图标3张会消除。', match:'玩家累计每完成3次三消时触发一次普通三消语录；如果同一步触发危险、最后10张、失败或完成等特殊事件，则优先特殊事件。', shuffle:'玩家使用打乱，重新随机排列剩余牌面。', moveout:'玩家使用移出，把槽内一张卡牌移到上方暂存区。', danger:'下方槽位已经占满6个以上，距离失败很近。', last_10:'场上剩余最后10张以内卡牌。', record:'U了个U刷新历史最高分。', gameover:'下方7格槽已满，玩家再放入一张卡牌后没有形成三消，槽位溢出导致失败。', random:'观看U了个U三消叠牌时的碎碎念。' },
     tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'{{char}}阻挡了玩家即将连线的一步。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'{{char}}在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
     gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，{{char}}知道自己这把基本必输了。', ai_block:'{{char}}阻挡玩家形成强威胁。', ai_threat:'{{char}}形成强威胁，玩家需要防守。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'{{char}}五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
     territory: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', edge:'玩家画下一条边。', no_safe_edge:'场面没有普通边了，之后每条边都可能送分。', capture:'玩家围住某个方格最后一条边并占领得分。', chain:'玩家连续占领多个方格。', ta_capture:'{{char}}围住某个方格并占领得分。', user_turn:'{{char}}的回合结束，轮到玩家。', danger:'玩家选择可能送给{{char}}得分机会的边。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'所有边画完后玩家得分更高。', user_lose:'所有边画完后{{char}}得分更高。', draw:'所有边画完后双方平分。', random:'和user玩电子围地盘时的碎碎念。' },
@@ -300,7 +319,7 @@ export async function initWanbanXiaowu() {
   }
   function scores() {
     const loaded = safeObject(loadJSON(STORAGE_SCORES, {}));
-    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 } };
+    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, uyangle: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 } };
     ['ludo','guessnumber','wordguess','tictactoe','gomoku','territory','oldmaid','reversi','bombnumber','connect4d'].forEach(k => { if (typeof loaded[k] === 'number') loaded[k] = { user: loaded[k], ta: 0 }; });
     return Object.assign(base, loaded);
   }
@@ -543,6 +562,7 @@ export async function initWanbanXiaowu() {
     if (game === 'territory') return !!(state.userScore || state.taScore || String(state.turn || 'user') !== 'user' || (state.h || []).some(row => row.some(Boolean)) || (state.v || []).some(row => row.some(Boolean)));
     if (game === 'watermelon') return !!(state.score || (state.balls && state.balls.length));
     if (game === 'memory') return !!(state.moves || (state.done && state.done.length) || (state.open && state.open.length));
+    if (game === 'uyangle') return !!(state.tiles && state.tiles.some(t => !t.gone)) || !!(state.tray && state.tray.length) || !!(state.hold && state.hold.length);
     if (game === 'snake') return !!state.score;
     if (game === 'game2048') return !!state.score || (Array.isArray(state.board) && state.board.filter(Boolean).length > 2);
     if (game === 'jump') return !!state.score;
@@ -695,6 +715,7 @@ export async function initWanbanXiaowu() {
     if (game === 'reversi') return ['时间','用时','胜负','回合数','格子数','陪伴者','日志','操作'];
     if (game === 'guessnumber') return ['时间','用时','胜负','猜几次','陪伴者','日志','操作'];
     if (game === 'sudoku') return ['时间','用时','分数','求助次数','陪伴者','日志','操作'];
+    if (game === 'uyangle') return ['时间','用时','分数','打乱次数','移出次数','陪伴者','日志','操作'];
     if (game === 'wordguess') return ['时间','用时','猜中题数','陪伴者','日志','操作'];
     if (isRoundCountGame(game)) return ['时间','用时','胜负','回合数','陪伴者','日志','操作'];
     if ((GAME_META[game] || {}).mode === 'double') return ['时间','用时','胜负','陪伴者','日志','操作'];
@@ -706,6 +727,7 @@ export async function initWanbanXiaowu() {
     if (game === 'reversi') return base.concat([userOutcomeText(r.result), recordRoundCount(r), territoryUserCells(r), recordCompanionDisplay(r)]);
     if (game === 'guessnumber') return base.concat([userOutcomeText(r.result), guessNumberTries(r), recordCompanionDisplay(r)]);
     if (game === 'sudoku') return base.concat([sudokuRecordPoints(r), String(extractNumber(r?.scoreText || '', /求助\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
+    if (game === 'uyangle') return base.concat([singleRecordPoints(r), String(extractNumber(r?.scoreText || '', /打乱\s*(\d+)\s*次/, 0)), String(extractNumber(r?.scoreText || '', /移出\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
     if (game === 'wordguess') return base.concat([wordGuessHits(r), recordCompanionDisplay(r)]);
     if (isRoundCountGame(game)) return base.concat([userOutcomeText(r.result), recordRoundCount(r), recordCompanionDisplay(r)]);
     if ((GAME_META[game] || {}).mode === 'double') return base.concat([userOutcomeText(r.result), recordCompanionDisplay(r)]);
@@ -722,6 +744,7 @@ export async function initWanbanXiaowu() {
     if (isRoundCountGame(game)) return '字段说明：胜负是user的胜负；回合数表示本局双方行动总数。';
     if (game === 'guessnumber') return '字段说明：胜负是user的胜负；猜几次只表示user猜了几次。';
     if (game === 'sudoku') return '字段说明：分数由用时和求助次数共同计算，用时越短、求助越少，分数越高；求助次数只表示user本局点击提示/修改的次数。';
+    if (game === 'uyangle') return '字段说明：U了个U是三消叠牌小游戏；分数由用时和打乱次数共同计算，用时越短、打乱越少，分数越高。';
     if (game === 'wordguess') return '字段说明：猜中题数只表示user猜中的题数。';
     if ((GAME_META[game] || {}).mode === 'double') return '字段说明：胜负是user的胜负，胜表示user赢，负表示' + role + '赢。';
     return '字段说明：结果是user本局获得的分数。';
@@ -760,6 +783,7 @@ export async function initWanbanXiaowu() {
       '结算水果个数：' + finalCountText(d.finalCounts, '水果')
     ].join('\n');
     if (game === 'memory') return '翻牌一次就消除的牌数：' + (d.firstTryPairs || 0) + '对；翻牌3次及以上才消除的牌数：' + (d.threePlusTryPairs || 0) + '对；翻牌最多那张牌的次数：' + (d.maxFlipsForOneCard || 0) + '次。';
+    if (game === 'uyangle') return '消除次数：' + (d.matches || 0) + '次；打乱次数：' + (d.shuffles || 0) + '次；移出次数：' + (d.moveouts || 0) + '次；是否触发过7格满槽：' + (d.fullTraySurvived ? '是' : '否') + '；是否用完3次移出：' + ((d.moveouts || 0) >= 3 ? '是' : '否') + '；是否连续打乱两次：' + (d.badLuck ? '是' : '否') + '。';
     if (game === 'jump' || game === 'plank') return '完美次数：' + (d.perfects || 0) + '次；差点掉下去次数：' + (d.nearMisses || 0) + '次。';
     if (game === 'sudoku') return '分数：' + sudokuRecordPoints(rec) + '；提示次数：' + (d.hints || 0) + '次；修改次数：' + (d.edits || 0) + '次；修改最多的格子修改次数：' + (d.maxEditsOneCell || 0) + '次；全部完成后错误次数：' + (d.finalErrors || 0) + '格。';
     if (game === 'ludo') return 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
@@ -897,6 +921,14 @@ export async function initWanbanXiaowu() {
         'long_run：单局持续20分钟以上。',
         '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
       ].join('\n');
+      if (game === 'uyangle') return [
+        'super_good：超厉害小剧场。不通过打乱就完成U了个U。',
+        'uyangle_clutch：命悬一线小剧场。触发过7个槽位填满，并且3次移出全部用完。',
+        'bad_luck：超倒霉小剧场。连续打乱两次，表现为打乱了也不能通过，只能再打乱。',
+        'long_run：超长时间小剧场。单局持续20分钟以上。',
+        'normal：普通小剧场。完成或失败后的普通互动。',
+        '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
+      ].join('\n');
       return [
         'record：刷新当前游戏历史记录。',
         'super_good：超级厉害小剧场。2048合成4096以上；俄罗斯方块消除10行以上；合成大西瓜合成2个最终西瓜；贪吃蛇达到200分以上。',
@@ -957,6 +989,9 @@ export async function initWanbanXiaowu() {
     if (game === 'sudoku' && (meta.hints || 0) > 5) candidates.push('scholar');
     if (game === 'sudoku' && (meta.hints || 0) === 0) candidates.push('independent');
     if (game === 'sudoku' && (meta.hints || 0) < 5 && durationMs <= 300000) candidates.push('super_good');
+    if (game === 'uyangle' && meta.completed && (meta.shuffles || 0) === 0) candidates.push('super_good');
+    if (game === 'uyangle' && meta.fullTraySurvived && (meta.usedAllMoveouts || (meta.moveouts || 0) >= 3)) candidates.push('uyangle_clutch');
+    if (game === 'uyangle' && meta.badLuck) candidates.push('bad_luck');
     if (durationMs <= 15000 && ((game === 'tetris' && score < 200) || (game === 'snake' && score < 30) || ((game === 'jump' || game === 'plank') && score < 3) || (game === 'watermelon' && score < 120) || (game === 'game2048' && score < 128))) candidates.push('super_bad');
     if (durationMs >= 1200000) candidates.push('long_run');
     if (currentRoundRecord) candidates.push('record');
@@ -1015,6 +1050,7 @@ export async function initWanbanXiaowu() {
       ,reversi_close_lose: '险败小剧场'
       ,reversi_comeback: '逆转小剧场'
       ,balanced: '势均力敌小剧场'
+      ,uyangle_clutch: '命悬一线小剧场'
     }[special] || '特殊角色互动小剧场').replace(/{{char}}/g, displayCharName());
   }
   function nextCharLineTurn(from) { return (from || 0) + 3 + Math.floor(Math.random() * 3); }
@@ -1423,6 +1459,85 @@ export async function initWanbanXiaowu() {
           box-shadow:0 8px 18px rgba(0,0,0,.26), 0 0 0 2px rgba(255,255,255,.24);
         }
       }
+      #${PET_FLOAT_ID}, #${PET_FLOAT_ID} * { box-sizing:border-box; }
+      #${PET_FLOAT_ID} {
+        position:fixed;
+        left:78px;
+        top:240px;
+        width:104px;
+        height:104px;
+        z-index:999998;
+        touch-action:none;
+        cursor:grab;
+        user-select:none;
+        -webkit-user-select:none;
+        -webkit-touch-callout:none;
+      }
+      #${PET_FLOAT_ID}.dragging { cursor:grabbing; }
+      .wb-pet-desk-fox {
+        width:104px;
+        height:104px;
+        padding:0;
+        border:0;
+        background:transparent;
+        display:grid;
+        place-items:center;
+        cursor:inherit;
+        filter:drop-shadow(0 12px 18px rgba(0,0,0,.28));
+      }
+      .wb-pet-desk-menu {
+        position:absolute;
+        left:50%;
+        bottom:98px;
+        transform:translateX(-50%);
+        display:none;
+        gap:8px;
+        align-items:center;
+        justify-content:center;
+        pointer-events:auto;
+      }
+      #${PET_FLOAT_ID}.menu-open .wb-pet-desk-menu { display:flex; }
+      .wb-pet-round {
+        width:42px;
+        height:42px;
+        border-radius:999px;
+        border:2px solid rgba(255,255,255,.9);
+        background:color-mix(in srgb, var(--wb-panel, #fff) 78%, var(--wb-accent, #c65b7c) 22%);
+        color:var(--wb-text, #2f2430);
+        box-shadow:0 10px 22px rgba(0,0,0,.24);
+        display:grid;
+        place-items:center;
+        padding:0;
+        font-size:21px;
+        line-height:1;
+        cursor:pointer;
+      }
+      .wb-pet-round:hover { transform:translateY(-1px); }
+      .wb-pet-desk-speech {
+        display:none;
+      }
+      .wb-pet-fox {
+        width:100%;
+        aspect-ratio:1 / 1;
+        background-image:var(--wb-pet-sprite);
+        background-repeat:no-repeat;
+        background-size:400% 100%;
+        background-position:0 0;
+        image-rendering:auto;
+      }
+      .wb-pet-fox.animating { animation:wbPetFoxFrames 2s step-end 1; }
+      @keyframes wbPetFoxFrames {
+        0%, 24.999% { background-position:0 0; }
+        25%, 49.999% { background-position:33.333% 0; }
+        50%, 74.999% { background-position:66.666% 0; }
+        75%, 100% { background-position:100% 0; }
+      }
+      @media (max-width: 768px) {
+        #${PET_FLOAT_ID}, .wb-pet-desk-fox { width:86px; height:86px; }
+        .wb-pet-desk-menu { bottom:82px; }
+        .wb-pet-round { width:38px; height:38px; font-size:19px; }
+        .wb-pet-desk-speech { display:none; }
+      }
       #${POPUP_ID}, #${POPUP_ID} * { box-sizing: border-box; }
       #${POPUP_ID} {
         position: fixed;
@@ -1470,8 +1585,59 @@ export async function initWanbanXiaowu() {
       @keyframes wbSwipeEnterRight { from { opacity:.55; transform:translateX(-22px); } to { opacity:1; transform:translateX(0); } }
       .wb-body.wb-settings-mode { overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; max-height:calc(100dvh - 118px); min-height:0; padding-bottom:24px; }
       .wb-body.wb-game-mode { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden; -webkit-overflow-scrolling:touch; height:auto; }
-      .wb-body.wb-intimacy-mode { padding:0; overflow:hidden; display:grid; place-items:center; min-height:0; }
+      .wb-body.wb-intimacy-mode { padding:12px; overflow:hidden; display:grid; min-height:0; }
+      .wb-intimacy-hub { min-height:0; display:grid; grid-template-columns:minmax(0, 1fr) minmax(220px, 280px); gap:12px; align-items:stretch; }
+      .wb-intimacy-image-wrap { min-height:0; display:grid; place-items:center; background:var(--wb-board); border:1px solid var(--wb-border); overflow:hidden; }
       .wb-intimacy-image { width:auto; height:70%; max-width:92%; max-height:92%; min-height:0; object-fit:contain; display:block; }
+      .wb-pet-trial-card { min-height:0; display:grid; align-content:center; gap:12px; background:var(--wb-panel); border:1px solid var(--wb-border); padding:14px; }
+      .wb-pet-trial-title { font-size:18px; font-weight:900; color:var(--wb-accent); letter-spacing:1px; }
+      .wb-pet-trial-copy { color:var(--wb-sub); font-size:13px; line-height:1.5; }
+      .wb-pet-room { width:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0, 1fr) auto; gap:10px; }
+      .wb-pet-room-top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+      .wb-pet-room-title { font-weight:900; color:var(--wb-accent); letter-spacing:1px; }
+      .wb-pet-scene {
+        position:relative;
+        width:min(100%, 560px, 100cqh);
+        aspect-ratio:1 / 1;
+        justify-self:center;
+        align-self:center;
+        min-height:0;
+        overflow:hidden;
+        border:1px solid var(--wb-border);
+        background:var(--wb-board) center / 100% 100% no-repeat;
+      }
+      .wb-pet-room-fox {
+        position:absolute;
+        left:50%;
+        top:46%;
+        width:min(30cqh, 30cqw, 176px);
+        min-width:108px;
+        transform:translate(-50%, -50%);
+        filter:drop-shadow(0 14px 20px rgba(0,0,0,.22));
+      }
+      .wb-pet-speech {
+        position:absolute;
+        left:50%;
+        top:14px;
+        transform:translateX(-50%);
+        max-width:min(88%, 420px);
+        padding:8px 12px;
+        background:rgba(255,255,255,.88);
+        color:#2f2430;
+        border:1px solid rgba(255,255,255,.72);
+        box-shadow:0 10px 22px rgba(0,0,0,.18);
+        font-weight:700;
+        text-align:center;
+      }
+      .wb-pet-room-actions { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; }
+      @media (max-width: 768px) {
+        .wb-body.wb-intimacy-mode { padding:8px; }
+        .wb-intimacy-hub { grid-template-columns:1fr; grid-template-rows:minmax(0, 1fr) auto; }
+        .wb-intimacy-image { height:auto; width:68%; }
+        .wb-pet-trial-card { align-content:start; }
+        .wb-pet-scene { width:min(100%, 92cqw, 64cqh); }
+        .wb-pet-room-fox { top:46%; width:min(36cqw, 154px); min-width:96px; }
+      }
       #${POPUP_ID}.wb-playing { bottom:28px; }
       @media (min-width: 769px) {
         .wb-body.wb-game-mode { overflow:hidden; padding:8px 10px 10px; }
@@ -1652,6 +1818,27 @@ export async function initWanbanXiaowu() {
       .wb-sudoku-nums .wb-btn { min-width:0; padding:6px 0; }
       .wb-sudoku-tools { justify-content:center; }
       .wb-sudoku-badge { display:inline-grid; place-items:center; min-width:18px; height:18px; margin-left:4px; padding:0 4px; border-radius:999px; background:rgba(255,255,255,.35); color:inherit; font-size:11px; font-weight:900; line-height:1; }
+      .wb-uyangle-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto auto auto; gap:5px; overflow:hidden; }
+      .wb-uyangle-top { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; min-width:0; }
+      .wb-uyangle-progress { position:relative; width:min(360px, 100%); height:14px; justify-self:center; overflow:hidden; border:1px solid var(--wb-border); border-radius:4px; background:var(--wb-soft); box-shadow:inset 0 1px 0 color-mix(in srgb, var(--wb-panel) 55%, transparent 45%); }
+      .wb-uyangle-progress-fill { position:absolute; inset:0 auto 0 0; width:0%; border-radius:inherit; background:linear-gradient(90deg, var(--wb-accent), var(--wb-accent2)); transition:width .16s ease; }
+      .wb-uyangle-progress span { position:relative; z-index:1; display:grid; place-items:center; height:100%; color:var(--wb-text); font-size:10px; font-weight:900; text-shadow:0 1px 2px color-mix(in srgb, var(--wb-bg) 72%, transparent 28%); }
+      .wb-uyangle-board { position:relative; width:min(620px, 100%, 100cqh); max-height:100%; aspect-ratio:1.08 / 1; justify-self:center; align-self:center; overflow:hidden; background:color-mix(in srgb, var(--wb-board) 88%, var(--wb-panel) 12%); border:1px solid var(--wb-border); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--wb-panel) 52%, transparent 48%); }
+      .wb-uyangle-tile { position:absolute; width:7.8%; aspect-ratio:1 / 1; padding:0; border:1px solid color-mix(in srgb, var(--wb-border) 82%, var(--wb-text) 18%); border-radius:5px; background:var(--wb-panel); box-shadow:0 4px 10px color-mix(in srgb, #000 20%, transparent 80%); display:grid; place-items:center; overflow:hidden; transform:translate(-50%, -50%); transition:transform .12s ease, filter .12s ease, opacity .12s ease; }
+      .wb-uyangle-tile img, .wb-uyangle-mini img { width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; }
+      .wb-uyangle-tile:not(:disabled) { cursor:pointer; }
+      .wb-uyangle-tile:not(:disabled):hover { transform:translate(-50%, -50%) scale(1.05); filter:brightness(1.05); }
+      .wb-uyangle-tile:disabled { cursor:default; filter:saturate(.75) brightness(.82); opacity:.82; }
+      .wb-uyangle-tile.blocked::after { content:''; position:absolute; inset:0; background:rgba(0,0,0,.18); pointer-events:none; }
+      .wb-uyangle-hold, .wb-uyangle-tray { min-height:42px; display:grid; gap:5px; justify-content:center; align-items:center; }
+      .wb-uyangle-hold { min-height:36px; grid-template-columns:repeat(3, minmax(0, 44px)); opacity:.95; padding:3px 6px; border:1px solid color-mix(in srgb, var(--wb-border) 72%, transparent 28%); background:color-mix(in srgb, var(--wb-soft) 46%, transparent 54%); justify-self:center; }
+      .wb-uyangle-tray-wrap { justify-self:center; padding:5px; border:1px solid color-mix(in srgb, var(--wb-border) 72%, var(--wb-text) 28%); border-radius:6px; background:linear-gradient(180deg, color-mix(in srgb, var(--wb-board) 68%, var(--wb-panel) 32%), color-mix(in srgb, var(--wb-soft) 64%, var(--wb-bg) 36%)); box-shadow:inset 0 1px 0 color-mix(in srgb, var(--wb-panel) 58%, transparent 42%), inset 0 -2px 0 color-mix(in srgb, var(--wb-text) 16%, transparent 84%); }
+      .wb-uyangle-tray { grid-template-columns:repeat(7, minmax(0, 44px)); }
+      .wb-uyangle-slot { width:44px; height:44px; border:1px dashed color-mix(in srgb, var(--wb-accent2) 58%, var(--wb-border) 42%); background:linear-gradient(180deg, color-mix(in srgb, var(--wb-accent2) 18%, var(--wb-panel) 82%), color-mix(in srgb, var(--wb-accent2) 28%, var(--wb-soft) 72%)); display:grid; place-items:center; border-radius:4px; box-shadow:inset 0 1px 3px color-mix(in srgb, var(--wb-accent2) 22%, transparent 78%); }
+      .wb-uyangle-mini { width:100%; height:100%; padding:0; border:1px solid color-mix(in srgb, var(--wb-border) 82%, var(--wb-text) 18%); border-radius:4px; background:var(--wb-panel); overflow:hidden; box-shadow:0 1px 4px color-mix(in srgb, #000 14%, transparent 86%); }
+      .wb-uyangle-mini.pickable { cursor:pointer; }
+      .wb-uyangle-mini.selected { outline:2px solid var(--wb-accent); outline-offset:-2px; }
+      .wb-uyangle-actions { justify-content:center; gap:6px; margin-top:4px; }
       .wb-reversi-panel, .wb-c4d-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:8px; place-items:center; overflow:hidden; }
       .wb-bomb-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:28px minmax(0,1fr) 54px; gap:8px; place-items:center; overflow:hidden; }
       .wb-bomb-info { min-height:28px; display:flex; align-items:center; justify-content:center; text-align:center; font-weight:800; color:var(--wb-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
@@ -2289,6 +2476,17 @@ export async function initWanbanXiaowu() {
         .wb-record-modal > .wb-actions .wb-pill { padding:4px 6px; font-size:11px; }
         .wb-grid2048, .wb-board3 { width:min(100%, 50dvh, 340px); }
         .wb-memory { width:min(100%, 48dvh, 320px); height:min(100%, 48dvh, 320px); gap:6px; padding:4px; }
+        .wb-uyangle-panel { grid-template-rows:auto auto minmax(0,1fr) auto auto auto; gap:4px; }
+        .wb-uyangle-progress { height:14px; width:min(320px, 100%); }
+        .wb-uyangle-board { width:min(100%, 58dvh, 420px); aspect-ratio:1 / 1; }
+        .wb-uyangle-tile { width:7.4%; }
+        .wb-uyangle-hold, .wb-uyangle-tray { min-height:34px; gap:3px; }
+        .wb-uyangle-hold { grid-template-columns:repeat(3, minmax(0, 34px)); }
+        .wb-uyangle-tray { grid-template-columns:repeat(7, minmax(0, 34px)); }
+        .wb-uyangle-tray-wrap { padding:4px; }
+        .wb-uyangle-slot { width:34px; height:34px; }
+        .wb-uyangle-actions { margin-top:5px; }
+        .wb-uyangle-actions .wb-btn { min-height:25px; padding:3px 6px; }
         .wb-gomoku, .wb-territory-board { width:min(100%, 52dvh, 360px); }
         .wb-ludo { width:min(calc(100% - 12px), 46dvh, 310px); height:min(calc(100% - 12px), 46dvh, 310px); padding:5px; gap:1px; justify-self:center; align-self:center; }
         .wb-ludo-piece { min-width:12px; max-width:19px; font-size:10px; }
@@ -2543,6 +2741,53 @@ export async function initWanbanXiaowu() {
         background:var(--wb-panel);
         border:1px solid var(--wb-border);
       }
+      #${POPUP_ID}.wb-mono .wb-uyangle-progress,
+      #${POPUP_ID}.wb-mono .wb-uyangle-board,
+      #${POPUP_ID}.wb-mono .wb-uyangle-tile,
+      #${POPUP_ID}.wb-mono .wb-uyangle-hold,
+      #${POPUP_ID}.wb-mono .wb-uyangle-tray-wrap,
+      #${POPUP_ID}.wb-mono .wb-uyangle-slot,
+      #${POPUP_ID}.wb-mono .wb-uyangle-mini {
+        border-radius:0;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-progress {
+        background:#fff;
+        border:2px solid #111;
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-progress-fill {
+        background:#111;
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-progress span {
+        color:#111;
+        text-shadow:none;
+        mix-blend-mode:difference;
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-board {
+        background:#e6e6e6;
+        border:2px solid #111;
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-tile,
+      #${POPUP_ID}.wb-mono .wb-uyangle-mini {
+        background:#fff;
+        border:2px solid #111;
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-tile:disabled {
+        filter:grayscale(1) brightness(.72);
+        opacity:.82;
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-tile.blocked::after {
+        background:repeating-linear-gradient(45deg, rgba(0,0,0,.2) 0 2px, transparent 2px 5px);
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-hold,
+      #${POPUP_ID}.wb-mono .wb-uyangle-tray-wrap {
+        background:#fff;
+        border:2px solid #111;
+      }
+      #${POPUP_ID}.wb-mono .wb-uyangle-slot {
+        background:#f2f2f2;
+        border:2px dashed #111;
+      }
       #${POPUP_ID}.wb-mono .wb-territory-board {
         background:#e6e6e6;
         border:4px solid #111;
@@ -2593,6 +2838,149 @@ export async function initWanbanXiaowu() {
       shell.style.height = '';
       shell.style.setProperty('--wb-vvh', '100dvh');
     }
+  }
+  function petStateClass(state) {
+    return ['normal','happy','eat','sleep','sad'].indexOf(state) >= 0 ? state : 'normal';
+  }
+  function petFormForCount(count) {
+    const n = Math.max(0, Number(count || 0));
+    if (n >= 40) return 'magic';
+    if (n >= 20) return 'adult';
+    return 'baby';
+  }
+  function petCurrentForm() {
+    const cfg = settings();
+    return petFormForCount(cfg.petInteractCount || 0);
+  }
+  function petSpriteUrl(form, state) {
+    return FOX_ASSET_BASE + (['baby','adult','magic'].indexOf(form) >= 0 ? form : 'baby') + '/' + petStateClass(state) + '.png';
+  }
+  function petEvolutionLine(form) {
+    if (form === 'adult') return '小狐狸长大了一点，站得更稳了。';
+    if (form === 'magic') return '小狐狸身上亮起微光，变成了魔法形态。';
+    return '';
+  }
+  function petLineFor(state) {
+    const lines = {
+      normal: '小狐狸抬头看着你，尾巴轻轻晃了一下。',
+      happy: '小狐狸眯起眼睛蹭了蹭你的手。',
+      eat: '小狐狸抱着食物吃得很认真。',
+      sleep: '小狐狸蜷成一团，安静睡着了。',
+      sad: '小狐狸低着耳朵，像是在等你回来。'
+    };
+    return lines[petStateClass(state)] || lines.normal;
+  }
+  function petSpriteHTML(state, extraClass) {
+    const form = petCurrentForm();
+    return '<div class="wb-pet-fox ' + esc(form) + ' ' + esc(petStateClass(state)) + (extraClass ? ' ' + esc(extraClass) : '') + '" style="--wb-pet-sprite:url(' + esc(petSpriteUrl(form, state)) + ')"></div>';
+  }
+  function setPetSpriteState(root, state) {
+    const fox = qs('.wb-pet-fox', root || getHostDocument());
+    if (!fox) return;
+    const form = petCurrentForm();
+    ['baby','adult','magic'].forEach(x => fox.classList.toggle(x, x === form));
+    ['normal','happy','eat','sleep','sad'].forEach(x => fox.classList.toggle(x, x === petStateClass(state)));
+    fox.style.setProperty('--wb-pet-sprite', 'url(' + petSpriteUrl(form, state) + ')');
+    fox.classList.remove('animating');
+    void fox.offsetWidth;
+  }
+  function triggerPetAnimation(root) {
+    const fox = qs('.wb-pet-fox', root || getHostDocument());
+    if (!fox) return;
+    fox.classList.remove('animating');
+    void fox.offsetWidth;
+    fox.classList.add('animating');
+    setTimeout(() => {
+      const latest = qs('.wb-pet-fox', root || getHostDocument());
+      if (latest) latest.classList.remove('animating');
+    }, 2050);
+  }
+  function resetPetAnimationLoop(root, fast) {
+    if (petAnimationTimer) clearTimeout(petAnimationTimer);
+    const schedule = () => {
+      const delay = fast ? 3600 + Math.floor(Math.random() * 1800) : 10000 + Math.floor(Math.random() * 7000);
+      petAnimationTimer = setTimeout(() => {
+        const doc = getHostDocument();
+        const target = root && root.isConnected ? root : (qs('#wb-pet-room', doc) || qs('#' + PET_FLOAT_ID, doc));
+        if (!target) { petAnimationTimer = null; return; }
+        triggerPetAnimation(target);
+        schedule();
+      }, delay);
+    };
+    schedule();
+  }
+  function clearPetTimers() {
+    if (petIdleTimer) clearTimeout(petIdleTimer);
+    if (petSadTimer) clearTimeout(petSadTimer);
+    if (petAnimationTimer) clearTimeout(petAnimationTimer);
+    if (petStateReturnTimer) clearTimeout(petStateReturnTimer);
+    petIdleTimer = null;
+    petSadTimer = null;
+    petAnimationTimer = null;
+    petStateReturnTimer = null;
+  }
+  function resetPetIdleTimer(root) {
+    if (petIdleTimer) clearTimeout(petIdleTimer);
+    if (petSadTimer) clearTimeout(petSadTimer);
+    petIdleTimer = setTimeout(() => {
+      petSetState('sleep', petLineFor('sleep'), { root, persistent:true, temporary:false, animate:true });
+    }, 60000);
+    petSadTimer = setTimeout(() => {
+      petSetState('sad', '小狐狸醒来后没等到你，眼泪汪汪地低下头。', { root, persistent:true, temporary:false, animate:true, resetIdle:false });
+    }, 120000);
+  }
+  function petSetState(state, line, options) {
+    const opts = options || {};
+    const nextState = petStateClass(state);
+    const doc = getHostDocument();
+    const root = opts.root && opts.root.isConnected ? opts.root : (qs('#wb-pet-room', doc) || qs('#' + PET_FLOAT_ID, doc));
+    if (opts.persistent !== false) setSettings({ petDesktopState: nextState });
+    if (root) {
+      setPetSpriteState(root, nextState);
+      const speech = qs('.wb-pet-speech, .wb-pet-desk-speech', root);
+      if (speech) speech.textContent = line || petLineFor(nextState);
+      if (opts.animate !== false) triggerPetAnimation(root);
+      resetPetAnimationLoop(root, nextState === 'eat' || nextState === 'happy');
+    }
+    if (opts.temporary) {
+      if (petStateReturnTimer) clearTimeout(petStateReturnTimer);
+      petStateReturnTimer = setTimeout(() => {
+        petSetState('normal', petLineFor('normal'), { root, persistent:true, temporary:false, animate:false });
+      }, 10000);
+    }
+    if (nextState !== 'sleep' && opts.resetIdle !== false) resetPetIdleTimer(root);
+  }
+  function petInteract(root, state) {
+    const cfg = settings();
+    const beforeCount = Math.max(0, Number(cfg.petInteractCount || 0));
+    const afterCount = beforeCount + 1;
+    const beforeForm = petFormForCount(beforeCount);
+    const afterForm = petFormForCount(afterCount);
+    const growthLine = beforeForm !== afterForm ? petEvolutionLine(afterForm) : '';
+    setSettings({ petInteractCount: afterCount, petForm: afterForm });
+    petSetState(state, growthLine || petLineFor(state), { root, persistent:true, temporary:true, animate:true });
+  }
+  function clampPetDesktopPosition(x, y) {
+    const win = getHostWindow();
+    const doc = getHostDocument();
+    const vw = win.innerWidth || doc.documentElement.clientWidth || 800;
+    const vh = win.innerHeight || doc.documentElement.clientHeight || 700;
+    const size = vw <= 768 ? 86 : 104;
+    const margin = 6;
+    const nx = Number.isFinite(Number(x)) ? Number(x) : DEFAULT_SETTINGS.petDesktopX;
+    const ny = Number.isFinite(Number(y)) ? Number(y) : DEFAULT_SETTINGS.petDesktopY;
+    return {
+      x: Math.max(margin, Math.min(nx, Math.max(margin, vw - size - margin))),
+      y: Math.max(margin, Math.min(ny, Math.max(margin, vh - size - margin)))
+    };
+  }
+  function placePetDesktop(el, x, y) {
+    if (!el) return;
+    const pos = clampPetDesktopPosition(x, y);
+    el.style.left = pos.x + 'px';
+    el.style.top = pos.y + 'px';
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
   }
   function clampFloatingBallPosition(x, y) {
     const win = getHostWindow();
@@ -2685,10 +3073,134 @@ export async function initWanbanXiaowu() {
     btn.addEventListener('touchstart', stopFloatEvent, { capture:true, passive:false });
     btn.addEventListener('touchend', stopFloatEvent, { capture:true, passive:false });
   }
+  function bindPetDesktop(el) {
+    if (!el || el.dataset.wbBound) return;
+    el.dataset.wbBound = '1';
+    let dragging = false;
+    let moved = false;
+    let startX = 0;
+    let startY = 0;
+    let originX = 0;
+    let originY = 0;
+    const foxBtn = qs('.wb-pet-desk-fox', el);
+    const stopPetShellEvent = e => {
+      if (e && e.target && e.target.closest && e.target.closest('.wb-pet-round')) return;
+      stopFloatEvent(e);
+    };
+    el.addEventListener('pointerdown', e => {
+      if (e.button != null && e.button !== 0) return;
+      if (e.target && e.target.closest && e.target.closest('.wb-pet-round')) return;
+      const rect = el.getBoundingClientRect();
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      originX = rect.left;
+      originY = rect.top;
+      el.classList.add('dragging');
+      try { el.setPointerCapture(e.pointerId); } catch(e2) {}
+      stopFloatEvent(e);
+    });
+    el.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+      placePetDesktop(el, originX + dx, originY + dy);
+      stopFloatEvent(e);
+    });
+    const finish = e => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove('dragging');
+      try { el.releasePointerCapture(e.pointerId); } catch(e2) {}
+      const rect = el.getBoundingClientRect();
+      const pos = clampPetDesktopPosition(rect.left, rect.top);
+      setSettings({ petDesktopX: pos.x, petDesktopY: pos.y });
+      placePetDesktop(el, pos.x, pos.y);
+      if (!moved) el.classList.toggle('menu-open');
+      stopFloatEvent(e);
+    };
+    el.addEventListener('pointerup', finish);
+    el.addEventListener('pointercancel', e => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove('dragging');
+      try { el.releasePointerCapture(e.pointerId); } catch(e2) {}
+      stopFloatEvent(e);
+    });
+    if (foxBtn) foxBtn.addEventListener('click', stopFloatEvent, true);
+    qsa('.wb-pet-round', el).forEach(btn => {
+      btn.onclick = e => {
+        stopFloatEvent(e);
+        el.classList.remove('menu-open');
+        const action = btn.dataset.petAction;
+        if (action === 'feed') petInteract(el, 'eat');
+        if (action === 'pet') petInteract(el, 'happy');
+        if (action === 'home') {
+          setSettings({ petDesktopEnabled:false, petDesktopState:'normal', petForm:petCurrentForm() });
+          petReturnHouseOnRender = true;
+          syncPetDesktop();
+          syncFloatingBall();
+          currentTab = 'intimacy';
+          currentGame = null;
+          buildPopup();
+        }
+      };
+    });
+    el.addEventListener('click', stopPetShellEvent, true);
+    el.addEventListener('touchstart', stopPetShellEvent, { capture:true, passive:false });
+    el.addEventListener('touchend', stopPetShellEvent, { capture:true, passive:false });
+  }
+  function syncPetDesktop() {
+    const doc = getHostDocument();
+    const cfg = settings();
+    let el = qs('#' + PET_FLOAT_ID, doc);
+    if (!cfg.petDesktopEnabled) {
+      if (el) el.remove();
+      clearPetTimers();
+      return;
+    }
+    injectStyle();
+    const state = petStateClass(cfg.petDesktopState || 'normal');
+    if (!el) {
+      el = doc.createElement('div');
+      el.id = PET_FLOAT_ID;
+      el.className = 'wb-pet-float';
+      el.innerHTML = '<button class="wb-pet-desk-fox" type="button" title="小狐狸" aria-label="小狐狸">'
+        + petSpriteHTML(state)
+        + '</button><div class="wb-pet-desk-menu">'
+        + '<button class="wb-pet-round" type="button" data-pet-action="feed" title="喂食" aria-label="喂食">🍖</button>'
+        + '<button class="wb-pet-round" type="button" data-pet-action="pet" title="抚摸" aria-label="抚摸">✋</button>'
+        + '<button class="wb-pet-round" type="button" data-pet-action="home" title="进入小屋" aria-label="进入小屋">⌂</button>'
+        + '</div><div class="wb-pet-desk-speech">' + esc(petLineFor(state)) + '</div>';
+      doc.body.appendChild(el);
+      bindPetDesktop(el);
+    } else {
+      setPetSpriteState(el, state);
+    }
+    placePetDesktop(el, cfg.petDesktopX, cfg.petDesktopY);
+    resetPetIdleTimer(el);
+    resetPetAnimationLoop(el, state === 'eat' || state === 'happy');
+    if (!petDesktopResizeBound) {
+      petDesktopResizeBound = true;
+      getHostWindow().addEventListener('resize', () => {
+        const latest = settings();
+        const existing = qs('#' + PET_FLOAT_ID, getHostDocument());
+        if (existing) placePetDesktop(existing, latest.petDesktopX, latest.petDesktopY);
+      });
+    }
+  }
   function syncFloatingBall() {
     const doc = getHostDocument();
     const cfg = settings();
     let btn = qs('#' + FLOAT_ID, doc);
+    if (cfg.petDesktopEnabled) {
+      if (btn) btn.remove();
+      syncPetDesktop();
+      return;
+    }
+    syncPetDesktop();
     if (!cfg.floatingBallEnabled) {
       if (btn) btn.remove();
       return;
@@ -2750,6 +3262,7 @@ export async function initWanbanXiaowu() {
     if (shell) { shell.classList.remove('wb-shell-visible'); shell.style.display = 'none'; }
     const p = qs('#' + POPUP_ID, doc);
     if (p) p.style.display = 'none';
+    if (!settings().petDesktopEnabled) clearPetTimers();
   }
 	  function syncPopupModeClass() {
 	    const p = qs('#' + POPUP_ID);
@@ -2818,7 +3331,56 @@ export async function initWanbanXiaowu() {
     syncPopupModeClass();
     const body = qs('#wb-body');
     body.className = 'wb-body wb-intimacy-mode';
-    body.innerHTML = '<img class="wb-intimacy-image" src="' + esc(CONTINUE_IMAGE_URL) + '" alt="亲密互动">';
+    if (petReturnHouseOnRender) {
+      petReturnHouseOnRender = false;
+      renderPetHouse();
+      return;
+    }
+    clearPetTimers();
+    body.innerHTML = '<div class="wb-intimacy-hub">'
+      + '<div class="wb-intimacy-image-wrap"><img class="wb-intimacy-image" src="' + esc(CONTINUE_IMAGE_URL) + '" alt="亲密互动"></div>'
+      + '<div class="wb-pet-trial-card"><div class="wb-pet-trial-title">宠物系统试吃</div>'
+      + '<div class="wb-pet-trial-copy">进入小屋看看幼年小狐狸。可以喂食、抚摸，也可以让它出来溜溜变成桌宠。</div>'
+      + '<button class="wb-btn primary" id="wb-pet-trial">进入试吃</button></div>'
+      + '</div>';
+    const trial = qs('#wb-pet-trial', body);
+    if (trial) trial.onclick = renderPetHouse;
+  }
+
+  function renderPetHouse() {
+    syncPopupModeClass();
+    const body = qs('#wb-body');
+    const state = 'normal';
+    setSettings({ petDesktopState: state, petForm:petCurrentForm() });
+    body.className = 'wb-body wb-intimacy-mode';
+    body.innerHTML = '<div class="wb-pet-room" id="wb-pet-room">'
+      + '<div class="wb-pet-room-top"><div class="wb-pet-room-title">小狐狸的小屋</div><button class="wb-btn primary" id="wb-pet-walk">出来溜溜</button></div>'
+      + '<div class="wb-pet-scene" style="background-image:url(' + esc(FOX_HOUSE_DAY_URL) + ')">'
+      + '<div class="wb-pet-speech">' + esc(petLineFor(state)) + '</div>'
+      + '<div class="wb-pet-room-fox">' + petSpriteHTML(state) + '</div>'
+      + '</div>'
+      + '<div class="wb-pet-room-actions"><button class="wb-btn" id="wb-pet-feed">喂食</button><button class="wb-btn" id="wb-pet-pat">抚摸</button><button class="wb-btn" id="wb-pet-reset">重置</button><button class="wb-btn" id="wb-pet-back">返回</button></div>'
+      + '</div>';
+    const room = qs('#wb-pet-room', body);
+    resetPetIdleTimer(room);
+    resetPetAnimationLoop(room, state === 'eat' || state === 'happy');
+    const feed = qs('#wb-pet-feed', room);
+    const pat = qs('#wb-pet-pat', room);
+    const reset = qs('#wb-pet-reset', room);
+    const back = qs('#wb-pet-back', room);
+    const walk = qs('#wb-pet-walk', room);
+    if (feed) feed.onclick = () => petInteract(room, 'eat');
+    if (pat) pat.onclick = () => petInteract(room, 'happy');
+    if (reset) reset.onclick = () => showConfirm('重置小狐狸', '确定要把小狐狸重置回幼年形态吗？互动次数和成长形态会重新开始。', () => {
+      setSettings({ petInteractCount:0, petForm:'baby', petDesktopState:'normal' });
+      renderPetHouse();
+    });
+    if (back) back.onclick = renderIntimacy;
+    if (walk) walk.onclick = () => {
+      setSettings({ petDesktopEnabled:true, petDesktopState:'normal', petForm:petCurrentForm() });
+      syncFloatingBall();
+      closePopupShell();
+    };
   }
 
   function renderSelect(mode) {
@@ -2931,7 +3493,7 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
 	      + '</div>'
-	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.0.5<br>本游戏发布者：Gloria</div>'
+	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.2.0<br>本游戏发布者：Gloria</div>'
 	      + '</div>';
 	    qs('#wb-theme').value = cfg.theme;
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
@@ -3211,7 +3773,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.0.5', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.2.0', exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -3639,6 +4201,7 @@ export async function initWanbanXiaowu() {
     if (g.mode !== 'double') {
       if (game === 'plank') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run'], ['score','plank_regret'], ['score','plank_tease']];
       if (game === 'sudoku') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','long_run'], ['score','scholar'], ['score','independent']];
+      if (game === 'uyangle') return [['score','normal'], ['score','super_good'], ['score','uyangle_clutch'], ['score','bad_luck'], ['score','long_run']];
       const jobs = [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run']];
       return jobs;
     }
@@ -4777,6 +5340,7 @@ export async function initWanbanXiaowu() {
     if (id === 'jump') startJump(resumeState);
     if (id === 'plank') startPlank(resumeState);
     if (id === 'sudoku') startSudoku(resumeState);
+    if (id === 'uyangle') startUYangLe(resumeState);
     if (id === 'game2048') start2048(resumeState);
     if (id === 'watermelon') startWatermelon(resumeState);
     if (id === 'memory') startMemory(resumeState);
@@ -6221,6 +6785,270 @@ function showGameRecords(game, page) {
     getHostDocument().onkeydown=e=>{ if(e.code==='Space'){ e.preventDefault(); startCharge(); } };
     getHostDocument().onkeyup=e=>{ if(e.code==='Space'){ e.preventDefault(); endCharge(); } };
     clearInterval(jumpTimer); jumpTimer=setInterval(loop, 32);
+  }
+
+  function startUYangLe(state) {
+    const box = qs('#wb-gamebox');
+    const iconUrl = n => GAME_ICON_BASE + 'U' + n + '.png';
+    const makeTiles = () => {
+      const totalCards = 144, layerTotal = 10;
+      const gridMaxX = 10, gridMaxY = 8, centerX = 5, centerY = 4;
+      const pileShapes = ['middle', 'cross', 'butterfly', 'castle', 't', 'wings', 'taper'];
+      const pileShape = pileShapes[Math.floor(Math.random() * pileShapes.length)];
+      const stackPairs = shuffleArray([
+        [{ x:1, y:1 }, { x:9, y:1 }],
+        [{ x:1, y:7 }, { x:9, y:7 }],
+        [{ x:0, y:4 }, { x:10, y:4 }],
+        [{ x:3, y:8 }, { x:7, y:8 }]
+      ]).slice(0, 1 + Math.floor(Math.random() * 2));
+      const stackPlans = stackPairs.flatMap(pair => {
+        const height = 3 + Math.floor(Math.random() * 6);
+        const baseLayer = Math.max(0, Math.floor(Math.random() * Math.max(1, layerTotal - height)));
+        return pair.map(anchor => ({ x:anchor.x, y:anchor.y, height, baseLayer }));
+      });
+      const stackCards = stackPlans.reduce((sum, plan) => sum + plan.height, 0);
+      const mainCards = totalCards - stackCards;
+      const icons = shuffleArray(Array.from({ length:12 }, (_, i) => Array(12).fill(i + 1)).flat());
+      const layerWeights = Array.from({ length:layerTotal }, (_, i) => Math.pow(layerTotal - i, 1.22));
+      let counts = layerWeights.map(w => Math.max(2, Math.floor(mainCards * w / layerWeights.reduce((a,b)=>a+b, 0))));
+      while(counts.reduce((a,b)=>a+b, 0) < mainCards){
+        const i = counts.reduce((best, val, idx) => idx && val < counts[idx - 1] + (idx < 4 ? 3 : 1) ? idx : best, 0);
+        counts[i]++;
+      }
+      while(counts.reduce((a,b)=>a+b, 0) > mainCards){
+        for(let i=counts.length-1;i>=0 && counts.reduce((a,b)=>a+b, 0) > mainCards;i--) if(counts[i] > 2) counts[i]--;
+      }
+      for(let i=1;i<counts.length;i++) if(counts[i] > counts[i - 1]) counts[i] = Math.max(2, counts[i - 1] - 1);
+      while(counts.reduce((a,b)=>a+b, 0) < mainCards){
+        let changed = false;
+        for(let i=0;i<counts.length && counts.reduce((a,b)=>a+b, 0) < mainCards;i++){
+          if(i === 0 || counts[i] + 1 <= counts[i - 1]){
+            counts[i]++;
+            changed = true;
+          }
+        }
+        if(!changed) break;
+      }
+      const allowed = (shape, x, y, rx, ry, layer) => {
+        const t = layer / Math.max(1, layerTotal - 1);
+        const ax = Math.abs(x - centerX), ay = Math.abs(y - centerY);
+        if(shape === 'cross') return ax <= Math.max(1, rx * .22) || ay <= Math.max(1, ry * .28);
+        if(shape === 'butterfly') return (ax >= 1 && ax <= rx && ay <= ry - ax * .22) || (ax <= 1 && ay <= Math.max(1, ry * .42));
+        if(shape === 'castle') return ay <= ry && ax <= rx && (y >= 2 || ax <= rx * .45 || Math.round(ax) % 2 === 0);
+        if(shape === 't') return (y <= 3 && ax <= rx) || (ax <= Math.max(1, rx * .28) && ay <= ry);
+        if(shape === 'wings') return (ax >= Math.max(1, rx * .34) && ax <= rx && ay <= ry) || (ax <= Math.max(1, rx * .25) && ay <= ry * .55);
+        if(shape === 'taper') return ax <= Math.max(1, rx - Math.max(0, y - 2) * (.55 + t * .18)) && ay <= ry;
+        return ay <= ry && ax <= Math.max(1, rx - Math.max(0, ay - 1) * .45);
+      };
+      const pointScore = (x, y, layer) => {
+        const ax = Math.abs(x - centerX), ay = Math.abs(y - centerY);
+        const moduleBonus =
+          (y === 1 && ax <= 3 ? -.45 : 0) +
+          (x >= 3 && x <= 7 && y >= 3 && y <= 5 ? -.35 : 0) +
+          ((x === 2 || x === 8) && y >= 2 && y <= 6 ? -.32 : 0) +
+          ((x === 3 || x === 7) && y >= 6 ? -.25 : 0);
+        const gap = ((x * 5 + y * 7 + layer * 3) % (layer < 4 ? 19 : 9)) === 0 ? .9 : 0;
+        return Math.hypot(ax / 1.25, ay) + moduleBonus + gap;
+      };
+      const selectSymmetric = (count, layer) => {
+        const t = layer / Math.max(1, layerTotal - 1);
+        const rx = Math.max(1, Math.round(5 - t * 3.1));
+        const ry = Math.max(1, Math.round(4 - t * 2.4));
+        const raw = [];
+        for(let y=0;y<=gridMaxY;y++) for(let x=0;x<=gridMaxX;x++){
+          if(allowed(pileShape, x, y, rx, ry, layer)) raw.push({ x, y, d:pointScore(x, y, layer) });
+        }
+        const center = raw.filter(p => p.x === centerX).sort((a,b) => a.d - b.d);
+        const pairs = [];
+        raw.filter(p => p.x < centerX).forEach(left => {
+          const right = raw.find(p => p.x === gridMaxX - left.x && p.y === left.y);
+          if(right) pairs.push({ left, right, d:(left.d + right.d) / 2 });
+        });
+        pairs.sort((a,b) => a.d - b.d);
+        const selected = [];
+        if(count % 2 && center.length) selected.push(center[0]);
+        pairs.forEach(pair => {
+          if(selected.length + 2 <= count) selected.push(pair.left, pair.right);
+        });
+        center.slice(count % 2 ? 1 : 0).forEach(p => {
+          if(selected.length < count) selected.push(p);
+        });
+        return selected.slice(0, count).map(p => ({ x:p.x, y:p.y }));
+      };
+      let iconIndex = 0, id = 0, tiles = [];
+      counts.forEach((count, layer) => {
+        selectSymmetric(count, layer).forEach(p => {
+          tiles.push({ id:id++, icon:icons[iconIndex++], x:p.x, y:p.y, layer, gone:false });
+        });
+      });
+      stackPlans.forEach(plan => {
+        for(let i=0;i<plan.height;i++){
+          tiles.push({
+            id:id++,
+            icon:icons[iconIndex++],
+            x:plan.x,
+            y:plan.y,
+            layer:Math.min(layerTotal - 1, plan.baseLayer + i),
+            gone:false
+          });
+        }
+      });
+      return tiles;
+    };
+    let tiles = Array.isArray(state?.tiles) && state.tiles.length ? state.tiles.map(t => Object.assign({}, t)) : makeTiles();
+    let tray = Array.isArray(state?.tray) ? state.tray.slice(0, 8) : [];
+    let hold = Array.isArray(state?.hold) ? state.hold.slice(0, 3) : [];
+    let shuffles = state?.shuffles || 0, moveouts = state?.moveouts || 0, moveMode = false, over = false, seen = state?.seen || {};
+    let details = state?.details || { matches:0, shuffles, moveouts, badLuck:false, fullTraySurvived:false };
+    let consecutiveShuffles = state?.consecutiveShuffles || 0;
+    box.innerHTML = '<div class="wb-uyangle-panel"><div class="wb-uyangle-top"><span class="wb-pill" id="wb-uyangle-left"></span><span class="wb-pill" id="wb-uyangle-status"></span></div><div class="wb-uyangle-progress"><div class="wb-uyangle-progress-fill" id="wb-uyangle-progress-fill"></div><span id="wb-uyangle-progress-text"></span></div><div class="wb-uyangle-board" id="wb-uyangle-board"></div><div class="wb-uyangle-hold" id="wb-uyangle-hold"></div><div class="wb-uyangle-tray-wrap"><div class="wb-uyangle-tray" id="wb-uyangle-tray"></div></div><div class="wb-actions wb-uyangle-actions"><button type="button" class="wb-btn" id="wb-uyangle-moveout">移出 <span class="wb-sudoku-badge" id="wb-uyangle-move-badge">3</span></button><button type="button" class="wb-btn primary" id="wb-uyangle-shuffle">打乱 <span class="wb-sudoku-badge" id="wb-uyangle-shuffle-badge">0</span></button></div></div>';
+    setScore('uyangle', 0); draw(); save();
+    function save(){ if(!over) saveProgress('uyangle', { tiles, tray, hold, shuffles, moveouts, consecutiveShuffles, seen, details }); }
+    function activeTiles(){ return tiles.filter(t => !t.gone); }
+    function leftCount(){ return activeTiles().length; }
+    function layerOffset(layer){
+      const offsets = [
+        { x:0, y:0 },
+        { x:.38, y:.26 },
+        { x:-.38, y:.26 },
+        { x:.38, y:-.26 },
+        { x:-.38, y:-.26 }
+      ];
+      return offsets[layer % offsets.length];
+    }
+    function tilePos(tile){
+      const off = layerOffset(tile.layer);
+      return { x:tile.x + off.x, y:tile.y + off.y };
+    }
+    function isBlocked(tile){
+      const pos = tilePos(tile);
+      return tiles.some(other => {
+        if(other.gone || other.layer <= tile.layer) return false;
+        const otherPos = tilePos(other);
+        return Math.abs(otherPos.x - pos.x) < .9 && Math.abs(otherPos.y - pos.y) < .78;
+      });
+    }
+    function miniHTML(card, cls, attrs){
+      return card ? '<button type="button" class="wb-uyangle-mini '+(cls || '')+'" '+(attrs || '')+'><img src="'+esc(iconUrl(card.icon))+'" alt=""></button>' : '';
+    }
+    function slotsHTML(cards, pickable, size){
+      return Array.from({ length:size || 7 }, (_, i) => '<div class="wb-uyangle-slot">' + (cards[i] ? miniHTML(cards[i], pickable ? 'pickable' : '', pickable ? 'data-i="'+i+'"' : '') : '') + '</div>').join('');
+    }
+    function removeTriple(icon){
+      let need = 3, removed = 0;
+      const take = arr => {
+        for(let i=arr.length-1;i>=0 && need>0;i--) if(arr[i].icon === icon){ arr.splice(i,1); need--; removed++; }
+      };
+      take(tray); take(hold);
+      if(removed === 3){
+        details.matches++;
+        consecutiveShuffles = 0;
+      }
+      return removed === 3;
+    }
+    function resolveTriples(){
+      const counts = {};
+      tray.concat(hold).forEach(c => counts[c.icon] = (counts[c.icon] || 0) + 1);
+      let matched = 0;
+      Object.keys(counts).forEach(icon => { while(counts[icon] >= 3){ if(removeTriple(+icon)){ counts[icon] -= 3; matched++; } else break; } });
+      return matched;
+    }
+    function maybeSpeakMatch(beforeMatches, specialSpoken){
+      if(specialSpoken) return;
+      const beforeBucket = Math.floor(beforeMatches / 3);
+      const afterBucket = Math.floor((details.matches || 0) / 3);
+      if(afterBucket > beforeBucket) speak('uyangle','match');
+    }
+    function scoreNow(){ return Math.max(0, 5000 - Math.round(currentGameDurationMs() / 1000) * 4 - shuffles * 300); }
+    function finish(){
+      const finalScore = scoreNow();
+      setScore('uyangle', finalScore);
+      details.shuffles = shuffles;
+      details.moveouts = moveouts;
+      over = true;
+      clearProgress('uyangle');
+      showGameOver('uyangle','U了个U完成','本局分数：'+finalScore+'分，打乱'+shuffles+'次，移出'+moveouts+'次', null, { completed:true, shuffles, moveouts, fullTraySurvived:!!details.fullTraySurvived, usedAllMoveouts:moveouts >= 3, badLuck:!!details.badLuck, details });
+    }
+    function fail(){
+      details.shuffles = shuffles;
+      details.moveouts = moveouts;
+      over = true;
+      speak('uyangle','gameover');
+      clearProgress('uyangle');
+      showGameOver('uyangle','游戏结束','本局分数：0分，打乱'+shuffles+'次，移出'+moveouts+'次', null, { completed:false, shuffles, moveouts, fullTraySurvived:!!details.fullTraySurvived, usedAllMoveouts:moveouts >= 3, badLuck:!!details.badLuck, details });
+    }
+    function pick(id){
+      if(gamePaused || over || moveMode) return;
+      const tile = tiles.find(t => t.id === id && !t.gone);
+      if(!tile || isBlocked(tile)) return;
+      tile.gone = true;
+      tray.push({ icon:tile.icon, id:'tray_' + tile.id + '_' + Date.now() });
+      const beforeMatches = details.matches || 0;
+      const matched = resolveTriples();
+      let specialSpoken = false;
+      if(tray.length > 7 && !matched){ fail(); return; }
+      if(tray.length === 7) details.fullTraySurvived = true;
+      if(leftCount() === 0 && tray.length === 0 && hold.length === 0){ finish(); return; }
+      if(tray.length >= 6 && !seen.danger){ seen.danger=1; speak('uyangle','danger'); specialSpoken = true; }
+      else if(leftCount() <= 10 && !seen.last10){ seen.last10=1; speak('uyangle','last_10'); specialSpoken = true; }
+      maybeSpeakMatch(beforeMatches, specialSpoken);
+      draw(); save();
+    }
+    function shuffleBoard(){
+      if(gamePaused || over) return;
+      const alive = activeTiles();
+      if(!alive.length) return;
+      const icons = shuffleArray(alive.map(t => t.icon));
+      alive.forEach((t, i) => t.icon = icons[i]);
+      shuffles++;
+      details.shuffles = shuffles;
+      consecutiveShuffles++;
+      speak('uyangle','shuffle');
+      if(consecutiveShuffles >= 2) details.badLuck = true;
+      draw(); save();
+    }
+    function enableMoveOut(){
+      if(gamePaused || over || moveouts >= 3 || !tray.length) return;
+      moveMode = !moveMode;
+      draw();
+    }
+    function moveOut(i){
+      if(!moveMode || gamePaused || over || moveouts >= 3 || !tray[i]) return;
+      hold.push(tray.splice(i,1)[0]);
+      moveouts++;
+      details.moveouts = moveouts;
+      moveMode = false;
+      consecutiveShuffles = 0;
+      speak('uyangle','moveout');
+      resolveTriples();
+      if(leftCount() === 0 && tray.length === 0 && hold.length === 0){ finish(); return; }
+      draw(); save();
+    }
+    function draw(){
+      const board = qs('#wb-uyangle-board', box), alive = activeTiles();
+      const cleared = Math.max(0, tiles.length - alive.length), progress = tiles.length ? Math.round(cleared / tiles.length * 100) : 0;
+      qs('#wb-uyangle-left', box).textContent = '剩余：' + alive.length;
+      qs('#wb-uyangle-status', box).textContent = moveMode ? '选择要移出的槽牌' : ('槽位：' + tray.length + '/7');
+      qs('#wb-uyangle-progress-fill', box).style.width = progress + '%';
+      qs('#wb-uyangle-progress-text', box).textContent = '进度 ' + progress + '%';
+      qs('#wb-uyangle-move-badge', box).textContent = String(Math.max(0, 3 - moveouts));
+      qs('#wb-uyangle-shuffle-badge', box).textContent = String(shuffles);
+      const maxX = 10.8, maxY = 9.2;
+      board.innerHTML = alive.slice().sort((a,b) => a.layer - b.layer || a.id - b.id).map(t => {
+        const blocked = isBlocked(t), pos = tilePos(t), left = 6 + pos.x / maxX * 88, top = 6 + pos.y / maxY * 88;
+        return '<button type="button" class="wb-uyangle-tile '+(blocked?'blocked':'')+'" data-id="'+t.id+'" style="left:'+left+'%;top:'+top+'%;z-index:'+(10 + t.layer)+';" '+(blocked?'disabled':'')+'><img src="'+esc(iconUrl(t.icon))+'" alt=""></button>';
+      }).join('');
+      qsa('.wb-uyangle-tile:not(:disabled)', board).forEach(btn => btn.onclick = () => pick(+btn.dataset.id));
+      qs('#wb-uyangle-hold', box).innerHTML = slotsHTML(hold, false, 3);
+      const trayEl = qs('#wb-uyangle-tray', box);
+      trayEl.innerHTML = slotsHTML(tray, moveMode, 7);
+      qsa('.wb-uyangle-mini.pickable', trayEl).forEach(btn => btn.onclick = () => moveOut(+btn.dataset.i));
+      const moveBtn = qs('#wb-uyangle-moveout', box);
+      moveBtn.disabled = moveouts >= 3 || !tray.length;
+      moveBtn.classList.toggle('primary', moveMode);
+    }
+    qs('#wb-uyangle-shuffle', box).onclick = shuffleBoard;
+    qs('#wb-uyangle-moveout', box).onclick = enableMoveOut;
   }
 
   function startSudoku(state) {
