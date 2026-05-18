@@ -945,7 +945,7 @@ export async function initWanbanXiaowu() {
         '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
       ].join('\n');
       if (game === 'uyangle') return [
-        'super_good：超厉害小剧场。不通过打乱就完成U了个U。',
+        'super_good：超厉害小剧场。不使用打乱和移出，直接完成U了个U并获得胜利。',
         'uyangle_clutch：命悬一线小剧场。触发过7个槽位填满，并且3次移出全部用完。',
         'bad_luck：超倒霉小剧场。连续打乱两次，表现为打乱了也不能通过，只能再打乱。',
         'long_run：超长时间小剧场。单局持续20分钟以上。',
@@ -1020,7 +1020,7 @@ export async function initWanbanXiaowu() {
       if (!candidates.length && meta.won) candidates.push('super_good');
       return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : '';
     }
-    if (game === 'uyangle' && meta.completed && (meta.shuffles || 0) === 0) candidates.push('super_good');
+    if (game === 'uyangle' && meta.completed && (meta.shuffles || 0) === 0 && (meta.moveouts || 0) === 0) candidates.push('super_good');
     if (game === 'uyangle' && meta.fullTraySurvived && (meta.usedAllMoveouts || (meta.moveouts || 0) >= 3)) candidates.push('uyangle_clutch');
     if (game === 'uyangle' && meta.badLuck) candidates.push('bad_luck');
     if (durationMs <= 15000 && ((game === 'tetris' && score < 200) || (game === 'snake' && score < 30) || ((game === 'jump' || game === 'plank') && score < 3) || (game === 'watermelon' && score < 120) || (game === 'game2048' && score < 128))) candidates.push('super_bad');
@@ -6981,12 +6981,53 @@ function showGameRecords(game, page) {
       const off = layerOffset(tile.layer);
       return { x:tile.x + off.x, y:tile.y + off.y };
     }
-    function isBlocked(tile){
-      const pos = tilePos(tile);
+    function renderMetrics(){
+      const allPos = tiles.length ? tiles.map(tilePos) : [{ x:0, y:0 }];
+      const minX = Math.min(...allPos.map(p => p.x)), maxX = Math.max(...allPos.map(p => p.x));
+      const minY = Math.min(...allPos.map(p => p.y)), maxY = Math.max(...allPos.map(p => p.y));
+      const edge = 6;
+      return { minX, minY, spanX:Math.max(1, maxX - minX), spanY:Math.max(1, maxY - minY), edge };
+    }
+    function renderPoint(tile, metrics){
+      const pos = tilePos(tile), m = metrics || renderMetrics();
+      return {
+        left:m.edge + (pos.x - m.minX) / m.spanX * (100 - m.edge * 2),
+        top:m.edge + (pos.y - m.minY) / m.spanY * (100 - m.edge * 2)
+      };
+    }
+    function uyangleBoardMetrics(board){
+      const rect = board ? board.getBoundingClientRect() : null;
+      const boardW = Math.max(1, rect?.width || 100);
+      const boardH = Math.max(1, rect?.height || boardW);
+      const mobileCss = (getHostWindow().innerWidth || 800) <= 768;
+      const sample = board ? qs('.wb-uyangle-tile', board) : null;
+      const sampleRect = sample ? sample.getBoundingClientRect() : null;
+      const tileW = Math.max(1, sampleRect?.width || boardW * (mobileCss ? 8.6 : 7.8) / 100);
+      const tileH = Math.max(1, sampleRect?.height || tileW);
+      return { boardW, boardH, tileW, tileH };
+    }
+    function tileRectOnBoard(tile, metrics, boardMetrics){
+      const pos = renderPoint(tile, metrics);
+      const cx = pos.left / 100 * boardMetrics.boardW;
+      const cy = pos.top / 100 * boardMetrics.boardH;
+      return {
+        left:cx - boardMetrics.tileW / 2,
+        right:cx + boardMetrics.tileW / 2,
+        top:cy - boardMetrics.tileH / 2,
+        bottom:cy + boardMetrics.tileH / 2
+      };
+    }
+    function rectsOverlap(a, b){
+      const pad = 1;
+      return a.left < b.right + pad && a.right > b.left - pad && a.top < b.bottom + pad && a.bottom > b.top - pad;
+    }
+    function isBlocked(tile, board, metrics, boardMetrics){
+      const m = metrics || renderMetrics();
+      const bm = boardMetrics || uyangleBoardMetrics(board || qs('#wb-uyangle-board', box));
+      const rect = tileRectOnBoard(tile, m, bm);
       return tiles.some(other => {
         if(other.gone || other.layer <= tile.layer) return false;
-        const otherPos = tilePos(other);
-        return Math.abs(otherPos.x - pos.x) < .9 && Math.abs(otherPos.y - pos.y) < .78;
+        return rectsOverlap(rect, tileRectOnBoard(other, m, bm));
       });
     }
     function miniHTML(card, cls, attrs){
@@ -7094,14 +7135,10 @@ function showGameRecords(game, page) {
       qs('#wb-uyangle-progress-text', box).textContent = '进度 ' + progress + '%';
       qs('#wb-uyangle-move-badge', box).textContent = String(Math.max(0, 3 - moveouts));
       qs('#wb-uyangle-shuffle-badge', box).textContent = String(shuffles);
-      const allPos = tiles.length ? tiles.map(tilePos) : [{ x:0, y:0 }];
-      const minX = Math.min(...allPos.map(p => p.x)), maxX = Math.max(...allPos.map(p => p.x));
-      const minY = Math.min(...allPos.map(p => p.y)), maxY = Math.max(...allPos.map(p => p.y));
-      const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
-      const edge = 6;
+      const metrics = renderMetrics(), boardMetrics = uyangleBoardMetrics(board);
       board.innerHTML = alive.slice().sort((a,b) => a.layer - b.layer || a.id - b.id).map(t => {
-        const blocked = isBlocked(t), pos = tilePos(t), left = edge + (pos.x - minX) / spanX * (100 - edge * 2), top = edge + (pos.y - minY) / spanY * (100 - edge * 2);
-        return '<button type="button" class="wb-uyangle-tile '+(blocked?'blocked':'')+'" data-id="'+t.id+'" style="left:'+left+'%;top:'+top+'%;z-index:'+(10 + t.layer)+';" '+(blocked?'disabled':'')+'><img src="'+esc(iconUrl(t.icon))+'" alt=""></button>';
+        const blocked = isBlocked(t, board, metrics, boardMetrics), pos = renderPoint(t, metrics);
+        return '<button type="button" class="wb-uyangle-tile '+(blocked?'blocked':'')+'" data-id="'+t.id+'" style="left:'+pos.left+'%;top:'+pos.top+'%;z-index:'+(10 + t.layer)+';" '+(blocked?'disabled':'')+'><img src="'+esc(iconUrl(t.icon))+'" alt=""></button>';
       }).join('');
       qsa('.wb-uyangle-tile:not(:disabled)', board).forEach(btn => btn.onclick = () => pick(+btn.dataset.id));
       qs('#wb-uyangle-hold', box).innerHTML = slotsHTML(hold, false, 3);
