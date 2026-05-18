@@ -4,7 +4,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "Gloria",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "homePage": "",
   "auto_update": false,
   "minimum_client_version": "1.12.0",

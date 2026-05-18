@@ -1,0 +1,31 @@
+.wb-dog {
+  width: 128px;
+  height: 128px;
+  background-repeat: no-repeat;
+  background-size: 400% 100%;
+  background-position: 0 0;
+  animation: wbDogFrames 2s step-end infinite;
+}
+
+.wb-dog.baby.normal { background-image: url('./baby/normal.png'); }
+.wb-dog.baby.happy { background-image: url('./baby/happy.png'); }
+.wb-dog.baby.eat { background-image: url('./baby/eat.png'); }
+.wb-dog.baby.sleep { background-image: url('./baby/sleep.png'); }
+.wb-dog.baby.sad { background-image: url('./baby/sad.png'); }
+.wb-dog.adult.normal { background-image: url('./adult/normal.png'); }
+.wb-dog.adult.happy { background-image: url('./adult/happy.png'); }
+.wb-dog.adult.eat { background-image: url('./adult/eat.png'); }
+.wb-dog.adult.sleep { background-image: url('./adult/sleep.png'); }
+.wb-dog.adult.sad { background-image: url('./adult/sad.png'); }
+.wb-dog.magic.normal { background-image: url('./magic/normal.png'); }
+.wb-dog.magic.happy { background-image: url('./magic/happy.png'); }
+.wb-dog.magic.eat { background-image: url('./magic/eat.png'); }
+.wb-dog.magic.sleep { background-image: url('./magic/sleep.png'); }
+.wb-dog.magic.sad { background-image: url('./magic/sad.png'); }
+
+@keyframes wbDogFrames {
+  0%, 24.999% { background-position: 0 0; }
+  25%, 49.999% { background-position: 33.333% 0; }
+  50%, 74.999% { background-position: 66.666% 0; }
+  75%, 100% { background-position: 100% 0; }
+}

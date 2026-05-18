@@ -1,0 +1,31 @@
+.wb-rabbit {
+  width: 128px;
+  height: 128px;
+  background-repeat: no-repeat;
+  background-size: 400% 100%;
+  background-position: 0 0;
+  animation: wbRabbitFrames 2s step-end infinite;
+}
+
+.wb-rabbit.baby.normal { background-image: url('./baby/normal.png'); }
+.wb-rabbit.baby.happy { background-image: url('./baby/happy.png'); }
+.wb-rabbit.baby.eat { background-image: url('./baby/eat.png'); }
+.wb-rabbit.baby.sleep { background-image: url('./baby/sleep.png'); }
+.wb-rabbit.baby.sad { background-image: url('./baby/sad.png'); }
+.wb-rabbit.adult.normal { background-image: url('./adult/normal.png'); }
+.wb-rabbit.adult.happy { background-image: url('./adult/happy.png'); }
+.wb-rabbit.adult.eat { background-image: url('./adult/eat.png'); }
+.wb-rabbit.adult.sleep { background-image: url('./adult/sleep.png'); }
+.wb-rabbit.adult.sad { background-image: url('./adult/sad.png'); }
+.wb-rabbit.magic.normal { background-image: url('./magic/normal.png'); }
+.wb-rabbit.magic.happy { background-image: url('./magic/happy.png'); }
+.wb-rabbit.magic.eat { background-image: url('./magic/eat.png'); }
+.wb-rabbit.magic.sleep { background-image: url('./magic/sleep.png'); }
+.wb-rabbit.magic.sad { background-image: url('./magic/sad.png'); }
+
+@keyframes wbRabbitFrames {
+  0%, 24.999% { background-position: 0 0; }
+  25%, 49.999% { background-position: 33.333% 0; }
+  50%, 74.999% { background-position: 66.666% 0; }
+  75%, 100% { background-position: 100% 0; }
+}

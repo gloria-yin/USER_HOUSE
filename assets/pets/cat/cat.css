@@ -1,0 +1,31 @@
+.wb-cat {
+  width: 128px;
+  height: 128px;
+  background-repeat: no-repeat;
+  background-size: 400% 100%;
+  background-position: 0 0;
+  animation: wbCatFrames 2s step-end infinite;
+}
+
+.wb-cat.baby.normal { background-image: url('./baby/normal.png'); }
+.wb-cat.baby.happy { background-image: url('./baby/happy.png'); }
+.wb-cat.baby.eat { background-image: url('./baby/eat.png'); }
+.wb-cat.baby.sleep { background-image: url('./baby/sleep.png'); }
+.wb-cat.baby.sad { background-image: url('./baby/sad.png'); }
+.wb-cat.adult.normal { background-image: url('./adult/normal.png'); }
+.wb-cat.adult.happy { background-image: url('./adult/happy.png'); }
+.wb-cat.adult.eat { background-image: url('./adult/eat.png'); }
+.wb-cat.adult.sleep { background-image: url('./adult/sleep.png'); }
+.wb-cat.adult.sad { background-image: url('./adult/sad.png'); }
+.wb-cat.magic.normal { background-image: url('./magic/normal.png'); }
+.wb-cat.magic.happy { background-image: url('./magic/happy.png'); }
+.wb-cat.magic.eat { background-image: url('./magic/eat.png'); }
+.wb-cat.magic.sleep { background-image: url('./magic/sleep.png'); }
+.wb-cat.magic.sad { background-image: url('./magic/sad.png'); }
+
+@keyframes wbCatFrames {
+  0%, 24.999% { background-position: 0 0; }
+  25%, 49.999% { background-position: 33.333% 0; }
+  50%, 74.999% { background-position: 66.666% 0; }
+  75%, 100% { background-position: 100% 0; }
+}

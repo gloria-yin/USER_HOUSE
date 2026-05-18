@@ -10,40 +10,40 @@
         "normal": {
           "label": "正常",
           "src": "baby/normal.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "happy": {
           "label": "开心",
           "src": "baby/happy.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "eat": {
           "label": "吃饭",
           "src": "baby/eat.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "sleep": {
           "label": "睡觉",
           "src": "baby/sleep.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "sad": {
           "label": "伤心",
           "src": "baby/sad.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         }
@@ -54,40 +54,40 @@
         "normal": {
           "label": "正常",
           "src": "adult/normal.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "happy": {
           "label": "开心",
           "src": "adult/happy.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "eat": {
           "label": "吃饭",
           "src": "adult/eat.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "sleep": {
           "label": "睡觉",
           "src": "adult/sleep.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "sad": {
           "label": "伤心",
           "src": "adult/sad.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         }
@@ -98,44 +98,48 @@
         "normal": {
           "label": "正常",
           "src": "magic/normal.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "happy": {
           "label": "开心",
           "src": "magic/happy.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "eat": {
           "label": "吃饭",
           "src": "magic/eat.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "sleep": {
           "label": "睡觉",
           "src": "magic/sleep.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         },
         "sad": {
           "label": "伤心",
           "src": "magic/sad.png",
-          "frameWidth": 230,
-          "frameHeight": 230,
+          "frameWidth": 128,
+          "frameHeight": 128,
           "frames": 4,
           "frameDurationMs": 500
         }
       }
     }
-  }
+  },
+  "normalizedFrameWidth": 128,
+  "normalizedFrameHeight": 128,
+  "frameWidth": 128,
+  "frameHeight": 128
 }

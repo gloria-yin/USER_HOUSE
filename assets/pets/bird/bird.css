@@ -1,0 +1,31 @@
+.wb-bird {
+  width: 128px;
+  height: 128px;
+  background-repeat: no-repeat;
+  background-size: 400% 100%;
+  background-position: 0 0;
+  animation: wbBirdFrames 2s step-end infinite;
+}
+
+.wb-bird.baby.normal { background-image: url('./baby/normal.png'); }
+.wb-bird.baby.happy { background-image: url('./baby/happy.png'); }
+.wb-bird.baby.eat { background-image: url('./baby/eat.png'); }
+.wb-bird.baby.sleep { background-image: url('./baby/sleep.png'); }
+.wb-bird.baby.sad { background-image: url('./baby/sad.png'); }
+.wb-bird.adult.normal { background-image: url('./adult/normal.png'); }
+.wb-bird.adult.happy { background-image: url('./adult/happy.png'); }
+.wb-bird.adult.eat { background-image: url('./adult/eat.png'); }
+.wb-bird.adult.sleep { background-image: url('./adult/sleep.png'); }
+.wb-bird.adult.sad { background-image: url('./adult/sad.png'); }
+.wb-bird.magic.normal { background-image: url('./magic/normal.png'); }
+.wb-bird.magic.happy { background-image: url('./magic/happy.png'); }
+.wb-bird.magic.eat { background-image: url('./magic/eat.png'); }
+.wb-bird.magic.sleep { background-image: url('./magic/sleep.png'); }
+.wb-bird.magic.sad { background-image: url('./magic/sad.png'); }
+
+@keyframes wbBirdFrames {
+  0%, 24.999% { background-position: 0 0; }
+  25%, 49.999% { background-position: 33.333% 0; }
+  50%, 74.999% { background-position: 66.666% 0; }
+  75%, 100% { background-position: 100% 0; }
+}

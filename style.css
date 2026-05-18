@@ -305,6 +305,26 @@
 .wb-uyangle-mini.pickable { cursor:pointer; }
 .wb-uyangle-mini.selected { outline:2px solid var(--wb-accent); outline-offset:-2px; }
 .wb-uyangle-actions { justify-content:center; gap:6px; margin-top:4px; }
+.wb-mines-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:8px; place-items:center; overflow:hidden; }
+.wb-mines-top { width:100%; display:flex; justify-content:center; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+.wb-mines-board { width:min(560px, 100%, 100cqh); max-height:100%; aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(16,minmax(0,1fr)); grid-template-rows:repeat(16,minmax(0,1fr)); gap:1px; padding:6px; background:#8f969d; border:2px solid #6c7279; box-shadow:inset 2px 2px 0 rgba(255,255,255,.44), inset -2px -2px 0 rgba(0,0,0,.22); box-sizing:border-box; contain:layout size; justify-self:center; align-self:center; }
+.wb-mines-cell { min-width:0; min-height:0; width:100%; height:100%; padding:0; display:grid; place-items:center; border-radius:0; border:1px solid #6f767d; background:#c5cbd1; color:#20242a; font-weight:900; font-size:clamp(10px, 2.6cqh, 18px); line-height:1; cursor:pointer; box-shadow:inset 2px 2px 0 rgba(255,255,255,.78), inset -2px -2px 0 rgba(64,70,76,.52); }
+.wb-mines-cell.open { background:#aeb5bc; border-color:#8d949b; box-shadow:inset 1px 1px 0 rgba(0,0,0,.18); cursor:default; }
+.wb-mines-cell.mine { color:#111; background:#d6a0a0; }
+.wb-mines-cell.boom { background:#ef4444; color:#fff; animation:wbMineBoom .42s ease-in-out 2; }
+.wb-mines-cell.pulse { animation:wbMinePress .16s ease-in-out 1; }
+.wb-mines-cell.n1 { color:#1857c7; }
+.wb-mines-cell.n2 { color:#18743a; }
+.wb-mines-cell.n3 { color:#c82828; }
+.wb-mines-cell.n4 { color:#29248f; }
+.wb-mines-cell.n5 { color:#8b251f; }
+.wb-mines-cell.n6 { color:#147b86; }
+.wb-mines-cell.n7 { color:#1d1d1d; }
+.wb-mines-cell.n8 { color:#666; }
+.wb-mines-actions { justify-content:center; gap:8px; flex-wrap:nowrap; }
+.wb-mines-actions .wb-btn { min-width:86px; }
+@keyframes wbMinePress { 0%,100% { transform:translateY(0); } 50% { transform:translateY(1px); box-shadow:inset 1px 1px 0 rgba(0,0,0,.24); } }
+@keyframes wbMineBoom { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); filter:brightness(1.18); } }
 .wb-reversi-panel, .wb-c4d-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:8px; place-items:center; overflow:hidden; }
 .wb-bomb-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:28px minmax(0,1fr) 54px; gap:8px; place-items:center; overflow:hidden; }
 .wb-bomb-info { min-height:28px; display:flex; align-items:center; justify-content:center; text-align:center; font-weight:800; color:var(--wb-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
@@ -932,15 +952,21 @@
   .wb-memory { width:min(100%, 48dvh, 320px); height:min(100%, 48dvh, 320px); gap:6px; padding:4px; }
   .wb-uyangle-panel { grid-template-rows:auto auto minmax(0,1fr) auto auto auto; gap:4px; }
   .wb-uyangle-progress { height:14px; width:min(320px, 100%); }
-  .wb-uyangle-board { width:min(100%, 58dvh, 420px); aspect-ratio:1 / 1; }
-  .wb-uyangle-tile { width:7.4%; }
-  .wb-uyangle-hold, .wb-uyangle-tray { min-height:34px; gap:3px; }
-  .wb-uyangle-hold { grid-template-columns:repeat(3, minmax(0, 34px)); }
-  .wb-uyangle-tray { grid-template-columns:repeat(7, minmax(0, 34px)); }
+  .wb-uyangle-board { width:min(100%, 100cqh, 64dvh, 440px); aspect-ratio:1 / 1; }
+  .wb-uyangle-tile { width:8.6%; }
+  .wb-uyangle-hold, .wb-uyangle-tray { min-height:clamp(36px, 10.4vw, 40px); gap:3px; }
+  .wb-uyangle-hold { grid-template-columns:repeat(3, minmax(0, clamp(36px, 10.4vw, 40px))); }
+  .wb-uyangle-tray { grid-template-columns:repeat(7, minmax(0, clamp(36px, 10.4vw, 40px))); }
   .wb-uyangle-tray-wrap { padding:4px; }
-  .wb-uyangle-slot { width:34px; height:34px; }
+  .wb-uyangle-slot { width:clamp(36px, 10.4vw, 40px); height:clamp(36px, 10.4vw, 40px); }
   .wb-uyangle-actions { margin-top:5px; }
   .wb-uyangle-actions .wb-btn { min-height:25px; padding:3px 6px; }
+  .wb-mines-panel { gap:5px; }
+  .wb-mines-top { gap:4px; flex-wrap:nowrap; overflow:hidden; }
+  .wb-mines-board { width:min(100%, 100cqh, 72dvh, 430px); padding:3px; gap:1px; }
+  .wb-mines-cell { font-size:clamp(9px, 2.8cqh, 16px); }
+  .wb-mines-actions { gap:6px; }
+  .wb-mines-actions .wb-btn { flex:1 1 0; min-width:0; min-height:30px; }
   .wb-gomoku, .wb-territory-board { width:min(100%, 52dvh, 360px); }
   .wb-ludo { width:min(calc(100% - 12px), 46dvh, 310px); height:min(calc(100% - 12px), 46dvh, 310px); justify-self:center; align-self:center; }
   .wb-ludo-piece { min-width:12px; max-width:19px; font-size:10px; }

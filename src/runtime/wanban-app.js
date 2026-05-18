@@ -88,7 +88,7 @@ export async function initWanbanXiaowu() {
   const STORAGE_WORD_GUESS_BANK_SOURCE = SCRIPT_ID + '_wordGuessBankSource_v1';
   const STORAGE_WORD_GUESS_BANK_FILTER = SCRIPT_ID + '_wordGuessBankFilter_v1';
   const WORD_GUESS_DEFAULT_BANK_URL = new URL('./wanban-wordguess-bank.txt', import.meta.url).href;
-  const FLAG = SCRIPT_ID + '_Loaded_v1_0_1';
+  const FLAG = SCRIPT_ID + '_Loaded_v1_4_0';
   const MENU_SELECTORS = [
     '#extensionsMenu',
     '#extensionMenuItems',
@@ -163,6 +163,7 @@ export async function initWanbanXiaowu() {
     jump: { id: 'jump', name: '跳一跳', mode: 'single', unit: '分', icon: '跳', iconImage: GAME_ICON_BASE + 'jump.jpg' },
     plank: { id: 'plank', name: '搭木板', mode: 'single', unit: '分', icon: '板', iconImage: GAME_ICON_BASE + 'plank.jpg' },
     sudoku: { id: 'sudoku', name: '数独', mode: 'single', unit: '分', icon: '9', iconImage: GAME_ICON_BASE + 'sudoku.jpg' },
+    minesweeper: { id: 'minesweeper', name: '扫雷', mode: 'single', unit: '分', icon: '雷', iconImage: GAME_ICON_BASE + 'minesweeper.png' },
     uyangle: { id: 'uyangle', name: 'U了个U', mode: 'single', unit: '分', icon: 'U', iconImage: GAME_ICON_BASE + 'sheep.png' },
     ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: GAME_ICON_BASE + 'ludo.jpg' },
     guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: GAME_ICON_BASE + 'guessnumber.jpg' },
@@ -237,6 +238,7 @@ export async function initWanbanXiaowu() {
     jump: '按住蓄力，松开跳跃。落到下一个平台得分，越靠近中心越好；没落上平台就结束。',
     plank: '长按屏幕或空格生成木板，松开后木板会倒下成为桥。木板必须刚好搭到下一根柱子上，太短或太长都会掉下去。',
     sudoku: '每局自动生成唯一解数独。点击空格后输入1-9，已有数字会高亮同行同列和相同数字。可擦除、求助；填满但不正确时会高亮错误，并可帮你修改一个数字。',
+    minesweeper: '16×16 高级扫雷，内含50个雷。下方按钮可在“翻开”和“插旗”之间切换，开局默认翻开；插旗模式点击未翻开格会按“旗子→问号→空白”循环标记，问号只是提醒，仍可在翻开模式中打开。点击已翻开的数字格时，如果周围插旗数量等于该数字，会像电脑版双击数字一样尝试翻开周围未插旗格；如果周围包含雷，只会播放按动动画，不会自动爆雷。',
     uyangle: '三消叠牌小游戏。点击没有被上层遮挡的卡牌放入下方7格槽，同图标凑满3张会消除；槽位超过7格且没有消除时失败。可使用移出把槽内一张牌放到上方暂存区，最多3次；可不限次数打乱剩余牌面。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '你执黑，{{char}}执白，双方轮流落子。任意方向先连成五子的一方获胜。',
@@ -259,6 +261,7 @@ export async function initWanbanXiaowu() {
     jump: { start:'跳一跳开局，玩家站在第一个平台上。', charge:'玩家按住屏幕开始蓄力。', jump:'玩家松手起跳。', perfect:'玩家落在平台中心附近。', land:'玩家成功落到下一个平台。', score_10:'跳一跳达到10分。', score_20:'跳一跳达到20分。', score_30:'跳一跳达到30分。', score_40:'跳一跳达到40分。', score_50_plus:'跳一跳达到50分，且50分以上每10分触发一次。', record:'跳一跳刷新历史最高分。', gameover:'玩家松手时就能判断本次不会落上平台，起跳前触发。', random:'观看跳一跳时的碎碎念。' },
     plank: { start:'搭木板开局，玩家站在第一根柱子上。', perfect:'木板长度刚好落在柱子中心附近。', perfect_streak:'玩家连续3次以上完美搭到中心附近。', score_10:'搭木板达到10分。', score_20:'搭木板达到20分。', score_30:'搭木板达到30分。', score_40:'搭木板达到40分。', score_50_plus:'搭木板达到50分，且50分以上每10分触发一次。', record:'搭木板刷新历史最高分。', gameover:'玩家松手时木板已经确定太长或太短。', random:'观看搭木板时的碎碎念。' },
     sudoku: { start:'数独开局，玩家开始解唯一解题目。', first_fill:'玩家填入第一个数字。', erase:'玩家擦除一个已填数字。', hint:'玩家请求一次求助。', many_hints:'玩家求助超过5次。', row_done:'玩家填好一整行。', col_done:'玩家填好一整列。', nearly_done:'数独快要填完。', conflict:'玩家填入的数字在同一行、同一列或同一宫里造成重复。', complete_error:'玩家全部填完但仍有错误格，需要继续修改。', gameover:'数独只剩最后一个空格，或只剩一个错误格需要修改。', random:'观看数独时的碎碎念。' },
+    minesweeper: { start:'扫雷开局，16×16棋盘里藏着50个雷。', number:'玩家翻开安全格并出现数字。', flag:'玩家进行插旗或问号标记。', chord:'玩家点击已翻开的数字格，周围标记数量符合数字，成功试探并翻开新格。', big_open:'一次翻开超过5个安全格。', half:'安全格已经翻开一半。', last_5:'按剩余雷数和插旗数计算，显示只剩最后5个雷以内。', record:'扫雷刷新历史最高分。', gameover:'玩家踩到雷，本局失败。', random:'观看扫雷时的待机碎碎念。' },
     uyangle: { start:'U了个U开局。这是一个三消叠牌小游戏，玩家点击未被遮挡的卡牌放入7格槽，同图标3张会消除。', match:'玩家累计每完成3次三消时触发一次普通三消语录；如果同一步触发危险、最后10张、失败或完成等特殊事件，则优先特殊事件。', shuffle:'玩家使用打乱，重新随机排列剩余牌面。', moveout:'玩家使用移出，把槽内一张卡牌移到上方暂存区。', danger:'下方槽位已经占满6个以上，距离失败很近。', last_10:'场上剩余最后10张以内卡牌。', record:'U了个U刷新历史最高分。', gameover:'下方7格槽已满，玩家再放入一张卡牌后没有形成三消，槽位溢出导致失败。', random:'观看U了个U三消叠牌时的碎碎念。' },
     tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'{{char}}阻挡了玩家即将连线的一步。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'{{char}}在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
     gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，{{char}}知道自己这把基本必输了。', ai_block:'{{char}}阻挡玩家形成强威胁。', ai_threat:'{{char}}形成强威胁，玩家需要防守。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'{{char}}五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
@@ -319,7 +322,7 @@ export async function initWanbanXiaowu() {
   }
   function scores() {
     const loaded = safeObject(loadJSON(STORAGE_SCORES, {}));
-    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, uyangle: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 } };
+    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, uyangle: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 } };
     ['ludo','guessnumber','wordguess','tictactoe','gomoku','territory','oldmaid','reversi','bombnumber','connect4d'].forEach(k => { if (typeof loaded[k] === 'number') loaded[k] = { user: loaded[k], ta: 0 }; });
     return Object.assign(base, loaded);
   }
@@ -563,6 +566,7 @@ export async function initWanbanXiaowu() {
     if (game === 'watermelon') return !!(state.score || (state.balls && state.balls.length));
     if (game === 'memory') return !!(state.moves || (state.done && state.done.length) || (state.open && state.open.length));
     if (game === 'uyangle') return !!(state.tiles && state.tiles.some(t => !t.gone)) || !!(state.tray && state.tray.length) || !!(state.hold && state.hold.length);
+    if (game === 'minesweeper') return !!state.started || !!(state.cells && state.cells.some(c => c && (c.open || c.mark)));
     if (game === 'snake') return !!state.score;
     if (game === 'game2048') return !!state.score || (Array.isArray(state.board) && state.board.filter(Boolean).length > 2);
     if (game === 'jump') return !!state.score;
@@ -604,6 +608,11 @@ export async function initWanbanXiaowu() {
   function sudokuScore(durationMs, hints) {
     const seconds = Math.max(0, Math.round((durationMs || 0) / 1000));
     return Math.max(0, 3000 - seconds * 3 - Math.max(0, hints || 0) * 250);
+  }
+  function minesweeperScore(durationMs, won, correctFlags, openedSafe) {
+    const seconds = Math.max(0, Math.round((durationMs || 0) / 1000));
+    if (won) return Math.max(1200, 6500 - seconds * 8);
+    return Math.max(0, Math.min(1200, (correctFlags || 0) * 18 + Math.floor((openedSafe || 0) * 1.5)));
   }
   function sudokuBestScore() {
     const stored = Number(scores().sudoku || 0);
@@ -707,6 +716,7 @@ export async function initWanbanXiaowu() {
   function wordGuessHits(r) {
     return extractNumber(r?.scoreText || '', /你猜中\s*(\d+)\s*题/, 0) + '题';
   }
+  function minesweeperOutcomeText(r) { return r && r.details && r.details.won ? '胜' : '负'; }
   function isRoundCountGame(game) { return ['tictactoe','gomoku','territory','ludo','reversi','bombnumber','connect4d'].includes(game); }
   function recordRoundCount(r) { return String(extractNumber(r?.scoreText || '', /回合数[：:]\s*(\d+)/, 0)); }
 	  function recordCompanionDisplay(r) { return r && r.companion ? r.companion : (settings().companion ? companionName() : 'TA'); }
@@ -715,6 +725,7 @@ export async function initWanbanXiaowu() {
     if (game === 'reversi') return ['时间','用时','胜负','回合数','格子数','陪伴者','日志','操作'];
     if (game === 'guessnumber') return ['时间','用时','胜负','猜几次','陪伴者','日志','操作'];
     if (game === 'sudoku') return ['时间','用时','分数','求助次数','陪伴者','日志','操作'];
+    if (game === 'minesweeper') return ['时间','用时','胜负','分数','排对雷','陪伴者','日志','操作'];
     if (game === 'uyangle') return ['时间','用时','分数','打乱次数','移出次数','陪伴者','日志','操作'];
     if (game === 'wordguess') return ['时间','用时','猜中题数','陪伴者','日志','操作'];
     if (isRoundCountGame(game)) return ['时间','用时','胜负','回合数','陪伴者','日志','操作'];
@@ -727,6 +738,7 @@ export async function initWanbanXiaowu() {
     if (game === 'reversi') return base.concat([userOutcomeText(r.result), recordRoundCount(r), territoryUserCells(r), recordCompanionDisplay(r)]);
     if (game === 'guessnumber') return base.concat([userOutcomeText(r.result), guessNumberTries(r), recordCompanionDisplay(r)]);
     if (game === 'sudoku') return base.concat([sudokuRecordPoints(r), String(extractNumber(r?.scoreText || '', /求助\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
+    if (game === 'minesweeper') return base.concat([minesweeperOutcomeText(r), singleRecordPoints(r), String(extractNumber(r?.scoreText || '', /排对\s*(\d+)\s*个雷/, 0)), recordCompanionDisplay(r)]);
     if (game === 'uyangle') return base.concat([singleRecordPoints(r), String(extractNumber(r?.scoreText || '', /打乱\s*(\d+)\s*次/, 0)), String(extractNumber(r?.scoreText || '', /移出\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
     if (game === 'wordguess') return base.concat([wordGuessHits(r), recordCompanionDisplay(r)]);
     if (isRoundCountGame(game)) return base.concat([userOutcomeText(r.result), recordRoundCount(r), recordCompanionDisplay(r)]);
@@ -744,6 +756,7 @@ export async function initWanbanXiaowu() {
     if (isRoundCountGame(game)) return '字段说明：胜负是user的胜负；回合数表示本局双方行动总数。';
     if (game === 'guessnumber') return '字段说明：胜负是user的胜负；猜几次只表示user猜了几次。';
     if (game === 'sudoku') return '字段说明：分数由用时和求助次数共同计算，用时越短、求助越少，分数越高；求助次数只表示user本局点击提示/修改的次数。';
+    if (game === 'minesweeper') return '字段说明：胜负是user的扫雷结果；排对雷表示插旗位置确实是雷的数量；成功时用时越短分数越高，失败时按已排对雷和已翻开安全格给少量分。';
     if (game === 'uyangle') return '字段说明：U了个U是三消叠牌小游戏；分数由用时和打乱次数共同计算，用时越短、打乱越少，分数越高。';
     if (game === 'wordguess') return '字段说明：猜中题数只表示user猜中的题数。';
     if ((GAME_META[game] || {}).mode === 'double') return '字段说明：胜负是user的胜负，胜表示user赢，负表示' + role + '赢。';
@@ -786,6 +799,7 @@ export async function initWanbanXiaowu() {
     if (game === 'uyangle') return '消除次数：' + (d.matches || 0) + '次；打乱次数：' + (d.shuffles || 0) + '次；移出次数：' + (d.moveouts || 0) + '次；是否触发过7格满槽：' + (d.fullTraySurvived ? '是' : '否') + '；是否用完3次移出：' + ((d.moveouts || 0) >= 3 ? '是' : '否') + '；是否连续打乱两次：' + (d.badLuck ? '是' : '否') + '。';
     if (game === 'jump' || game === 'plank') return '完美次数：' + (d.perfects || 0) + '次；差点掉下去次数：' + (d.nearMisses || 0) + '次。';
     if (game === 'sudoku') return '分数：' + sudokuRecordPoints(rec) + '；提示次数：' + (d.hints || 0) + '次；修改次数：' + (d.edits || 0) + '次；修改最多的格子修改次数：' + (d.maxEditsOneCell || 0) + '次；全部完成后错误次数：' + (d.finalErrors || 0) + '格。';
+    if (game === 'minesweeper') return '结果：' + (d.won ? '成功' : '失败') + '；插旗数量：' + (d.flags || 0) + '；排对的雷：' + (d.correctFlags || 0) + '个；未插旗扫雷数量：' + (d.unflaggedMines || 0) + '个；踩雷时已开格子：' + (d.openedAtBlast || d.openedSafe || 0) + '格；犹豫次数：' + (d.hesitations || 0) + '次；数字试探成功次数：' + (d.chordSuccesses || 0) + '次；不确定试探成功次数：' + (d.riskyChordSuccesses || 0) + '次。';
     if (game === 'ludo') return 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
     if (game === 'guessnumber') return '每次猜测：\n' + ((d.guesses || []).map((x,i) => (i+1) + '. 猜“' + x.guess + '”：数字对' + x.nums + '个，位置对' + x.pos + '个').join('\n') || '无');
     if (game === 'wordguess') return '每题记录：\n' + ((d.rounds || []).map((r,i) => (i+1) + '. 题目：' + r.word + '；5条提示：' + (r.clues || []).join(' / ') + '；user猜过：' + ((r.guesses || []).join('、') || '无') + '；第几条提示猜中：' + (r.winClueIndex || '未猜中')).join('\n') || '无');
@@ -921,6 +935,15 @@ export async function initWanbanXiaowu() {
         'long_run：单局持续20分钟以上。',
         '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
       ].join('\n');
+      if (game === 'minesweeper') return [
+        'bad_luck：倒霉小剧场。前三次翻开就踩到雷。',
+        'minesweeper_regret：遗憾小剧场。最后10个以内的雷时踩雷失败。',
+        'normal：普通小剧场。失败情况下的小剧场，需要说明这局虽然失败但已经排查了多少。',
+        'super_good：超厉害小剧场。成功扫雷且不触发其他特殊小剧场。',
+        'record：破纪录小剧场。刷新当前游戏历史最高分。',
+        'mine_lucky：超幸运小剧场。超过5次在不确定雷的情况下试探成功并胜利。',
+        '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
+      ].join('\n');
       if (game === 'uyangle') return [
         'super_good：超厉害小剧场。不通过打乱就完成U了个U。',
         'uyangle_clutch：命悬一线小剧场。触发过7个槽位填满，并且3次移出全部用完。',
@@ -989,6 +1012,14 @@ export async function initWanbanXiaowu() {
     if (game === 'sudoku' && (meta.hints || 0) > 5) candidates.push('scholar');
     if (game === 'sudoku' && (meta.hints || 0) === 0) candidates.push('independent');
     if (game === 'sudoku' && (meta.hints || 0) < 5 && durationMs <= 300000) candidates.push('super_good');
+    if (game === 'minesweeper' && meta.badLuck) candidates.push('bad_luck');
+    if (game === 'minesweeper' && meta.regret) candidates.push('minesweeper_regret');
+    if (game === 'minesweeper' && meta.won && (meta.riskyChordSuccesses || 0) > 5) candidates.push('mine_lucky');
+    if (game === 'minesweeper') {
+      if (currentRoundRecord) candidates.push('record');
+      if (!candidates.length && meta.won) candidates.push('super_good');
+      return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : '';
+    }
     if (game === 'uyangle' && meta.completed && (meta.shuffles || 0) === 0) candidates.push('super_good');
     if (game === 'uyangle' && meta.fullTraySurvived && (meta.usedAllMoveouts || (meta.moveouts || 0) >= 3)) candidates.push('uyangle_clutch');
     if (game === 'uyangle' && meta.badLuck) candidates.push('bad_luck');
@@ -1051,6 +1082,8 @@ export async function initWanbanXiaowu() {
       ,reversi_comeback: '逆转小剧场'
       ,balanced: '势均力敌小剧场'
       ,uyangle_clutch: '命悬一线小剧场'
+      ,minesweeper_regret: '遗憾小剧场'
+      ,mine_lucky: '超幸运小剧场'
     }[special] || '特殊角色互动小剧场').replace(/{{char}}/g, displayCharName());
   }
   function nextCharLineTurn(from) { return (from || 0) + 3 + Math.floor(Math.random() * 3); }
@@ -1839,6 +1872,26 @@ export async function initWanbanXiaowu() {
       .wb-uyangle-mini.pickable { cursor:pointer; }
       .wb-uyangle-mini.selected { outline:2px solid var(--wb-accent); outline-offset:-2px; }
       .wb-uyangle-actions { justify-content:center; gap:6px; margin-top:4px; }
+      .wb-mines-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:8px; place-items:center; overflow:hidden; }
+      .wb-mines-top { width:100%; display:flex; justify-content:center; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+      .wb-mines-board { width:min(560px, 100%, 100cqh); max-height:100%; aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(16,minmax(0,1fr)); grid-template-rows:repeat(16,minmax(0,1fr)); gap:1px; padding:6px; background:#8f969d; border:2px solid #6c7279; box-shadow:inset 2px 2px 0 rgba(255,255,255,.44), inset -2px -2px 0 rgba(0,0,0,.22); box-sizing:border-box; contain:layout size; justify-self:center; align-self:center; }
+      .wb-mines-cell { min-width:0; min-height:0; width:100%; height:100%; padding:0; display:grid; place-items:center; border-radius:0; border:1px solid #6f767d; background:#c5cbd1; color:#20242a; font-weight:900; font-size:clamp(10px, 2.6cqh, 18px); line-height:1; cursor:pointer; box-shadow:inset 2px 2px 0 rgba(255,255,255,.78), inset -2px -2px 0 rgba(64,70,76,.52); }
+      .wb-mines-cell.open { background:#aeb5bc; border-color:#8d949b; box-shadow:inset 1px 1px 0 rgba(0,0,0,.18); cursor:default; }
+      .wb-mines-cell.mine { color:#111; background:#d6a0a0; }
+      .wb-mines-cell.boom { background:#ef4444; color:#fff; animation:wbMineBoom .42s ease-in-out 2; }
+      .wb-mines-cell.pulse { animation:wbMinePress .16s ease-in-out 1; }
+      .wb-mines-cell.n1 { color:#1857c7; }
+      .wb-mines-cell.n2 { color:#18743a; }
+      .wb-mines-cell.n3 { color:#c82828; }
+      .wb-mines-cell.n4 { color:#29248f; }
+      .wb-mines-cell.n5 { color:#8b251f; }
+      .wb-mines-cell.n6 { color:#147b86; }
+      .wb-mines-cell.n7 { color:#1d1d1d; }
+      .wb-mines-cell.n8 { color:#666; }
+      .wb-mines-actions { justify-content:center; gap:8px; flex-wrap:nowrap; }
+      .wb-mines-actions .wb-btn { min-width:86px; }
+      @keyframes wbMinePress { 0%,100% { transform:translateY(0); } 50% { transform:translateY(1px); box-shadow:inset 1px 1px 0 rgba(0,0,0,.24); } }
+      @keyframes wbMineBoom { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); filter:brightness(1.18); } }
       .wb-reversi-panel, .wb-c4d-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:8px; place-items:center; overflow:hidden; }
       .wb-bomb-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:28px minmax(0,1fr) 54px; gap:8px; place-items:center; overflow:hidden; }
       .wb-bomb-info { min-height:28px; display:flex; align-items:center; justify-content:center; text-align:center; font-weight:800; color:var(--wb-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
@@ -2478,15 +2531,21 @@ export async function initWanbanXiaowu() {
         .wb-memory { width:min(100%, 48dvh, 320px); height:min(100%, 48dvh, 320px); gap:6px; padding:4px; }
         .wb-uyangle-panel { grid-template-rows:auto auto minmax(0,1fr) auto auto auto; gap:4px; }
         .wb-uyangle-progress { height:14px; width:min(320px, 100%); }
-        .wb-uyangle-board { width:min(100%, 58dvh, 420px); aspect-ratio:1 / 1; }
-        .wb-uyangle-tile { width:7.4%; }
-        .wb-uyangle-hold, .wb-uyangle-tray { min-height:34px; gap:3px; }
-        .wb-uyangle-hold { grid-template-columns:repeat(3, minmax(0, 34px)); }
-        .wb-uyangle-tray { grid-template-columns:repeat(7, minmax(0, 34px)); }
+        .wb-uyangle-board { width:min(100%, 100cqh, 64dvh, 440px); aspect-ratio:1 / 1; }
+        .wb-uyangle-tile { width:8.6%; }
+        .wb-uyangle-hold, .wb-uyangle-tray { min-height:clamp(36px, 10.4vw, 40px); gap:3px; }
+        .wb-uyangle-hold { grid-template-columns:repeat(3, minmax(0, clamp(36px, 10.4vw, 40px))); }
+        .wb-uyangle-tray { grid-template-columns:repeat(7, minmax(0, clamp(36px, 10.4vw, 40px))); }
         .wb-uyangle-tray-wrap { padding:4px; }
-        .wb-uyangle-slot { width:34px; height:34px; }
+        .wb-uyangle-slot { width:clamp(36px, 10.4vw, 40px); height:clamp(36px, 10.4vw, 40px); }
         .wb-uyangle-actions { margin-top:5px; }
         .wb-uyangle-actions .wb-btn { min-height:25px; padding:3px 6px; }
+        .wb-mines-panel { gap:5px; }
+        .wb-mines-top { gap:4px; flex-wrap:nowrap; overflow:hidden; }
+        .wb-mines-board { width:min(100%, 100cqh, 72dvh, 430px); padding:3px; gap:1px; }
+        .wb-mines-cell { font-size:clamp(9px, 2.8cqh, 16px); }
+        .wb-mines-actions { gap:6px; }
+        .wb-mines-actions .wb-btn { flex:1 1 0; min-width:0; min-height:30px; }
         .wb-gomoku, .wb-territory-board { width:min(100%, 52dvh, 360px); }
         .wb-ludo { width:min(calc(100% - 12px), 46dvh, 310px); height:min(calc(100% - 12px), 46dvh, 310px); padding:5px; gap:1px; justify-self:center; align-self:center; }
         .wb-ludo-piece { min-width:12px; max-width:19px; font-size:10px; }
@@ -3493,7 +3552,7 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
 	      + '</div>'
-	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.2.0<br>本游戏发布者：Gloria</div>'
+	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V1.4.0<br>本游戏发布者：Gloria</div>'
 	      + '</div>';
 	    qs('#wb-theme').value = cfg.theme;
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
@@ -3773,7 +3832,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.2.0', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'1.4.0', exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -4201,6 +4260,7 @@ export async function initWanbanXiaowu() {
     if (g.mode !== 'double') {
       if (game === 'plank') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run'], ['score','plank_regret'], ['score','plank_tease']];
       if (game === 'sudoku') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','long_run'], ['score','scholar'], ['score','independent']];
+      if (game === 'minesweeper') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','bad_luck'], ['score','minesweeper_regret'], ['score','mine_lucky']];
       if (game === 'uyangle') return [['score','normal'], ['score','super_good'], ['score','uyangle_clutch'], ['score','bad_luck'], ['score','long_run']];
       const jobs = [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run']];
       return jobs;
@@ -5340,6 +5400,7 @@ export async function initWanbanXiaowu() {
     if (id === 'jump') startJump(resumeState);
     if (id === 'plank') startPlank(resumeState);
     if (id === 'sudoku') startSudoku(resumeState);
+    if (id === 'minesweeper') startMinesweeper(resumeState);
     if (id === 'uyangle') startUYangLe(resumeState);
     if (id === 'game2048') start2048(resumeState);
     if (id === 'watermelon') startWatermelon(resumeState);
@@ -7033,9 +7094,13 @@ function showGameRecords(game, page) {
       qs('#wb-uyangle-progress-text', box).textContent = '进度 ' + progress + '%';
       qs('#wb-uyangle-move-badge', box).textContent = String(Math.max(0, 3 - moveouts));
       qs('#wb-uyangle-shuffle-badge', box).textContent = String(shuffles);
-      const maxX = 10.8, maxY = 9.2;
+      const allPos = tiles.length ? tiles.map(tilePos) : [{ x:0, y:0 }];
+      const minX = Math.min(...allPos.map(p => p.x)), maxX = Math.max(...allPos.map(p => p.x));
+      const minY = Math.min(...allPos.map(p => p.y)), maxY = Math.max(...allPos.map(p => p.y));
+      const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+      const edge = 6;
       board.innerHTML = alive.slice().sort((a,b) => a.layer - b.layer || a.id - b.id).map(t => {
-        const blocked = isBlocked(t), pos = tilePos(t), left = 6 + pos.x / maxX * 88, top = 6 + pos.y / maxY * 88;
+        const blocked = isBlocked(t), pos = tilePos(t), left = edge + (pos.x - minX) / spanX * (100 - edge * 2), top = edge + (pos.y - minY) / spanY * (100 - edge * 2);
         return '<button type="button" class="wb-uyangle-tile '+(blocked?'blocked':'')+'" data-id="'+t.id+'" style="left:'+left+'%;top:'+top+'%;z-index:'+(10 + t.layer)+';" '+(blocked?'disabled':'')+'><img src="'+esc(iconUrl(t.icon))+'" alt=""></button>';
       }).join('');
       qsa('.wb-uyangle-tile:not(:disabled)', board).forEach(btn => btn.onclick = () => pick(+btn.dataset.id));
@@ -7049,6 +7114,187 @@ function showGameRecords(game, page) {
     }
     qs('#wb-uyangle-shuffle', box).onclick = shuffleBoard;
     qs('#wb-uyangle-moveout', box).onclick = enableMoveOut;
+  }
+
+  function startMinesweeper(state) {
+    const box = qs('#wb-gamebox');
+    const W = 16, H = 16, MINES = 50, TOTAL = W * H, SAFE = TOTAL - MINES;
+    const idx = (r, c) => r * W + c;
+    const rc = i => ({ r:Math.floor(i / W), c:i % W });
+    const neighbors = i => {
+      const p = rc(i), out = [];
+      for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++){
+        if(!dr && !dc) continue;
+        const r = p.r + dr, c = p.c + dc;
+        if(r >= 0 && r < H && c >= 0 && c < W) out.push(idx(r, c));
+      }
+      return out;
+    };
+    const makeCells = () => Array.from({ length:TOTAL }, () => ({ mine:false, n:0, open:false, mark:0, boom:false, pulse:false }));
+    const hydrateCells = arr => Array.from({ length:TOTAL }, (_, i) => {
+      const c = arr && arr[i] ? arr[i] : {};
+      return { mine:!!c.mine, n:Number(c.n || 0), open:!!c.open, mark:Number(c.mark || 0), boom:!!c.boom, pulse:false };
+    });
+    let cells = Array.isArray(state?.cells) && state.cells.length === TOTAL ? hydrateCells(state.cells) : makeCells();
+    let mode = state?.mode === 'flag' ? 'flag' : 'open';
+    let started = !!state?.started;
+    let over = false;
+    let clickCount = Number(state?.clickCount || 0);
+    let lastDecisionAt = Number(state?.lastDecisionAt || Date.now());
+    let seen = state?.seen || {};
+    let details = state?.details || { flags:0, correctFlags:0, openedSafe:0, openedAtBlast:0, hesitations:0, chordSuccesses:0, riskyChordSuccesses:0, unflaggedMines:0, won:false };
+    box.innerHTML = '<div class="wb-mines-panel"><div class="wb-mines-top"><span class="wb-pill" id="wb-mines-left"></span><span class="wb-pill" id="wb-mines-opened"></span><span class="wb-pill" id="wb-mines-mode"></span></div><div class="wb-mines-board" id="wb-mines-board"></div><div class="wb-actions wb-mines-actions"><button type="button" class="wb-btn primary" id="wb-mines-open-mode">翻开</button><button type="button" class="wb-btn" id="wb-mines-flag-mode">插旗</button></div></div>';
+    draw(); save();
+
+    function save(){ if(!over) saveProgress('minesweeper', { cells, mode, started, clickCount, lastDecisionAt, seen, details }); }
+    function countFlags(){ return cells.filter(c => c.mark === 1).length; }
+    function openedSafe(){ return cells.filter(c => c.open && !c.mine).length; }
+    function correctFlags(){ return cells.filter(c => c.mark === 1 && c.mine).length; }
+    function remainingMines(){ return MINES - countFlags(); }
+    function markDecision(){
+      const now = Date.now();
+      if(now - lastDecisionAt > 15000) details.hesitations = (details.hesitations || 0) + 1;
+      lastDecisionAt = now;
+    }
+    function placeMines(first) {
+      const banned = new Set([first].concat(neighbors(first)));
+      const pool = Array.from({ length:TOTAL }, (_, i) => i).filter(i => !banned.has(i));
+      shuffleArray(pool).slice(0, MINES).forEach(i => cells[i].mine = true);
+      cells.forEach((c, i) => { c.n = c.mine ? 0 : neighbors(i).filter(n => cells[n].mine).length; });
+      started = true;
+    }
+    function revealFrom(start) {
+      const q = [start], changed = [];
+      const seenQ = new Set();
+      while(q.length) {
+        const i = q.shift();
+        if(seenQ.has(i)) continue;
+        seenQ.add(i);
+        const c = cells[i];
+        if(!c || c.open || c.mark === 1) continue;
+        c.mark = 0;
+        c.open = true;
+        changed.push(i);
+        if(!c.mine && c.n === 0) neighbors(i).forEach(n => { if(!cells[n].open && cells[n].mark !== 1) q.push(n); });
+      }
+      return changed;
+    }
+    function maybeProgressLines(changed) {
+      const opened = openedSafe();
+      if(changed.some(i => cells[i].open && !cells[i].mine && cells[i].n > 0) && Math.random() < .32) speak('minesweeper','number');
+      if(changed.filter(i => cells[i].open && !cells[i].mine).length > 5) speak('minesweeper','big_open');
+      if(opened >= Math.ceil(SAFE / 2) && !seen.half){ seen.half=1; speak('minesweeper','half'); }
+      if(remainingMines() <= 5 && !seen.last5){ seen.last5=1; speak('minesweeper','last_5'); }
+    }
+    function finalMeta(won, blastIndex) {
+      const flags = countFlags(), correct = correctFlags(), opened = openedSafe();
+      return {
+        won,
+        badLuck:!won && clickCount <= 3,
+        regret:!won && remainingMines() <= 10,
+        riskyChordSuccesses:details.riskyChordSuccesses || 0,
+        flags,
+        correctFlags:correct,
+        openedSafe:opened,
+        openedAtBlast:blastIndex == null ? opened : opened,
+        unflaggedMines:won ? Math.max(0, MINES - flags) : 0,
+        details:Object.assign(details, { won, flags, correctFlags:correct, openedSafe:opened, openedAtBlast:blastIndex == null ? opened : opened, unflaggedMines:won ? Math.max(0, MINES - flags) : 0 })
+      };
+    }
+    function finish(won, blastIndex) {
+      over = true;
+      details.won = won;
+      cells.forEach(c => { if(c.mine) c.open = true; });
+      const meta = finalMeta(won, blastIndex);
+      const finalScore = minesweeperScore(currentGameDurationMs(), won, meta.correctFlags, meta.openedSafe);
+      setScore('minesweeper', finalScore);
+      clearProgress('minesweeper');
+      if(!won) speak('minesweeper','gameover');
+      draw();
+      showGameOver('minesweeper', won ? '扫雷完成' : '游戏结束', '本局分数：' + finalScore + '分，' + (won ? '胜利' : '失败') + '，排对' + meta.correctFlags + '个雷，插旗' + meta.flags + '个', null, meta);
+    }
+    function checkWin() {
+      if(openedSafe() >= SAFE) finish(true, null);
+    }
+    function openCell(i) {
+      if(gamePaused || over) return;
+      markDecision();
+      const c = cells[i];
+      if(!c || c.mark === 1) return;
+      if(c.open) { chord(i); return; }
+      clickCount++;
+      if(!started) placeMines(i);
+      if(c.mine){ c.boom = true; finish(false, i); return; }
+      const changed = revealFrom(i);
+      maybeProgressLines(changed);
+      checkWin();
+      if(!over){ draw(); save(); }
+    }
+    function cycleMark(i) {
+      if(gamePaused || over) return;
+      markDecision();
+      const c = cells[i];
+      if(!c || c.open) return;
+      c.mark = (c.mark + 1) % 3;
+      details.flags = countFlags();
+      details.correctFlags = correctFlags();
+      if(Math.random() < .38) speak('minesweeper','flag');
+      if(remainingMines() <= 5 && !seen.last5){ seen.last5=1; speak('minesweeper','last_5'); }
+      draw(); save();
+    }
+    function chord(i) {
+      const c = cells[i];
+      if(!c || !c.open || !c.n) return;
+      markDecision();
+      const ns = neighbors(i), flags = ns.filter(n => cells[n].mark === 1).length;
+      if(flags !== c.n) { pulse(ns); return; }
+      const targets = ns.filter(n => !cells[n].open && cells[n].mark !== 1);
+      if(!targets.length) return;
+      if(targets.some(n => cells[n].mine)) { pulse(ns); return; }
+      let changed = [];
+      targets.forEach(n => { changed = changed.concat(revealFrom(n)); });
+      if(changed.length){
+        details.chordSuccesses = (details.chordSuccesses || 0) + 1;
+        if(ns.some(n => cells[n].mark === 1 && !cells[n].mine)) details.riskyChordSuccesses = (details.riskyChordSuccesses || 0) + 1;
+        speak('minesweeper','chord');
+        maybeProgressLines(changed);
+        checkWin();
+        if(!over){ draw(); save(); }
+      }
+    }
+    function pulse(list) {
+      list.forEach(n => { if(!cells[n].open) cells[n].pulse = true; });
+      draw();
+      setTimeout(() => { cells.forEach(c => c.pulse = false); draw(); }, 180);
+    }
+    function draw() {
+      const board = qs('#wb-mines-board', box);
+      qs('#wb-mines-left', box).textContent = '剩余雷：' + remainingMines();
+      qs('#wb-mines-opened', box).textContent = '已开：' + openedSafe() + '/' + SAFE;
+      qs('#wb-mines-mode', box).textContent = mode === 'flag' ? '模式：插旗' : '模式：翻开';
+      const openBtn = qs('#wb-mines-open-mode', box), flagBtn = qs('#wb-mines-flag-mode', box);
+      openBtn.classList.toggle('primary', mode === 'open');
+      flagBtn.classList.toggle('primary', mode === 'flag');
+      board.innerHTML = cells.map((c, i) => {
+        const shown = c.open, cls = ['wb-mines-cell', shown ? 'open' : 'closed', c.mine && shown ? 'mine' : '', c.boom ? 'boom' : '', c.pulse ? 'pulse' : '', c.n && shown && !c.mine ? ('n' + c.n) : ''].filter(Boolean).join(' ');
+        const text = shown ? (c.mine ? '✹' : (c.n ? String(c.n) : '')) : (c.mark === 1 ? '⚑' : (c.mark === 2 ? '?' : ''));
+        return '<button type="button" class="' + cls + '" data-i="' + i + '" aria-label="扫雷格">' + text + '</button>';
+      }).join('');
+      qsa('.wb-mines-cell', board).forEach(btn => btn.onclick = () => {
+        const i = +btn.dataset.i;
+        if (mode === 'flag' && cells[i] && cells[i].open) chord(i);
+        else if (mode === 'flag') cycleMark(i);
+        else openCell(i);
+      });
+      qsa('.wb-mines-cell', board).forEach(btn => btn.oncontextmenu = e => {
+        e.preventDefault();
+        const i = +btn.dataset.i;
+        if(cells[i] && cells[i].open) chord(i);
+        else cycleMark(i);
+      });
+    }
+    qs('#wb-mines-open-mode', box).onclick = () => { mode = 'open'; draw(); save(); };
+    qs('#wb-mines-flag-mode', box).onclick = () => { mode = 'flag'; draw(); save(); };
   }
 
   function startSudoku(state) {
