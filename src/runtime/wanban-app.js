@@ -1740,6 +1740,10 @@ export async function initWanbanXiaowu() {
       .wb-head { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 12px; border-bottom:1px solid var(--wb-border); background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.02)); }
       .wb-title { font-size:20px; font-weight:800; letter-spacing:2px; color:var(--wb-accent); white-space:nowrap; }
       .wb-title::after { content:''; display:block; width:64px; height:1px; background:var(--wb-accent); margin-top:3px; opacity:.75; }
+      .wb-head-meta { display:none; flex:0 0 auto; align-items:center; gap:8px; color:var(--wb-sub); font-size:11px; line-height:1.2; font-weight:800; text-align:right; white-space:nowrap; }
+      #${POPUP_ID}.wb-tab-settings .wb-head-meta { display:flex; }
+      .wb-head-meta span { padding:3px 7px; border:1px solid var(--wb-border); background:var(--wb-soft); }
+      .wb-head-meta i { font-style:normal; color:var(--wb-accent); margin-right:3px; }
       .wb-tabs { display:flex; gap:0; flex-wrap:wrap; border:1px solid var(--wb-border); background:var(--wb-soft); }
       .wb-tab, .wb-btn, .wb-iconbtn { border:1px solid var(--wb-border); background:var(--wb-panel); color:var(--wb-text); border-radius:0; min-height:34px; padding:7px 12px; cursor:pointer; font-weight:700; font-family:inherit; letter-spacing:1px; }
       .wb-tabs .wb-tab { border:0; border-right:1px solid var(--wb-border); min-width:94px; }
@@ -2656,10 +2660,16 @@ export async function initWanbanXiaowu() {
         #${SHELL_ID}.wb-shell-visible { display:block!important; position:fixed!important; top:0!important; left:0!important; right:0!important; bottom:0!important; width:100%!important; height:100vh; height:100dvh; overflow-y:auto; padding:env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)!important; box-sizing:border-box; background:rgba(0,0,0,.45); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); -webkit-overflow-scrolling:touch; }
         #${POPUP_ID} { position:relative!important; top:auto!important; left:auto!important; right:auto!important; bottom:auto!important; transform:none!important; min-width:unset!important; max-width:100%!important; width:100%!important; min-height:calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); min-height:calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height:auto!important; max-height:none!important; margin:0!important; display:flex!important; flex-direction:column!important; overflow:visible!important; border-radius:0!important; border-left:0!important; border-right:0!important; }
         .wb-head { flex-shrink:0; display:grid; grid-template-columns:1fr auto; align-items:center; padding:4px 7px; gap:4px; min-height:0; }
+        #${POPUP_ID}.wb-tab-settings .wb-head { grid-template-columns:minmax(0,1fr) auto auto; }
         .wb-title { font-size:15px; grid-column:1; grid-row:1; letter-spacing:1px; }
         .wb-title::after { width:44px; margin-top:1px; }
+        .wb-head-meta { grid-column:2; grid-row:1; justify-self:end; gap:4px; font-size:10px; max-width:156px; overflow:hidden; }
+        .wb-head-meta span { padding:0; border:0; background:transparent; }
+        .wb-head-meta i { display:none; }
         .wb-iconbtn { grid-column:2; grid-row:1; justify-self:end; width:24px; min-height:24px; height:24px; font-size:13px; padding:0; }
+        #${POPUP_ID}.wb-tab-settings .wb-iconbtn { grid-column:3; }
         .wb-tabs { width:100%; display:grid; grid-template-columns:repeat(4,1fr); grid-column:1 / 3; grid-row:2; }
+        #${POPUP_ID}.wb-tab-settings .wb-tabs { grid-column:1 / 4; }
         .wb-tabs .wb-tab { min-width:0; min-height:26px; padding:3px 4px; font-size:12px; }
         .wb-body { flex:1 1 0!important; min-height:0!important; padding:6px; gap:6px; overflow-y:auto!important; -webkit-overflow-scrolling:touch; }
         .wb-body.wb-settings-mode { max-height:none; padding-bottom:32px; }
@@ -3539,13 +3549,13 @@ export async function initWanbanXiaowu() {
 	    if (!p) return;
 	    applySelectedFont();
 	    const theme = themeClass();
-    p.className = theme + (currentGame ? ' wb-playing' : '');
+    p.className = theme + (currentGame ? ' wb-playing' : '') + ' wb-tab-' + (currentTab || 'single');
   }
   function render() {
     const cfg = settings(); const p = qs('#' + POPUP_ID); syncPopupModeClass();
     p.onwheel = (e) => { e.stopPropagation(); };
     p.ontouchmove = (e) => { e.stopPropagation(); };
-    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏</button><button class="wb-tab" data-tab="double">双人游戏</button><button class="wb-tab" data-tab="intimacy">亲密互动</button><button class="wb-tab" data-tab="settings">设置</button></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
+    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏</button><button class="wb-tab" data-tab="double">双人游戏</button><button class="wb-tab" data-tab="intimacy">亲密互动</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V2.0.0，本游戏发布者 Gloria"><span><i>当前版本</i>V2.0.0</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
     qsa('.wb-tab', p).forEach(b => { b.classList.toggle('active', b.dataset.tab === currentTab); b.onclick = () => { flushSettingsProgress(); stopGame(); currentGame = null; currentTab = b.dataset.tab; saveWindowState(currentTab, ''); render(); }; });
     qs('#wb-close', p).onclick = () => { flushSettingsProgress(); saveWindowState(currentTab, currentGame); stopGame(); closePopupShell(); };
     try {
@@ -3763,7 +3773,6 @@ export async function initWanbanXiaowu() {
 	      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-export-all" style="flex:1;">导出全部内容</button><button class="wb-btn" id="wb-import-all" style="flex:1;">导入备份</button><input type="file" id="wb-import-all-file" accept=".json,application/json" style="display:none;"></div>'
 	      + '<div class="wb-api-status" id="wb-import-export-status">未选择文件。</div>'
 	      + '</div>'
-	      + '<div class="wb-muted" style="text-align:center;font-size:11px;line-height:1.5;">当前版本：V2.0.0<br>本游戏发布者：Gloria</div>'
 	      + '</div>';
 	    qs('#wb-theme').value = cfg.theme;
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
