@@ -1,6 +1,6 @@
 export const MODULE_NAME = 'wanban_xiaowu';
 export const EXTENSION_NAME = '玩伴小屋';
-export const EXTENSION_VERSION = '1.2.0';
+export const EXTENSION_VERSION = '2.0.0';
 export const SCRIPT_ID = 'wanbanXiaowu';
 export const POPUP_ID = SCRIPT_ID + '-popup';
 export const SHELL_ID = SCRIPT_ID + '-shell';
