@@ -88,7 +88,7 @@ export async function initWanbanXiaowu() {
   const STORAGE_WORD_GUESS_BANK_SOURCE = SCRIPT_ID + '_wordGuessBankSource_v1';
   const STORAGE_WORD_GUESS_BANK_FILTER = SCRIPT_ID + '_wordGuessBankFilter_v1';
   const WORD_GUESS_DEFAULT_BANK_URL = new URL('./wanban-wordguess-bank.txt', import.meta.url).href;
-  const FLAG = SCRIPT_ID + '_Loaded_v2_0_0';
+  const FLAG = SCRIPT_ID + '_Loaded_v2_0_4';
   const MENU_SELECTORS = [
     '#extensionsMenu',
     '#extensionMenuItems',
@@ -242,8 +242,8 @@ export async function initWanbanXiaowu() {
     plank: '长按屏幕或空格生成木板，松开后木板会倒下成为桥。木板必须刚好搭到下一根柱子上，太短或太长都会掉下去。',
     sudoku: '每局会先选择难度。简单空30-35格；中等空43-48格；困难空53-58格。点击空格后输入1-9，可擦除、求助；填满但不正确时会高亮错误。',
     minesweeper: '每局会先选择难度：简单9×9、10雷；中等12×12、25雷；困难16×16、50雷。下方按钮可在“翻开”和“插旗”之间切换；数字格周围旗数等于数字时会按正式扫雷规则翻开周围未插旗格，旗插错会直接失败。',
-    uyangle: '三消叠牌小游戏。简单为144张当前界面，困难为210张且牌面更密。点击没有被上层遮挡的卡牌放入下方7格槽，同图标凑满3张会消除；槽位超过7格且没有消除时失败。',
-    screw: '每局会自动生成至少20块分层面板，并保证每种颜色螺丝数量为3的倍数、工具盒数量正确。顶部同时出现3个随机颜色工具盒，点击可见螺丝后，同色螺丝进入对应工具盒；非当前盒颜色会进入5格临时托盘。任意工具盒收满3颗会自动打包并刷新下一个颜色。上层面板会遮挡下层螺丝；板件剩一个螺丝时会悬挂摆动，失去全部螺丝后受重力下落。托盘满5格后，再点击一颗无法直接进入工具盒的螺丝则失败，清空全部面板即可过关。',
+    uyangle: '三消叠牌小游戏。普通模式可通关；无尽模式会在剩余牌较少时自动追加下一批牌层，失败时统计已消除数量。点击没有被上层遮挡的卡牌放入下方7格槽，同图标凑满3张会消除；槽位超过7格且没有消除时失败。',
+    screw: '每局会选择普通模式或无尽模式，并保证每种颜色螺丝数量为3的倍数、工具盒数量正确。顶部同时出现3个随机颜色工具盒，点击可见螺丝后，同色螺丝进入对应工具盒；非当前盒颜色会进入5格临时托盘。任意工具盒收满3颗会自动打包并刷新下一个颜色。上层面板会遮挡下层螺丝；板件剩一个螺丝时会悬挂摆动，失去全部螺丝后受重力下落。普通模式清空全部面板即可过关，无尽模式会在快结束时续上下一批。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '进入时可选择普通模式或无尽模式。普通模式任意方向先连成五子获胜；无尽模式双方各30颗棋子，连五后回收自己的五子并吃掉对方一子，直到一方棋子被吃完或双方无可用棋子。',
     territory: '在点阵之间画边，规则类似围方格。谁画下一个小方格的第4条边，谁就占领该格并继续行动。所有边画完后，占领格子多的一方获胜。',
@@ -264,8 +264,8 @@ export async function initWanbanXiaowu() {
       { id:'hard', title:'困难', sub:'16×16，50雷', multiplier:1.45, width:16, height:16, mines:50 }
     ],
     uyangle: [
-      { id:'easy', title:'简单', sub:'144张，当前界面', multiplier:1, cards:144, compact:false },
-      { id:'hard', title:'困难', sub:'210张，格子更少', multiplier:1.55, cards:210, compact:true }
+      { id:'easy', title:'普通模式', sub:'可通关的正常关卡', multiplier:1, cards:144, compact:false },
+      { id:'endless', title:'无尽模式', sub:'一直玩就会一直爽！', multiplier:1.55, cards:210, compact:true, endless:true }
     ],
     sudoku: [
       { id:'easy', title:'简单', sub:'空30-35个', multiplier:1, blanks:[30,35] },
@@ -277,14 +277,23 @@ export async function initWanbanXiaowu() {
       { id:'fun', title:'爽玩版', sub:'6×6，更容易，分数减半', multiplier:0.5, size:6 }
     ],
     gomoku: [
-      { id:'normal', title:'普通模式', sub:'标准五子棋，先连五者胜', multiplier:1 },
-      { id:'endless', title:'无尽模式', sub:'点此开启无限连五子的技能五子棋！', multiplier:1 }
+      { id:'normal', title:'普通模式', sub:'可通关的正常关卡', multiplier:1 },
+      { id:'endless', title:'无尽模式', sub:'一直玩就会一直爽！', multiplier:1 }
+    ],
+    screw: [
+      { id:'normal', title:'普通模式', sub:'可通关的正常关卡', multiplier:1 },
+      { id:'endless', title:'无尽模式', sub:'一直玩就会一直爽！', multiplier:1 }
+    ],
+    draughts: [
+      { id:'fool', title:'傻瓜模式', sub:'自动跳到合适的点', multiplier:1 },
+      { id:'master', title:'大师模式', sub:'自由思考每一步连跳', multiplier:1 }
     ]
   };
 
   function choiceForState(game, state) {
     const list = GAME_CHOICES[game] || [];
     let id = state?.choice || state?.difficulty || state?.gomokuMode || list[0]?.id;
+    if (game === 'uyangle' && id === 'hard') id = 'endless';
     if (game === 'minesweeper' && !state?.difficulty && Array.isArray(state?.cells)) {
       if (state.cells.length === 16 * 16) id = 'hard';
       else if (state.cells.length === 12 * 12) id = 'medium';
@@ -305,7 +314,7 @@ export async function initWanbanXiaowu() {
   const EVENT_DESCRIPTIONS = {
     tetris: { start:'俄罗斯方块开局，玩家准备开始下落方块。', move:'玩家左右移动方块，调整落点。', rotate:'玩家旋转当前方块。', soft_drop:'玩家主动加速下落。', line_1:'俄罗斯方块消除1行。', line_2:'俄罗斯方块一次消除2行。', line_3:'俄罗斯方块一次消除3行。', line_4:'俄罗斯方块一次消除4行。', danger:'方块堆叠接近顶部，局面危险。', score_500:'俄罗斯方块本局分数达到500分。', score_1500:'俄罗斯方块本局分数达到1500分。', score_2000_plus:'俄罗斯方块本局分数达到2000分以上，之后每隔500分触发一次；角色对不同分数的惊讶、兴奋和投入程度应逐渐递增。', record:'单人游戏刷新历史最高分。', gameover:'俄罗斯方块方块堆到顶部，本局结束。', random:'观看俄罗斯方块时的碎碎念。' },
     snake: { start:'贪吃蛇开局。', turn:'贪吃蛇转向。', close_call:'蛇头接近墙体或自身，差点失败。', speed_up:'贪吃蛇吃到更多食物后速度提高；分数越高，蛇移动越快，对话可以提到速度越来越快、反应时间变短、转向更紧张。', eat_1:'贪吃蛇吃到第1个食物。', eat_5:'贪吃蛇累计吃到5个食物，蛇身变长，速度开始更有压力。', eat_10:'贪吃蛇累计吃到10个食物，分数升高，蛇速明显更快。', eat_20:'贪吃蛇累计吃到20个食物，高分阶段蛇速很快，路线和反应都更紧张。', record:'单人游戏刷新历史最高分。', gameover:'贪吃蛇撞墙或撞到自己，本局结束。', random:'观看贪吃蛇时的碎碎念。' },
-    game2048: { start:'2048开局。', move:'玩家滑动并移动数字块。', stuck:'棋盘空位很少，局面拥挤。', tile_64:'棋盘首次合成64数字块。', tile_128:'棋盘首次合成128数字块。', tile_256:'棋盘首次合成256数字块。', tile_512:'棋盘首次合成512数字块。', tile_1024:'棋盘首次合成1024数字块；从1024开始角色应明显惊讶。', tile_2048:'棋盘首次合成2048数字块；角色比1024更惊讶、更兴奋。', tile_4096:'棋盘首次合成4096数字块；角色惊讶程度必须比1024和2048继续递增。', record:'单人游戏刷新历史最高分。', gameover:'2048棋盘刚被数字块占满。', random:'观看2048时的碎碎念。' },
+    game2048: { start:'2048开局。', move:'玩家滑动并移动数字块。', stuck:'棋盘空位很少，局面拥挤。', tile_64:'棋盘首次合成64数字块。', tile_128:'棋盘首次合成128数字块。', tile_256:'棋盘首次合成256数字块。', tile_512:'棋盘首次合成512数字块。', tile_1024:'棋盘首次合成1024数字块；从1024开始角色应明显惊讶。', tile_2048:'棋盘首次合成2048数字块；角色比1024更惊讶、更兴奋。', tile_big:'棋盘合成了超过2048的特别大的数字；不要说具体合成到多少。', record:'单人游戏刷新历史最高分。', gameover:'2048棋盘刚被数字块占满。', random:'观看2048时的碎碎念。' },
     watermelon: { start:'合成大西瓜开局。', aim:'玩家长按瞄准水果落点。', drop_edge:'水果贴近边缘落下。', merge_2:'合成到较小水果。', merge_4:'合成到中级水果。', merge_6:'合成到偏大的水果。', merge_7:'合成到接近大西瓜的大水果。', near_top:'水果堆接近顶部警戒线。', watermelon:'成功合成大西瓜。', record:'单人游戏刷新历史最高分。', gameover:'水果堆快要超过顶部警戒线。', random:'观看合成大西瓜时的碎碎念。' },
     memory: { start:'翻牌记忆开局，4×4牌面扣住。', first_flip:'玩家翻开本局第一张牌。', match:'玩家翻开的两张牌成功配对并消除。', miss:'玩家翻开的两张牌没有配对。', combo:'玩家连续成功配对。', half:'玩家已经完成一半配对。', record:'玩家以更少步数或更高分刷新记录。', gameover:'翻牌记忆只剩最后一对牌未配对。', random:'观看翻牌记忆时的碎碎念。' },
     jump: { start:'跳一跳开局，玩家站在第一个平台上。', charge:'玩家按住屏幕开始蓄力。', jump:'玩家松手起跳。', perfect:'玩家落在平台中心附近。', land:'玩家成功落到下一个平台。', score_10:'跳一跳达到10分。', score_20:'跳一跳达到20分。', score_30:'跳一跳达到30分。', score_40:'跳一跳达到40分。', score_50_plus:'跳一跳达到50分，且50分以上每10分触发一次。', record:'跳一跳刷新历史最高分。', gameover:'玩家松手时就能判断本次不会落上平台，起跳前触发。', random:'观看跳一跳时的碎碎念。' },
@@ -858,7 +867,7 @@ export async function initWanbanXiaowu() {
     if (game === 'jump' || game === 'plank') return '完美次数：' + (d.perfects || 0) + '次；差点掉下去次数：' + (d.nearMisses || 0) + '次。';
     if (game === 'sudoku') return '分数：' + sudokuRecordPoints(rec) + '；提示次数：' + (d.hints || 0) + '次；修改次数：' + (d.edits || 0) + '次；修改最多的格子修改次数：' + (d.maxEditsOneCell || 0) + '次；全部完成后错误次数：' + (d.finalErrors || 0) + '格。';
     if (game === 'minesweeper') return '结果：' + (d.won ? '成功' : '失败') + '；插旗数量：' + (d.flags || 0) + '；排对的雷：' + (d.correctFlags || 0) + '个；未插旗扫雷数量：' + (d.unflaggedMines || 0) + '个；踩雷时已开格子：' + (d.openedAtBlast || d.openedSafe || 0) + '格；犹豫次数：' + (d.hesitations || 0) + '次；数字试探成功次数：' + (d.chordSuccesses || 0) + '次；不确定试探成功次数：' + (d.riskyChordSuccesses || 0) + '次。';
-    if (game === 'screw') return '结果：' + (d.completed ? '成功' : '失败') + '；最终进度：' + (d.progress || 0) + '%；打包次数：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '次；候补槽最大占用：' + (d.maxTray || 0) + '格；候补槽填满5个次数：' + (d.trayFullCount || d.trayFourCount || 0) + '次；使用增加盒子次数：' + (d.addBoxUses || 0) + '次；被遮挡螺丝点击次数：' + (d.blocked || 0) + '次；掉落玻璃数量：' + (d.fallen || 0) + '块。';
+    if (game === 'screw') return (d.endless ? '模式：无尽模式；收纳盒子：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '个；' : '结果：' + (d.completed ? '成功' : '失败') + '；最终进度：' + (d.progress || 0) + '%；打包次数：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '次；') + '候补槽最大占用：' + (d.maxTray || 0) + '格；候补槽填满5个次数：' + (d.trayFullCount || d.trayFourCount || 0) + '次；使用增加盒子次数：' + (d.addBoxUses || 0) + '次；被遮挡螺丝点击次数：' + (d.blocked || 0) + '次；掉落玻璃数量：' + (d.fallen || 0) + '块。';
     if (game === 'ludo') return cheatText + 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
     if (game === 'guessnumber') return '每次猜测：\n' + ((d.guesses || []).map((x,i) => (i+1) + '. 猜“' + x.guess + '”：数字对' + x.nums + '个，位置对' + x.pos + '个').join('\n') || '无');
     if (game === 'wordguess') return '每题记录：\n' + ((d.rounds || []).map((r,i) => (i+1) + '. 题目：' + r.word + '；5条提示：' + (r.clues || []).join(' / ') + '；user猜过：' + ((r.guesses || []).join('、') || '无') + '；第几条提示猜中：' + (r.winClueIndex || '未猜中')).join('\n') || '无');
@@ -1024,7 +1033,7 @@ export async function initWanbanXiaowu() {
       ].join('\n');
       return [
         'record：刷新当前游戏历史记录。',
-        'super_good：超级厉害小剧场。2048合成4096以上；俄罗斯方块消除10行以上；合成大西瓜合成2个最终西瓜；贪吃蛇达到200分以上。',
+        'super_good：超级厉害小剧场。2048合成超过2048的特别大数字；俄罗斯方块消除10行以上；合成大西瓜合成2个最终西瓜；贪吃蛇达到200分以上。',
         'scholar：谁是学霸小剧场。数独里' + role + '帮助你超过5次，表现user一直找TA求助的情感。',
         'independent：超独立小剧场。数独一次求助都没有就完成。',
         'super_bad：超级菜小剧场。15秒以内失败，并且分数很低：俄罗斯方块低于200分、贪吃蛇低于30分、跳一跳低于3分、合成大西瓜低于120分、2048低于128分。',
@@ -1033,12 +1042,14 @@ export async function initWanbanXiaowu() {
       ].join('\n');
     }
     if (game === 'bombnumber') return [
+      'cheat_win：耍赖小剧场。user三次耍赖/悔棋都用掉了，但最后还是赢了，重点写' + role + '纵容user后的反应。',
       'bad_luck：数字炸弹超倒霉小剧场。user在还有80个以上可选数字时点中炸弹失败。',
       'bomb_lucky：数字炸弹超幸运小剧场。user一次缩小50个以上数字且没有爆炸。',
       'fated：数字炸弹命中注定小剧场。user最后剩1个数字没得选。',
       'rage：数字炸弹气急败坏小剧场。' + role + '最后剩1个数字没得选。'
     ].join('\n');
     if (game === 'reversi') return [
+      'cheat_win：耍赖小剧场。user三次耍赖/悔棋都用掉了，但最后还是赢了，重点写' + role + '纵容user后的反应。',
       'win_streak3：user在同一角色同一游戏连续赢三场。',
       'lose_streak3：' + role + '在同一角色同一游戏连续赢三场。',
       'reversi_user_sweep：完胜小剧场。user占据棋盘55个以上的棋子并获胜。',
@@ -1048,17 +1059,20 @@ export async function initWanbanXiaowu() {
       'reversi_comeback：逆转小剧场。user从远远少于' + role + '（user棋子是' + role + '一半以下）到一次突然翻转超过7个并最终获胜。'
     ].join('\n');
     if (game === 'connect4d') return [
+      'cheat_win：耍赖小剧场。user三次耍赖/悔棋都用掉了，但最后还是赢了，重点写' + role + '纵容user后的反应。',
       'win_streak3：user在同一角色同一游戏连续赢三场。',
       'lose_streak3：' + role + '在同一角色同一游戏连续赢三场。',
       'balanced：势均力敌小剧场。棋盘填满但是平局。'
     ].join('\n');
     if (game === 'draughts') return [
+      'cheat_win：耍赖小剧场。user三次耍赖/悔棋都用掉了，但最后还是赢了，重点写' + role + '纵容user后的反应。',
       'super_good：超厉害小剧场。user赢，并且' + role + '还有5个以上棋子没进user家。',
       'super_bad：超级菜小剧场。' + role + '赢，并且user还有5个以上棋子没进' + role + '家。',
       'shock：震惊小剧场。user一次性把一颗棋子从自己家跳到' + role + '家。',
       'normal：普通小剧场。按胜负生成对应互动。'
     ].join('\n');
     if (game === 'gomoku') return [
+      'cheat_win：耍赖小剧场。user三次耍赖/悔棋都用掉了，但最后还是赢了，重点写' + role + '纵容user后的反应。',
       'win_streak3：user在同一角色同一游戏连续赢三场。',
       'lose_streak3：' + role + '在同一角色同一游戏连续赢三场。',
       'gomoku_normal_user_win：普通模式小剧场。普通五子棋里user五子连线获胜。',
@@ -1069,6 +1083,7 @@ export async function initWanbanXiaowu() {
       'close_lose：惜败。' + role + '在无尽模式只比user多吃不超过2颗棋子而获胜。'
     ].join('\n');
     return [
+      'cheat_win：耍赖小剧场。user三次耍赖/悔棋都用掉了，但最后还是赢了，重点写' + role + '纵容user后的反应。',
       'win_streak3：user在同一角色同一游戏连续赢三场。',
       'lose_streak3：' + role + '在同一角色同一游戏连续赢三场。',
       'lucky：运气超好。猜数字5次内猜中；飞行棋连续摇到2次6并获胜；我说你猜第一条直接猜中；抽鬼牌user3回合内获胜。',
@@ -1121,6 +1136,8 @@ export async function initWanbanXiaowu() {
     meta = meta || {};
     if (game === 'connect4d' && outcome === 'draw') return 'balanced';
     if (outcome === 'user_win') {
+      const cheatUsed = Number(meta.cheatUsed || meta.details?.cheatUsed || 0);
+      if (cheatUsed >= CHEAT_MAX) return 'cheat_win';
       if (game === 'gomoku') {
         if (meta.endless) return Math.abs((meta.userCaptures || 0) - (meta.taCaptures || 0)) <= 2 ? 'close_win' : 'gomoku_endless_user_capture';
         return 'gomoku_normal_user_win';
@@ -1168,6 +1185,7 @@ export async function initWanbanXiaowu() {
       close_lose: '惜败小剧场',
       close_win: '险胜小剧场',
       soulmate: '心有灵犀小剧场'
+      ,cheat_win: '耍赖小剧场'
       ,scholar: '谁是学霸小剧场'
       ,independent: '超独立小剧场'
       ,bad_luck: '超倒霉小剧场'
@@ -1199,7 +1217,11 @@ export async function initWanbanXiaowu() {
   const CHEAT_MAX = 3;
   function cheatButtonHTML(left) {
     const n = Math.max(0, Math.min(CHEAT_MAX, Number(left == null ? CHEAT_MAX : left) || 0));
-    return '<button type="button" class="wb-btn primary wb-cheat-btn" id="wb-cheat">耍赖 <span id="wb-cheat-left">' + n + '</span>/' + CHEAT_MAX + '</button>';
+    return '<button type="button" class="wb-btn primary wb-cheat-btn wb-cheat-compact" id="wb-cheat">耍赖 <span class="wb-sudoku-badge" id="wb-cheat-left">' + n + '</span></button>';
+  }
+  function cheatButtonCompactHTML(left) {
+    const n = Math.max(0, Math.min(CHEAT_MAX, Number(left == null ? CHEAT_MAX : left) || 0));
+    return '<button type="button" class="wb-btn primary wb-cheat-btn wb-cheat-compact" id="wb-cheat">耍赖 <span class="wb-sudoku-badge" id="wb-cheat-left">' + n + '</span></button>';
   }
   function cloneCheatState(value) {
     try { return JSON.parse(JSON.stringify(value)); } catch(e) { return value; }
@@ -1886,14 +1908,17 @@ export async function initWanbanXiaowu() {
       .wb-tetris-controls .left { grid-column:1; grid-row:2; }
       .wb-tetris-controls .down { grid-column:2; grid-row:3; }
       .wb-tetris-controls .right { grid-column:3; grid-row:2; }
-      .wb-2048-panel { width:100%; height:100%; min-height:0; display:grid; place-items:center; overflow:hidden; }
+      .wb-2048-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) auto; place-items:center; gap:8px; overflow:hidden; }
       .wb-grid2048 { width:min(430px, 100%, 82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(var(--wb-2048-size,4),minmax(0,1fr)); grid-template-rows:repeat(var(--wb-2048-size,4),minmax(0,1fr)); gap:8px; background:#b8a89f; padding:8px; border-radius:0; box-sizing:border-box; }
+      .wb-grid2048 .wb-tile { border:0; border-radius:0; padding:0; display:grid; place-items:center; font-weight:900; color:#5e514d; }
+      .wb-grid2048 .wb-tile.clearable { outline:3px solid var(--wb-accent); cursor:pointer; }
+      .wb-2048-tools { min-height:34px; }
       .wb-tile { display:grid; place-items:center; border-radius:0; background:#cdc0b6; font-weight:900; font-size:clamp(16px, 3.2vh, 26px); color:#4f4039; min-width:0; min-height:0; aspect-ratio:1; overflow:hidden; line-height:1; }
       .wb-board3-panel { width:100%; height:100%; min-height:0; display:grid; place-items:center; overflow:hidden; }
       .wb-board3 { width:min(430px, 100%, 82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(3,minmax(0,1fr)); gap:8px; box-sizing:border-box; }
       .wb-cell { border:1px solid var(--wb-border); border-radius:0; background:var(--wb-panel); color:var(--wb-text); font-size:clamp(30px, 6vh, 48px); font-weight:900; cursor:pointer; min-width:0; min-height:0; aspect-ratio:1; line-height:1; overflow:hidden; }
       .wb-gomoku-panel { width:100%; height:100%; min-height:0; display:grid; place-items:center; overflow:hidden; }
-      .wb-gomoku-with-info { grid-template-rows:auto minmax(0, 1fr); gap:6px; }
+      .wb-gomoku-with-info { grid-template-rows:42px minmax(0, 1fr); gap:6px; }
       .wb-gomoku { width:min(500px, 100%, 82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(15,minmax(0,1fr)); grid-template-rows:repeat(15,minmax(0,1fr)); gap:2px; background:#ba9362; padding:7px; border-radius:0; box-sizing:border-box; }
       .wb-territory-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0, 1fr); gap:10px; place-items:center; }
       .wb-territory-info { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; align-items:center; }
@@ -1980,8 +2005,13 @@ export async function initWanbanXiaowu() {
       .wb-gcell.eatable { outline:2px solid var(--wb-accent); outline-offset:-2px; box-shadow:0 0 0 2px rgba(239,68,68,.45), inset 0 0 0 2px #ddd; }
       .wb-gcell.recycle { outline:3px solid var(--wb-gold); outline-offset:-2px; animation:wbGomokuPulse .75s ease-in-out infinite; }
       .wb-gcell.eaten { outline:3px solid #ef4444; outline-offset:-2px; animation:wbGomokuEat .7s ease-in-out infinite; }
-      .wb-gomoku-endless-panel { grid-template-rows:auto minmax(0,1fr); gap:8px; }
-      .wb-gomoku-info { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; }
+      .wb-gomoku-endless-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:42px minmax(0,1fr); gap:6px; place-items:center; overflow:hidden; }
+      .wb-gomoku-endless-panel .wb-gomoku { align-self:center; justify-self:center; width:min(560px, 100%, calc(100cqh - 48px)); max-height:100%; }
+      .wb-gomoku-info { width:100%; height:42px; min-height:42px; display:grid; grid-template-columns:minmax(0,.8fr) minmax(0,1.35fr) minmax(0,1.35fr) minmax(70px,auto); gap:6px; align-items:stretch; justify-items:stretch; overflow:hidden; }
+      .wb-gomoku-stat { min-width:0; height:42px; display:grid; grid-template-rows:13px 1fr; place-items:center; padding:2px 4px; border:1px solid var(--wb-border); border-radius:8px; background:var(--wb-panel); box-sizing:border-box; overflow:hidden; }
+      .wb-gomoku-stat span { font-size:10px; line-height:1; font-weight:800; color:var(--wb-muted); }
+      .wb-gomoku-stat b { min-width:0; max-width:100%; font-size:10px; line-height:1.08; font-weight:900; color:var(--wb-text); text-align:center; white-space:normal; word-break:keep-all; overflow:visible; }
+      .wb-gomoku-info .wb-cheat-btn { align-self:center; justify-self:stretch; min-height:32px; height:36px; white-space:nowrap; padding:4px 8px; }
       @keyframes wbGomokuPulse { 0%,100% { transform:scale(1); filter:brightness(1); } 50% { transform:scale(1.18); filter:brightness(1.28); } }
       @keyframes wbGomokuEat { 0%,100% { transform:scale(1); filter:brightness(1); } 50% { transform:scale(.82); filter:brightness(1.45); } }
       .wb-memory-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0, 1fr); gap:8px; justify-items:center; align-items:center; align-content:stretch; overflow:hidden; }
@@ -2020,6 +2050,8 @@ export async function initWanbanXiaowu() {
       .wb-uyangle-progress { position:relative; width:min(360px, 100%); height:14px; justify-self:center; overflow:hidden; border:1px solid var(--wb-border); border-radius:4px; background:var(--wb-soft); box-shadow:inset 0 1px 0 color-mix(in srgb, var(--wb-panel) 55%, transparent 45%); }
       .wb-uyangle-progress-fill { position:absolute; inset:0 auto 0 0; width:0%; border-radius:inherit; background:linear-gradient(90deg, var(--wb-accent), var(--wb-accent2)); transition:width .16s ease; }
       .wb-uyangle-progress span { position:relative; z-index:1; display:grid; place-items:center; height:100%; color:var(--wb-text); font-size:10px; font-weight:900; text-shadow:0 1px 2px color-mix(in srgb, var(--wb-bg) 72%, transparent 28%); }
+      .wb-endless-counter { border-radius:999px; background:var(--wb-panel); box-shadow:none; }
+      .wb-endless-counter :is(.wb-uyangle-progress-fill,#wb-screw-progress-fill) { display:none; }
       .wb-uyangle-board { position:relative; width:min(620px, 100%, 100cqh); max-height:100%; aspect-ratio:1.08 / 1; justify-self:center; align-self:center; overflow:hidden; background:color-mix(in srgb, var(--wb-board) 88%, var(--wb-panel) 12%); border:1px solid var(--wb-border); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--wb-panel) 52%, transparent 48%); }
       .wb-uyangle-tile { position:absolute; width:7.8%; aspect-ratio:1 / 1; padding:0; border:1px solid color-mix(in srgb, var(--wb-border) 82%, var(--wb-text) 18%); border-radius:5px; background:var(--wb-panel); box-shadow:0 4px 10px color-mix(in srgb, #000 20%, transparent 80%); display:grid; place-items:center; overflow:hidden; transform:translate(-50%, -50%); transition:transform .12s ease, filter .12s ease, opacity .12s ease; }
       .wb-uyangle-tile img, .wb-uyangle-mini img { width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; }
@@ -2098,8 +2130,9 @@ export async function initWanbanXiaowu() {
       .wb-reversi-panel, .wb-c4d-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:8px; place-items:center; overflow:hidden; }
       .wb-bomb-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) 54px; gap:6px; place-items:center; overflow:hidden; }
       .wb-bomb-info, .wb-reversi-info, .wb-c4d-info { min-height:34px; display:flex; align-items:center; justify-content:center; gap:6px; text-align:center; font-weight:800; color:var(--wb-text); max-width:100%; min-width:0; flex-wrap:wrap; }
-      .wb-bomb-info > span, .wb-reversi-info > span, .wb-c4d-info > span, .wb-gomoku-info > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wb-bomb-info > span, .wb-reversi-info > span, .wb-c4d-info > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .wb-cheat-btn { min-height:28px; padding:4px 9px; flex:0 0 auto; }
+      .wb-cheat-compact .wb-sudoku-badge { margin-left:5px; }
       .wb-reversi { width:min(430px, 100%, 82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr); gap:2px; padding:6px; background:#276749; border:2px solid var(--wb-border); }
       .wb-reversi-cell { min-width:0; min-height:0; border:1px solid rgba(0,0,0,.18); background:#348a61; display:grid; place-items:center; padding:0; }
       .wb-reversi-cell span { width:74%; height:74%; border-radius:50%; display:block; box-shadow:0 2px 6px rgba(0,0,0,.28); }
@@ -3555,7 +3588,7 @@ export async function initWanbanXiaowu() {
     const cfg = settings(); const p = qs('#' + POPUP_ID); syncPopupModeClass();
     p.onwheel = (e) => { e.stopPropagation(); };
     p.ontouchmove = (e) => { e.stopPropagation(); };
-    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏</button><button class="wb-tab" data-tab="double">双人游戏</button><button class="wb-tab" data-tab="intimacy">亲密互动</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V2.0.0，本游戏发布者 Gloria"><span><i>当前版本</i>V2.0.0</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
+    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏</button><button class="wb-tab" data-tab="double">双人游戏</button><button class="wb-tab" data-tab="intimacy">亲密互动</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V2.0.4，本游戏发布者 Gloria"><span><i>当前版本</i>V2.0.4</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
     qsa('.wb-tab', p).forEach(b => { b.classList.toggle('active', b.dataset.tab === currentTab); b.onclick = () => { flushSettingsProgress(); stopGame(); currentGame = null; currentTab = b.dataset.tab; saveWindowState(currentTab, ''); render(); }; });
     qs('#wb-close', p).onclick = () => { flushSettingsProgress(); saveWindowState(currentTab, currentGame); stopGame(); closePopupShell(); };
     try {
@@ -4052,7 +4085,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'2.0.0', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'2.0.4', exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -4486,14 +4519,14 @@ export async function initWanbanXiaowu() {
       const jobs = [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run']];
       return jobs;
     }
-    if (game === 'bombnumber') return [['user_win','normal'], ['ta_win','normal'], ['ta_win','bad_luck'], ['user_win','bomb_lucky'], ['ta_win','fated'], ['user_win','rage']];
-    if (game === 'connect4d') return [['user_win','normal'], ['ta_win','normal'], ['draw','balanced'], ['user_win','win_streak3'], ['ta_win','lose_streak3']];
-    if (game === 'draughts') return [['user_win','normal'], ['ta_win','normal'], ['user_win','super_good'], ['ta_win','super_bad'], ['user_win','shock'], ['ta_win','shock']];
-    if (game === 'reversi') return [['user_win','normal'], ['ta_win','normal'], ['draw','normal'], ['user_win','win_streak3'], ['ta_win','lose_streak3'], ['user_win','reversi_user_sweep'], ['ta_win','reversi_char_sweep'], ['user_win','reversi_close_win'], ['ta_win','reversi_close_lose'], ['user_win','reversi_comeback']];
-    if (game === 'gomoku') return [['user_win','normal'], ['ta_win','normal'], ['user_win','win_streak3'], ['ta_win','lose_streak3'], ['user_win','gomoku_normal_user_win'], ['ta_win','gomoku_normal_char_win'], ['user_win','gomoku_endless_user_capture'], ['ta_win','gomoku_endless_char_capture'], ['user_win','close_win'], ['ta_win','close_lose']];
+    if (game === 'bombnumber') return [['user_win','normal'], ['ta_win','normal'], ['ta_win','bad_luck'], ['user_win','bomb_lucky'], ['ta_win','fated'], ['user_win','rage'], ['user_win','cheat_win']];
+    if (game === 'connect4d') return [['user_win','normal'], ['ta_win','normal'], ['draw','balanced'], ['user_win','win_streak3'], ['ta_win','lose_streak3'], ['user_win','cheat_win']];
+    if (game === 'draughts') return [['user_win','normal'], ['ta_win','normal'], ['user_win','super_good'], ['ta_win','super_bad'], ['user_win','shock'], ['ta_win','shock'], ['user_win','cheat_win']];
+    if (game === 'reversi') return [['user_win','normal'], ['ta_win','normal'], ['draw','normal'], ['user_win','win_streak3'], ['ta_win','lose_streak3'], ['user_win','reversi_user_sweep'], ['ta_win','reversi_char_sweep'], ['user_win','reversi_close_win'], ['ta_win','reversi_close_lose'], ['user_win','reversi_comeback'], ['user_win','cheat_win']];
+    if (game === 'gomoku') return [['user_win','normal'], ['ta_win','normal'], ['user_win','win_streak3'], ['ta_win','lose_streak3'], ['user_win','gomoku_normal_user_win'], ['ta_win','gomoku_normal_char_win'], ['user_win','gomoku_endless_user_capture'], ['ta_win','gomoku_endless_char_capture'], ['user_win','close_win'], ['ta_win','close_lose'], ['user_win','cheat_win']];
     const jobs = [['user_win','normal'], ['ta_win','normal']];
     if (!['gomoku','oldmaid','ludo'].includes(game)) jobs.push(['draw','normal']);
-    jobs.push(['user_win','win_streak3'], ['ta_win','lose_streak3'], ['user_win','lucky'], ['ta_win','stomp'], ['ta_win','close_lose'], ['user_win','close_win']);
+    jobs.push(['user_win','win_streak3'], ['ta_win','lose_streak3'], ['user_win','lucky'], ['ta_win','stomp'], ['ta_win','close_lose'], ['user_win','close_win'], ['user_win','cheat_win']);
     if (game === 'wordguess') jobs.push(['user_win','soulmate']);
     return jobs;
   }
@@ -4584,6 +4617,7 @@ export async function initWanbanXiaowu() {
       stomp:'实力悬殊小剧场。{{char}}比user赢很多，需要更强烈情绪的安慰和互动。',
       close_lose:'惜败小剧场。user差一点输给{{char}}，需要安慰，{{char}}可以带一点小侥幸和得意。',
       close_win:'险胜小剧场。user惊险获胜，{{char}}需要有一点不服气等小情绪。'
+      ,cheat_win:'耍赖小剧场。user三次耍赖/悔棋都用掉了却还是获胜，重点写{{char}}纵容user、嘴硬或无奈让步后的反应。'
       ,shock:'震惊小剧场。跳棋里user一次性从自己家跳到{{char}}家，必须写出{{char}}明显愣住、难以置信，然后复盘这条连续跳跃路线。'
       ,gomoku_normal_user_win:'五子棋普通模式，user通过五子连线获胜。重点写{{char}}承认这条棋路被user藏住或铺开，也可以有一点不服气。'
       ,gomoku_normal_char_win:'五子棋普通模式，{{char}}通过五子连线获胜。重点写{{char}}复盘自己连成五子的那条线，并安慰或轻微调侃user。'
@@ -5708,7 +5742,7 @@ export async function initWanbanXiaowu() {
     if (event === 'random') return -1;
     if (event === 'gameover' || event === 'record') return 100;
     if (/^score_(?:20|30|40|50_plus|2000_plus|1500|500)$/.test(event)) return 90;
-    if (/^tile_(?:4096|2048|1024|512|256|128|64)$/.test(event)) return 85;
+    if (/^tile_(?:big|2048|1024|512|256|128|64)$/.test(event)) return 85;
     if (['watermelon','near_top','half','perfect_streak','many_hints','complete_error','nearly_done','danger','line_4','line_3','line_2','line_1'].includes(event)) return 80;
     if (['perfect','land','jump','charge','move','rotate','soft_drop','aim','drop_edge','match','miss','combo','first_flip','first_fill','erase','hint','row_done','col_done','conflict'].includes(event)) return 40;
     return 50;
@@ -6451,21 +6485,32 @@ function showGameRecords(game, page) {
 
   function start2048(state) {
     const box = qs('#wb-gamebox');
-    box.innerHTML = '<div class="wb-2048-panel"><div class="wb-grid2048" id="wb-2048"></div></div>';
+    box.innerHTML = '<div class="wb-2048-panel"><div class="wb-grid2048" id="wb-2048"></div><div class="wb-actions wb-2048-tools"><button type="button" class="wb-btn" id="wb-2048-undo">撤回 <span id="wb-2048-undo-left">3</span></button><button type="button" class="wb-btn primary" id="wb-2048-clear">消除 <span id="wb-2048-clear-left">2</span></button></div></div>';
     const choice = choiceForState('game2048', state);
     const N = choice.size || 4, TOTAL = N * N;
     let board = Array.isArray(state?.board) && state.board.length === TOTAL ? state.board : Array(TOTAL).fill(0), score = state?.score || 0, seen = state?.seen || {};
     let details = state?.details || { mergeCounts:{}, crisisResolves:0, wasCrowded:false, finalCounts:{} };
+    let undoLeft = Number.isInteger(state?.undoLeft) ? state.undoLeft : 3;
+    let clearLeft = Number.isInteger(state?.clearLeft) ? state.clearLeft : 2;
+    let undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
+    let clearMode = false;
     if (!state?.board) { add(); add(); }
     draw(); save();
     getHostDocument().onkeydown = e => { const dirs = {ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',a:'left',d:'right',w:'up',s:'down'}; if(dirs[e.key]){ e.preventDefault(); move(dirs[e.key]); } };
     addSwipe(box, move);
-    function save(){ saveProgress('game2048', Object.assign({ board, score, seen, details }, choiceSavePatch('game2048', choice))); }
+    qs('#wb-2048-undo', box).onclick = undoMove;
+    qs('#wb-2048-clear', box).onclick = () => { if(gamePaused || clearLeft <= 0 || !board.some(Boolean)) return; clearMode = !clearMode; draw(); };
+    function snapshot(){ return { board:board.slice(), score, seen:Object.assign({}, seen), details:cloneCheatState(details) }; }
+    function restore2048(snap){ board=snap.board.slice(); score=snap.score; seen=Object.assign({}, snap.seen || {}); details=snap.details || details; }
+    function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length > 3) undoStack.shift(); }
+    function undoMove(){ if(gamePaused || undoLeft <= 0 || !undoStack.length) return; const snap=undoStack.pop(); restore2048(snap); undoLeft--; clearMode=false; draw(); save(); }
+    function clearTile(i){ if(gamePaused || !clearMode || clearLeft <= 0 || !board[i]) return; pushUndo(); board[i]=0; clearLeft--; clearMode=false; draw(); save(); }
+    function save(){ saveProgress('game2048', Object.assign({ board, score, seen, details, undoLeft, clearLeft, undoStack }, choiceSavePatch('game2048', choice))); }
     function add(){ const empt=board.map((v,i)=>v?null:i).filter(v=>v!==null); if(empt.length) board[empt[Math.floor(Math.random()*empt.length)]] = Math.random()<.9?2:4; }
     function rows(dir){ const r=[]; for(let y=0;y<N;y++) r.push(Array.from({length:N},(_,x)=>y*N+x)); if(dir==='right') r.forEach(a=>a.reverse()); if(dir==='up'||dir==='down'){ r.length=0; for(let x=0;x<N;x++) r.push(Array.from({length:N},(_,y)=>y*N+x)); if(dir==='down') r.forEach(a=>a.reverse()); } return r; }
-    function move(dir){ if (gamePaused) return; const old=board.join(','), merged=[]; rows(dir).forEach(idx=>{ let vals=idx.map(i=>board[i]).filter(Boolean); for(let i=0;i<vals.length-1;i++) if(vals[i]===vals[i+1]){ vals[i]*=2; score+=vals[i]; merged.push(vals[i]); details.mergeCounts[vals[i]] = (details.mergeCounts[vals[i]] || 0) + 1; vals.splice(i+1,1); } while(vals.length<N) vals.push(0); idx.forEach((p,i)=>board[p]=vals[i]); }); if(board.join(',')!==old){ if(!seen.move){ seen.move=1; speak('game2048','move'); } const hit=merged.filter(v=>[64,128,256,512,1024,2048,4096,8192,16384,32768,65536].includes(v)).sort((a,b)=>b-a)[0]; if(hit && DEFAULT_LINES.game2048['tile_'+hit]) speak('game2048','tile_'+hit); add(); const filled=board.filter(Boolean).length, crowded = Math.max(0, TOTAL - (N === 6 ? 5 : 1)); if(details.wasCrowded && filled<=Math.max(11, TOTAL - N - 1)){ details.crisisResolves++; details.wasCrowded=false; } if(filled>=crowded) details.wasCrowded=true; if(!seen.stuck && filled>=Math.max(13, TOTAL - N)){ seen.stuck=1; speak('game2048','stuck'); } if(!seen.gameover && !board.includes(0)){ seen.gameover=1; speak('game2048','gameover'); } draw(); save(); } if(!board.includes(0) && !canMove()) { if(!seen.gameover){ seen.gameover=1; speak('game2048','gameover'); save(); } details.finalCounts = board.reduce((m,v)=>{ if(v) m[v]=(m[v]||0)+1; return m; }, {}); const finalScore = scoreWithChoice('game2048', score, choice); showGameOver('game2048', '游戏结束', '本局分数：' + finalScore + '分（' + choice.title + '）', null, { maxTile: Math.max(...board), rawScore:score, difficulty:choice.title, details }); } }
+    function move(dir){ if (gamePaused) return; clearMode=false; const old=board.join(','), before=snapshot(), merged=[]; rows(dir).forEach(idx=>{ let vals=idx.map(i=>board[i]).filter(Boolean); for(let i=0;i<vals.length-1;i++) if(vals[i]===vals[i+1]){ vals[i]*=2; score+=vals[i]; merged.push(vals[i]); details.mergeCounts[vals[i]] = (details.mergeCounts[vals[i]] || 0) + 1; vals.splice(i+1,1); } while(vals.length<N) vals.push(0); idx.forEach((p,i)=>board[p]=vals[i]); }); if(board.join(',')!==old){ undoStack.push(before); if(undoStack.length > 3) undoStack.shift(); if(!seen.move){ seen.move=1; speak('game2048','move'); } const hit=merged.filter(v=>[64,128,256,512,1024,2048,4096,8192,16384,32768,65536].includes(v)).sort((a,b)=>b-a)[0]; if(hit > 2048) speak('game2048','tile_big'); else if(hit && DEFAULT_LINES.game2048['tile_'+hit]) speak('game2048','tile_'+hit); add(); const filled=board.filter(Boolean).length, crowded = Math.max(0, TOTAL - (N === 6 ? 5 : 1)); if(details.wasCrowded && filled<=Math.max(11, TOTAL - N - 1)){ details.crisisResolves++; details.wasCrowded=false; } if(filled>=crowded) details.wasCrowded=true; if(!seen.stuck && filled>=Math.max(13, TOTAL - N)){ seen.stuck=1; speak('game2048','stuck'); } if(!seen.gameover && !board.includes(0)){ seen.gameover=1; speak('game2048','gameover'); } draw(); save(); } if(!board.includes(0) && !canMove()) { if(!seen.gameover){ seen.gameover=1; speak('game2048','gameover'); save(); } details.finalCounts = board.reduce((m,v)=>{ if(v) m[v]=(m[v]||0)+1; return m; }, {}); const finalScore = scoreWithChoice('game2048', score, choice); showGameOver('game2048', '游戏结束', '本局分数：' + finalScore + '分（' + choice.title + '）', null, { maxTile: Math.max(...board), rawScore:score, difficulty:choice.title, details }); } }
     function canMove(){ return rows('left').some(idx=>idx.some((p,i)=>i<N-1 && board[p]===board[idx[i+1]])) || rows('up').some(idx=>idx.some((p,i)=>i<N-1 && board[p]===board[idx[i+1]])); }
-    function draw(){ setScore('game2048', scoreWithChoice('game2048', score, choice)); const grid=qs('#wb-2048'); grid.style.setProperty('--wb-2048-size', String(N)); grid.innerHTML=board.map(v=>'<div class="wb-tile" style="background:' + tileColor(v) + ';font-size:' + (v>=10000?16:v>999?22:28) + 'px">' + (v||'') + '</div>').join(''); }
+    function draw(){ setScore('game2048', scoreWithChoice('game2048', score, choice)); const grid=qs('#wb-2048'); grid.style.setProperty('--wb-2048-size', String(N)); grid.innerHTML=board.map((v,i)=>'<button type="button" class="wb-tile' + (clearMode && v ? ' clearable' : '') + '" data-i="' + i + '" style="background:' + tileColor(v) + ';font-size:' + (v>=10000?16:v>999?22:28) + 'px" ' + (!clearMode || !v ? 'disabled' : '') + '>' + (v||'') + '</button>').join(''); qsa('.wb-tile.clearable', grid).forEach(btn=>btn.onclick=()=>clearTile(+btn.dataset.i)); const ub=qs('#wb-2048-undo-left', box); if(ub) ub.textContent=String(undoLeft); const cb=qs('#wb-2048-clear-left', box); if(cb) cb.textContent=String(clearLeft); const undo=qs('#wb-2048-undo', box); if(undo) undo.disabled=gamePaused || undoLeft<=0 || !undoStack.length; const clear=qs('#wb-2048-clear', box); if(clear){ clear.disabled=gamePaused || clearLeft<=0 || !board.some(Boolean); clear.classList.toggle('active', clearMode); } }
     function tileColor(v){ return ({0:'#cdc0b6',2:'#eee4da',4:'#ead8c7',8:'#efb07e',16:'#ec9368',32:'#e87865',64:'#e95f51',128:'#e4c16d',256:'#dfb954',512:'#d7ac3f',1024:'#cfa02f',2048:'#9ccbbb',4096:'#8f7ad8',8192:'#6aa6d8',16384:'#5eb6a1',32768:'#9f7aea',65536:'#f59e0b'})[v] || '#40342f'; }
   }
 
@@ -6500,7 +6545,7 @@ function showGameRecords(game, page) {
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     let details = state?.details || { rounds:0, userBlocks:{2:0,3:0,4:0}, charBlocks:{2:0,3:0,4:0} };
     let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
-    box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-with-info"><div class="wb-gomoku-info"><span class="wb-pill" id="wb-gomoku-status"></span>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
+    box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-with-info"><div class="wb-gomoku-info wb-gomoku-info-normal"><div class="wb-gomoku-stat"><span>轮到</span><b id="wb-gomoku-turn">你</b></div><div class="wb-gomoku-stat"><span>执棋</span><b id="wb-gomoku-stock">你 黑</b></div><div class="wb-gomoku-stat"><span>规则</span><b id="wb-gomoku-captured">五连胜</b></div>' + cheatButtonCompactHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
     if (!state?.b && state?.firstMover) speakFirstMover('gomoku', state.firstMover);
     if (!state?.b && state?.firstMover === 'ta') { const first = bestGomoku(b,n,true); if(first>=0){ b[first]='W'; maybeCharNext(); } }
     draw(); save();
@@ -6512,7 +6557,7 @@ function showGameRecords(game, page) {
     function save(){ saveProgress('gomoku', Object.assign({ b, taMoves, nextCharLineAt, details, cheatLeft, undoStack }, choiceSavePatch('gomoku', choiceForState('gomoku', state)))); }
     function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('gomoku','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function done(m){ const rounds=b.filter(Boolean).length; details.rounds=rounds; details.gomokuMode='normal'; const meta={gomokuMode:'normal', details}; if(winG(b,n,m)){ over=true; if(m==='B'){ { const curScore = scores().gomoku; setScore('gomoku', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('gomoku','user_win'); showGameOver('gomoku', '你赢了', '回合数：' + rounds, 'user_win', meta); } else { speak('gomoku','user_lose'); showGameOver('gomoku', '游戏结束', '回合数：' + rounds + '（失败）', 'ta_win', meta); } return true; } if(b.every(Boolean)){ over=true; speak('gomoku','draw'); showGameOver('gomoku', '平局', '回合数：' + rounds + '（平局）', 'draw', meta); return true; } return false; }
-    function draw(){ const st=qs('#wb-gomoku-status', box); if(st) st.textContent='你执黑 · ' + displayCharNameForGame('gomoku') + '执白'; qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':''); }); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over); }
+    function draw(){ const turnEl=qs('#wb-gomoku-turn', box); if(turnEl) turnEl.textContent='你'; const roleEl=qs('#wb-gomoku-stock', box); if(roleEl) roleEl.innerHTML='你 黑<br>' + esc(displayCharNameForGame('gomoku') || 'TA') + ' 白'; qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':''); }); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over); }
   }
   function startEndlessGomoku(state) {
     const box = qs('#wb-gamebox'), n=15, choice = choiceForState('gomoku', state);
@@ -6525,7 +6570,7 @@ function showGameRecords(game, page) {
     let rounds = state?.rounds || 0, pendingEat = state?.pendingEat || '', over=false, actionBusy=false, highlightLine=[], highlightEat=-1;
     let details = state?.details || { rounds:0, userCaptures:0, charCaptures:0, userRecycles:0, charRecycles:0 };
     let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
-    box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-endless-panel"><div class="wb-gomoku-info"><span class="wb-pill" id="wb-gomoku-turn"></span><span class="wb-pill" id="wb-gomoku-stock"></span><span class="wb-pill" id="wb-gomoku-captured"></span>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
+    box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-endless-panel"><div class="wb-gomoku-info wb-gomoku-info-endless"><div class="wb-gomoku-stat"><span>轮到</span><b id="wb-gomoku-turn"></b></div><div class="wb-gomoku-stat"><span>余子</span><b id="wb-gomoku-stock"></b></div><div class="wb-gomoku-stat"><span>吃子</span><b id="wb-gomoku-captured"></b></div>' + cheatButtonCompactHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
     if (!state?.b && state?.firstMover) speakFirstMover('gomoku', state.firstMover);
     draw(); save();
     if(!state?.b && turn === 'ta') setTimeout(aiTurn, 850);
@@ -6620,14 +6665,12 @@ function showGameRecords(game, page) {
       eatAt('ta', best);
     }
     function checkEnd(){
-      const userGone = captured.ta >= ENDLESS_STOCK || (stock.user <= 0 && !b.includes('B'));
-      const taGone = captured.user >= ENDLESS_STOCK || (stock.ta <= 0 && !b.includes('W'));
-      const bothNoStock = stock.user <= 0 && stock.ta <= 0 && !pendingEat;
-      if(!userGone && !taGone && !bothNoStock) return false;
+      const outOfStock = !pendingEat && (stock.user <= 0 || stock.ta <= 0);
+      if(!outOfStock) return false;
       over = true;
       let result = 'draw', title = '平局';
-      if(taGone || (bothNoStock && captured.user > captured.ta)){ result='user_win'; title='你赢了'; setScore('gomoku', ((scores().gomoku && typeof scores().gomoku === 'object' ? scores().gomoku.user : scores().gomoku) || 0) + 1); speak('gomoku','user_win'); }
-      else if(userGone || (bothNoStock && captured.ta > captured.user)){ result='ta_win'; title='游戏结束'; speak('gomoku','user_lose'); }
+      if(captured.user > captured.ta){ result='user_win'; title='你赢了'; setScore('gomoku', ((scores().gomoku && typeof scores().gomoku === 'object' ? scores().gomoku.user : scores().gomoku) || 0) + 1); speak('gomoku','user_win'); }
+      else if(captured.ta > captured.user){ result='ta_win'; title='游戏结束'; speak('gomoku','user_lose'); }
       else speak('gomoku','draw');
       clearProgress('gomoku');
       details.gomokuMode = 'endless';
@@ -6638,9 +6681,10 @@ function showGameRecords(game, page) {
       return true;
     }
     function draw(){
-      qs('#wb-gomoku-turn', box).textContent = pendingEat ? (sideName(pendingEat) + '选择吃子') : ('轮到：' + sideName(turn));
-      qs('#wb-gomoku-stock', box).textContent = '余子 你' + stock.user + ' / ' + displayCharNameForGame('gomoku') + stock.ta;
-      qs('#wb-gomoku-captured', box).textContent = '吃子 你' + captured.user + ' / ' + displayCharNameForGame('gomoku') + captured.ta;
+      const charName = displayCharNameForGame('gomoku') || 'TA';
+      qs('#wb-gomoku-turn', box).textContent = pendingEat ? (pendingEat === 'user' ? '你吃子' : charName + '吃子') : (turn === 'user' ? '你' : charName);
+      qs('#wb-gomoku-stock', box).innerHTML = esc(charName) + ' ' + stock.ta + '<br>你 ' + stock.user;
+      qs('#wb-gomoku-captured', box).innerHTML = esc(charName) + ' ' + captured.ta + '<br>你 ' + captured.user;
       qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (pendingEat === 'user' && !actionBusy && b[i] === 'W' ? ' eatable' : '') + (highlightLine.includes(i) ? ' recycle' : '') + (highlightEat === i ? ' eaten' : ''); });
       refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||actionBusy);
     }
@@ -7037,6 +7081,8 @@ function showGameRecords(game, page) {
   function startDraughts(state) {
     const box = qs('#wb-gamebox');
     const role = displayCharName();
+    const choice = choiceForState('draughts', state);
+    const masterMode = choice.id === 'master';
     const ROWS = [1,2,3,4,13,12,11,10,9,10,11,12,13,4,3,2,1];
     const points = [];
     ROWS.forEach((len, row) => {
@@ -7059,12 +7105,16 @@ function showGameRecords(game, page) {
     let red = Array.isArray(state?.red) && state.red.length === 10 ? state.red.slice() : initialRed.slice();
     let blue = Array.isArray(state?.blue) && state.blue.length === 10 ? state.blue.slice() : initialBlue.slice();
     let turn = state?.turn || (state?.firstMover === 'ta' ? 'blue' : 'red'), selected = -1, moveMap = new Map(), over = false, busy = false, moving = null;
+    let masterActive = !!state?.masterActive, masterPath = Array.isArray(state?.masterPath) ? state.masterPath.slice() : [];
     let details = Object.assign({ rounds:0, userMaxJump:0, charMaxJump:0, userHomeCount:0, charHomeCount:0, shock:false, cheatUsed:0 }, state?.details || {});
     let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
-    box.innerHTML = '<div class="wb-draughts-panel"><div class="wb-draughts-info"><span class="wb-pill" id="wb-draughts-turn"></span><span class="wb-pill" id="wb-draughts-score"></span>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-draughts-board" id="wb-draughts-board"></div></div>';
+    box.innerHTML = '<div class="wb-draughts-panel"><div class="wb-draughts-info"><span class="wb-pill" id="wb-draughts-turn"></span><span class="wb-pill" id="wb-draughts-score"></span>' + (masterMode ? '<button type="button" class="wb-btn primary" id="wb-draughts-end">结束</button>' : '') + cheatButtonHTML(cheatLeft) + '</div><div class="wb-draughts-board" id="wb-draughts-board"></div></div>';
     setScore('draughts', 0);
     qs('#wb-cheat', box).onclick = cheatUndo;
+    const endBtn = qs('#wb-draughts-end', box);
+    if(endBtn) endBtn.onclick = finishMasterTurn;
     if (!state?.turn && state?.firstMover) speakFirstMover('draughts', state.firstMover);
+    if (masterMode && selected >= 0) moveMap = immediateMoveMap(red[selected], masterActive);
     draw(); save();
     if (turn === 'blue') setTimeout(ai, 650);
 
@@ -7074,6 +7124,21 @@ function showGameRecords(game, page) {
     function isTarget(side, pos){ return side === 'red' ? topHome.has(pos) : bottomHome.has(pos); }
     function isOwnHome(side, pos){ return side === 'red' ? bottomHome.has(pos) : topHome.has(pos); }
     function homeCount(side){ return sideArr(side).filter(p => isTarget(side, p)).length; }
+    function distanceMap(targets){
+      const dist = new Map(), q = Array.from(targets);
+      q.forEach(p => dist.set(p, 0));
+      for(let head=0; head<q.length; head++){
+        const cur = q[head], d = dist.get(cur) || 0;
+        neighbors[cur].forEach(n => {
+          if(dist.has(n)) return;
+          dist.set(n, d + 1);
+          q.push(n);
+        });
+      }
+      return dist;
+    }
+    const targetDist = { red:distanceMap(topHome), blue:distanceMap(bottomHome) };
+    function distToTarget(side, pos){ return targetDist[side].get(pos) ?? 99; }
     function pieceAt(pos){ return occMap().get(pos) || null; }
     function landingFrom(a, b){
       const pa = points[a], pb = points[b];
@@ -7120,30 +7185,37 @@ function showGameRecords(game, page) {
       dfs(from, [from], new Set([from]));
       return out;
     }
+    function immediateMoveMap(from, onlyJumps){
+      const occ = occMap(), out = new Map();
+      if(!onlyJumps) neighbors[from].forEach(n => { if(!occ.has(n)) out.set(n, [from, n]); });
+      jumpLandings(from, occ).forEach(land => out.set(land, [from, land]));
+      return out;
+    }
     function allMoves(side){
       const arr = sideArr(side);
       return arr.flatMap((pos, idx) => Array.from(legalPaths(pos).values()).map(path => ({ idx, from:pos, to:path[path.length-1], path })));
     }
-    function snapshot(){ return { red:red.slice(), blue:blue.slice(), turn, selected, details:cloneCheatState(details) }; }
+    function snapshot(){ return { red:red.slice(), blue:blue.slice(), turn, selected, masterActive, masterPath:masterPath.slice(), details:cloneCheatState(details) }; }
     function pushUndo(){ undoStack = pushCheatUndo(undoStack, snapshot()); }
     function cheatUndo(){
       if(gamePaused||over||busy||cheatLeft<=0||!undoStack.length) return;
       const snap=undoStack.pop();
-      restoreCheatSnapshot(snap, s=>{ red=s.red; blue=s.blue; turn=s.turn; selected=s.selected; details=s.details; });
-      moving=null; moveMap=new Map(); busy=false; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; speak('draughts','cheat'); draw(); save();
+      restoreCheatSnapshot(snap, s=>{ red=s.red; blue=s.blue; turn=s.turn; selected=s.selected; masterActive=!!s.masterActive; masterPath=Array.isArray(s.masterPath)?s.masterPath:[]; details=s.details; });
+      moving=null; moveMap=selected >= 0 && masterMode ? immediateMoveMap(red[selected], masterActive) : new Map(); busy=false; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; speak('draughts','cheat'); draw(); save();
       if(turn === 'blue') setTimeout(ai, 650);
     }
-    function save(){ if(!over) saveProgress('draughts', { red, blue, turn, selected, details, cheatLeft, undoStack }); }
+    function save(){ if(!over) saveProgress('draughts', Object.assign({ red, blue, turn, selected, masterActive, masterPath, details, cheatLeft, undoStack }, choiceSavePatch('draughts', choice))); }
     function selectRed(idx){
-      if(gamePaused||over||busy||turn!=='red') return;
+      if(gamePaused||over||busy||turn!=='red'||masterActive) return;
       if(selected === idx){ selected=-1; moveMap=new Map(); draw(); return; }
       selected = idx;
-      moveMap = legalPaths(red[idx]);
+      moveMap = masterMode ? immediateMoveMap(red[idx], false) : legalPaths(red[idx]);
       draw();
     }
     function moveTo(dest){
       if(selected < 0 || !moveMap.has(dest) || busy) return;
       const path = moveMap.get(dest);
+      if(masterMode){ masterStep(path); return; }
       pushUndo();
       markFirstMoverUserAction();
       selected = -1;
@@ -7151,7 +7223,13 @@ function showGameRecords(game, page) {
       animateMove('red', selectedIndexFromPath('red', path[0]), path);
     }
     function selectedIndexFromPath(side, from){ return sideArr(side).findIndex(p => p === from); }
-    function animateMove(side, idx, path){
+    function jumpStepCount(path){
+      if(!Array.isArray(path) || path.length < 2) return 0;
+      let count = 0;
+      for(let i=1;i<path.length;i++) if(!neighbors[path[i - 1]].includes(path[i])) count++;
+      return count;
+    }
+    function animateMove(side, idx, path, onDone){
       if(idx < 0 || !path || path.length < 2) return;
       busy = true;
       moving = { side, pos:path[0] };
@@ -7163,23 +7241,52 @@ function showGameRecords(game, page) {
         moving = { side, pos:path[step] };
         draw();
         if(step < path.length - 1) setTimeout(nextStep, 210);
+        else if(onDone) onDone(idx, path);
         else finishMove(side, idx, path);
       };
       draw();
       setTimeout(nextStep, 120);
     }
+    function isJumpStep(path){ return path && path.length >= 2 && !neighbors[path[0]].includes(path[path.length - 1]); }
+    function masterStep(path){
+      if(!masterActive){ pushUndo(); markFirstMoverUserAction(); masterPath = [path[0]]; }
+      const idx = selected;
+      selected = -1;
+      moveMap = new Map();
+      animateMove('red', idx, path, () => {
+        const landed = path[path.length - 1];
+        busy = false;
+        moving = null;
+        selected = idx;
+        masterActive = true;
+        masterPath = masterPath.concat(path.slice(1));
+        moveMap = isJumpStep(path) ? immediateMoveMap(landed, true) : new Map();
+        draw();
+        save();
+      });
+    }
+    function finishMasterTurn(){
+      if(!masterMode || !masterActive || selected < 0 || busy || masterPath.length < 2) return;
+      const idx = selected;
+      const path = masterPath.slice();
+      selected = -1;
+      masterActive = false;
+      masterPath = [];
+      moveMap = new Map();
+      finishMove('red', idx, path);
+    }
     function finishMove(side, idx, path){
       busy = false;
       moving = null;
       details.rounds = (details.rounds || 0) + 1;
-      const jumps = Math.max(0, path.length - 2);
+      const jumps = jumpStepCount(path);
       if(side === 'red') details.userMaxJump = Math.max(details.userMaxJump || 0, jumps);
       else details.charMaxJump = Math.max(details.charMaxJump || 0, jumps);
       details.userHomeCount = homeCount('red');
       details.charHomeCount = homeCount('blue');
       let spoke = false;
       const from = path[0], to = path[path.length - 1];
-      if(side === 'red' && isOwnHome('red', from) && isTarget('red', to) && path.length > 2) details.shock = true;
+      if(side === 'red' && isOwnHome('red', from) && isTarget('red', to) && jumps > 0) details.shock = true;
       if(isTarget(side, to) && !isTarget(side, from)){ speak('draughts', side === 'red' ? 'user_home' : 'char_home'); spoke = true; }
       if(!spoke && Math.random() < .5) speak('draughts', side === 'red' ? 'user_move' : 'char_move');
       draw();
@@ -7192,13 +7299,20 @@ function showGameRecords(game, page) {
     }
     function scoreMove(move){
       const p0 = points[move.from], p1 = points[move.to], side = 'blue';
-      const forward = (p1.y - p0.y) * 18;
-      const center = -Math.abs(p1.x2) * .45;
-      const target = isTarget(side, move.to) ? 220 : 0;
-      const stayTarget = isTarget(side, move.from) && !isTarget(side, move.to) ? -500 : 0;
-      const jump = Math.max(0, move.path.length - 2) * 38;
-      const block = red.some(r => Math.abs(points[r].y - p1.y) <= 1 && Math.abs(points[r].x2 - p1.x2) <= 3) ? 8 : 0;
-      return forward + center + target + stayTarget + jump + block + Math.random() * 8;
+      const beforeDist = distToTarget(side, move.from), afterDist = distToTarget(side, move.to);
+      const distGain = (beforeDist - afterDist) * 155;
+      const forward = (p1.y - p0.y) * 30;
+      const backwardPenalty = p1.y < p0.y && !isTarget(side, move.to) ? -180 : 0;
+      const center = -Math.abs(p1.x2) * (isTarget(side, move.to) ? 3.4 : .7);
+      const enterTarget = !isTarget(side, move.from) && isTarget(side, move.to) ? 980 : 0;
+      const stayTarget = isTarget(side, move.from) ? (isTarget(side, move.to) ? 380 : -10000) : 0;
+      const targetDepth = isTarget(side, move.to) ? p1.y * 78 - Math.abs(p1.x2) * 8 : p1.y * 12;
+      const leaveOwnHome = isOwnHome(side, move.from) && !isOwnHome(side, move.to) ? 170 : 0;
+      const stayOwnHome = isOwnHome(side, move.to) ? -60 : 0;
+      const jump = jumpStepCount(move.path) * 85;
+      const longLanding = Math.hypot(p1.x2 - p0.x2, p1.y - p0.y) * 4;
+      const block = red.some(r => Math.abs(points[r].y - p1.y) <= 1 && Math.abs(points[r].x2 - p1.x2) <= 3) ? 10 : 0;
+      return distGain + forward + backwardPenalty + center + enterTarget + stayTarget + targetDepth + leaveOwnHome + stayOwnHome + jump + longLanding + block + Math.random() * 5;
     }
     function ai(){
       if(over||gamePaused||busy||turn!=='blue') return;
@@ -7256,13 +7370,15 @@ function showGameRecords(game, page) {
       if(turnEl) turnEl.textContent = turn === 'red' ? '你的回合' : charLabel + '的回合';
       if(scoreEl) scoreEl.textContent = '你 ' + homeCount('red') + '/10 · ' + charLabel + ' ' + homeCount('blue') + '/10';
       refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy);
+      const end = qs('#wb-draughts-end', box);
+      if(end) end.disabled = gamePaused || over || busy || !masterActive || selected < 0 || masterPath.length < 2;
       if(!board) return;
       const occ = occMap(), dests = new Set(moveMap.keys());
       board.innerHTML = points.map(p => {
         const item = occ.get(p.i), sel = item && item.side === 'red' && item.idx === selected, dest = dests.has(p.i), movingHere = moving && moving.pos === p.i;
         const left = 50 + p.x2 * 3.55, top = 50 + p.y * 5.6;
         const cls = ['wb-draughts-hole', zoneClass(p), item ? item.side : '', sel ? 'selected' : '', dest ? 'dest' : '', movingHere ? 'moving' : ''].filter(Boolean).join(' ');
-        const disabled = item ? (item.side !== 'red' || turn !== 'red' || busy) : (!dest || busy || turn !== 'red');
+        const disabled = item ? (item.side !== 'red' || turn !== 'red' || busy || masterActive) : (!dest || busy || turn !== 'red');
         const attr = item ? 'data-piece="' + item.idx + '"' : (dest ? 'data-dest="' + p.i + '"' : '');
         return '<button type="button" class="' + cls + '" style="left:' + left.toFixed(2) + '%;top:' + top.toFixed(2) + '%;" ' + attr + ' ' + (disabled ? 'disabled' : '') + '>' + (item ? '<span></span>' : '') + '</button>';
       }).join('');
@@ -7561,6 +7677,8 @@ function showGameRecords(game, page) {
     const box = qs('#wb-gamebox');
     const iconUrl = n => GAME_ICON_BASE + 'U' + n + '.png';
     const choice = choiceForState('uyangle', state);
+    const endless = !!choice.endless || choice.id === 'endless';
+    const SHUFFLE_MAX = 3;
     const makeTiles = () => {
       const totalCards = choice.cards || 144, layerTotal = choice.compact ? 13 : 10;
       const gridMaxX = choice.compact ? 8 : 10, gridMaxY = 8, centerX = Math.floor(gridMaxX / 2), centerY = 4;
@@ -7670,7 +7788,7 @@ function showGameRecords(game, page) {
     let tray = Array.isArray(state?.tray) ? state.tray.slice(0, 8) : [];
     let hold = Array.isArray(state?.hold) ? state.hold.slice(0, 3) : [];
     let shuffles = state?.shuffles || 0, moveouts = state?.moveouts || 0, moveMode = false, over = false, seen = state?.seen || {};
-    let details = state?.details || { matches:0, shuffles, moveouts, badLuck:false, fullTraySurvived:false };
+    let details = state?.details || { matches:0, shuffles, moveouts, badLuck:false, fullTraySurvived:false, endlessLayers:1 };
     let consecutiveShuffles = state?.consecutiveShuffles || 0;
     box.innerHTML = '<div class="wb-uyangle-panel ' + (choice.compact ? 'wb-uyangle-hard' : '') + '"><div class="wb-uyangle-top"><span class="wb-pill" id="wb-uyangle-left"></span><span class="wb-pill" id="wb-uyangle-status"></span></div><div class="wb-uyangle-progress"><div class="wb-uyangle-progress-fill" id="wb-uyangle-progress-fill"></div><span id="wb-uyangle-progress-text"></span></div><div class="wb-uyangle-board" id="wb-uyangle-board"></div><div class="wb-uyangle-hold" id="wb-uyangle-hold"></div><div class="wb-uyangle-tray-wrap"><div class="wb-uyangle-tray" id="wb-uyangle-tray"></div></div><div class="wb-actions wb-uyangle-actions"><button type="button" class="wb-btn" id="wb-uyangle-moveout">移出 <span class="wb-sudoku-badge" id="wb-uyangle-move-badge">3</span></button><button type="button" class="wb-btn primary" id="wb-uyangle-shuffle">打乱 <span class="wb-sudoku-badge" id="wb-uyangle-shuffle-badge">0</span></button></div></div>';
     setScore('uyangle', 0); draw(); save();
@@ -7685,7 +7803,7 @@ function showGameRecords(game, page) {
         { x:.38, y:-.26 },
         { x:-.38, y:-.26 }
       ];
-      return offsets[layer % offsets.length];
+      return offsets[((layer % offsets.length) + offsets.length) % offsets.length];
     }
     function tilePos(tile){
       const off = layerOffset(tile.layer);
@@ -7772,7 +7890,26 @@ function showGameRecords(game, page) {
       if(afterBucket > beforeBucket) speak('uyangle','match');
     }
     function scoreNow(){ return scoreWithChoice('uyangle', Math.max(0, 5000 - Math.round(currentGameDurationMs() / 1000) * 4 - shuffles * 300), choice); }
+    function extendEndless(){
+      const next = makeTiles();
+      const active = activeTiles();
+      const offset = Math.max(-1, ...tiles.map(t => Number(t.id) || 0)) + 1;
+      const minLayer = Math.min(0, ...active.map(t => Number(t.layer) || 0));
+      const nextMaxLayer = Math.max(0, ...next.map(t => Number(t.layer) || 0));
+      const layerDrop = minLayer - nextMaxLayer - 1;
+      tiles = active.concat(next.map(t => Object.assign({}, t, { id:t.id + offset, layer:(Number(t.layer) || 0) + layerDrop })));
+      seen.last10 = 0;
+      details.endlessLayers = (details.endlessLayers || 1) + 1;
+      draw();
+      save();
+    }
+    function maybeExtendEndless(){
+      if(!endless || over) return;
+      const threshold = Math.max(50, Math.floor((choice.cards || 210) * .24));
+      if(leftCount() <= threshold) extendEndless();
+    }
     function finish(){
+      if(endless){ extendEndless(); return; }
       const finalScore = scoreNow();
       setScore('uyangle', finalScore);
       details.shuffles = shuffles;
@@ -7784,10 +7921,12 @@ function showGameRecords(game, page) {
     function fail(){
       details.shuffles = shuffles;
       details.moveouts = moveouts;
+      details.clearedCards = (details.matches || 0) * 3;
       over = true;
       speak('uyangle','gameover');
       clearProgress('uyangle');
-      showGameOver('uyangle','游戏结束','本局分数：0分（'+choice.title+'），打乱'+shuffles+'次，移出'+moveouts+'次', null, { completed:false, shuffles, moveouts, difficulty:choice.title, fullTraySurvived:!!details.fullTraySurvived, usedAllMoveouts:moveouts >= 3, badLuck:!!details.badLuck, details });
+      const text = endless ? ('已消除：' + (details.matches || 0) + '组，打乱' + shuffles + '次，移出' + moveouts + '次') : ('本局分数：0分（'+choice.title+'），打乱'+shuffles+'次，移出'+moveouts+'次');
+      showGameOver('uyangle','游戏结束', text, null, { completed:false, shuffles, moveouts, difficulty:choice.title, fullTraySurvived:!!details.fullTraySurvived, usedAllMoveouts:moveouts >= 3, badLuck:!!details.badLuck, details });
     }
     function pick(id){
       if(gamePaused || over || moveMode) return;
@@ -7802,12 +7941,13 @@ function showGameRecords(game, page) {
       if(tray.length === 7) details.fullTraySurvived = true;
       if(leftCount() === 0 && tray.length === 0 && hold.length === 0){ finish(); return; }
       if(tray.length >= 6 && !seen.danger){ seen.danger=1; speak('uyangle','danger'); specialSpoken = true; }
-      else if(leftCount() <= 10 && !seen.last10){ seen.last10=1; speak('uyangle','last_10'); specialSpoken = true; }
+      else if(!endless && leftCount() <= 10 && !seen.last10){ seen.last10=1; speak('uyangle','last_10'); specialSpoken = true; }
       maybeSpeakMatch(beforeMatches, specialSpoken);
+      maybeExtendEndless();
       draw(); save();
     }
     function shuffleBoard(){
-      if(gamePaused || over) return;
+      if(gamePaused || over || shuffles >= SHUFFLE_MAX) return;
       const alive = activeTiles();
       if(!alive.length) return;
       const icons = shuffleArray(alive.map(t => t.icon));
@@ -7834,21 +7974,25 @@ function showGameRecords(game, page) {
       speak('uyangle','moveout');
       resolveTriples();
       if(leftCount() === 0 && tray.length === 0 && hold.length === 0){ finish(); return; }
+      maybeExtendEndless();
       draw(); save();
     }
     function draw(){
       const board = qs('#wb-uyangle-board', box), alive = activeTiles();
       const cleared = Math.max(0, tiles.length - alive.length), progress = tiles.length ? Math.round(cleared / tiles.length * 100) : 0;
-      qs('#wb-uyangle-left', box).textContent = '剩余：' + alive.length;
+      qs('#wb-uyangle-left', box).textContent = endless ? '无尽模式' : ('剩余：' + alive.length);
       qs('#wb-uyangle-status', box).textContent = moveMode ? '选择要移出的槽牌' : ('槽位：' + tray.length + '/7');
-      qs('#wb-uyangle-progress-fill', box).style.width = progress + '%';
-      qs('#wb-uyangle-progress-text', box).textContent = '进度 ' + progress + '%';
+      const progressWrap = qs('.wb-uyangle-progress', box);
+      if(progressWrap) progressWrap.classList.toggle('wb-endless-counter', endless);
+      qs('#wb-uyangle-progress-fill', box).style.width = endless ? '0%' : (progress + '%');
+      qs('#wb-uyangle-progress-text', box).textContent = endless ? ('已消除 ' + (details.matches || 0) + ' 组') : ('进度 ' + progress + '%');
       qs('#wb-uyangle-move-badge', box).textContent = String(Math.max(0, 3 - moveouts));
-      qs('#wb-uyangle-shuffle-badge', box).textContent = String(shuffles);
+      qs('#wb-uyangle-shuffle-badge', box).textContent = String(Math.max(0, SHUFFLE_MAX - shuffles));
       const metrics = renderMetrics(), boardMetrics = uyangleBoardMetrics(board);
+      const minLayer = alive.length ? Math.min(...alive.map(t => Number(t.layer) || 0)) : 0;
       board.innerHTML = alive.slice().sort((a,b) => a.layer - b.layer || a.id - b.id).map(t => {
         const blocked = isBlocked(t, board, metrics, boardMetrics), pos = renderPoint(t, metrics);
-        return '<button type="button" class="wb-uyangle-tile '+(blocked?'blocked':'')+'" data-id="'+t.id+'" style="left:'+pos.left+'%;top:'+pos.top+'%;z-index:'+(10 + t.layer)+';" '+(blocked?'disabled':'')+'><img src="'+esc(iconUrl(t.icon))+'" alt=""></button>';
+        return '<button type="button" class="wb-uyangle-tile '+(blocked?'blocked':'')+'" data-id="'+t.id+'" style="left:'+pos.left+'%;top:'+pos.top+'%;z-index:'+(10 + (Number(t.layer) || 0) - minLayer)+';" '+(blocked?'disabled':'')+'><img src="'+esc(iconUrl(t.icon))+'" alt=""></button>';
       }).join('');
       qsa('.wb-uyangle-tile:not(:disabled)', board).forEach(btn => btn.onclick = () => pick(+btn.dataset.id));
       qs('#wb-uyangle-hold', box).innerHTML = slotsHTML(hold, false, 3);
@@ -7858,6 +8002,9 @@ function showGameRecords(game, page) {
       const moveBtn = qs('#wb-uyangle-moveout', box);
       moveBtn.disabled = moveouts >= 3 || !tray.length;
       moveBtn.classList.toggle('primary', moveMode);
+      const shuffleBtn = qs('#wb-uyangle-shuffle', box);
+      shuffleBtn.disabled = shuffles >= SHUFFLE_MAX || !alive.length;
+      shuffleBtn.classList.toggle('disabled', shuffleBtn.disabled);
     }
     qs('#wb-uyangle-shuffle', box).onclick = shuffleBoard;
     qs('#wb-uyangle-moveout', box).onclick = enableMoveOut;
@@ -8054,6 +8201,8 @@ function showGameRecords(game, page) {
   function startScrew(state) {
     const box = qs('#wb-gamebox');
     box.innerHTML = '<div class="wb-screw-panel"><div class="wb-screw-top"><div class="wb-screw-boxes" id="wb-screw-boxes"></div><div class="wb-screw-tools"><div class="wb-screw-progress"><div id="wb-screw-progress-fill"></div><span id="wb-screw-progress-text">0%</span></div><div class="wb-screw-tray" id="wb-screw-tray"></div><button type="button" class="wb-btn wb-screw-addbox" id="wb-screw-addbox">增加盒子 <span id="wb-screw-addbox-left">3</span></button></div></div><canvas class="wb-canvas wb-screw-canvas" id="wb-screw-canvas" width="420" height="560"></canvas></div>';
+    const choice = choiceForState('screw', state);
+    const endless = choice.id === 'endless';
     const c = qs('#wb-screw-canvas'), ctx = c.getContext('2d'), W=420, H=560;
     const colors = [
       { id:'red', hex:'#ef3030' }, { id:'cyan', hex:'#20cce3' }, { id:'green', hex:'#9df043' },
@@ -8166,7 +8315,7 @@ function showGameRecords(game, page) {
     const makeLevel = () => {
       const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
       const rand = rngFromSeed(seed);
-      const panelCount = 21 + Math.floor(rand() * 3);
+      const panelCount = (endless ? 28 : 42) + Math.floor(rand() * (endless ? 5 : 6));
       const panels = [];
       const layout = Math.floor(rand() * 4);
       function template(i){
@@ -8244,7 +8393,7 @@ function showGameRecords(game, page) {
     let addBoxUses = Math.min(3, Math.max(0, Number(state?.addBoxUses || made.addBoxUses || Math.max(0, maxBoxes - 3))));
     let tray = Array.isArray(state?.tray) ? state.tray.slice(0, 5) : [];
     let over=false, seen = state?.seen || {};
-    let details = Object.assign({ removed:0, packed:0, matches:0, fallen:0, maxTray:0, trayFourCount:0, trayFullCount:0, addBoxUses:0, blocked:0, progress:0, completed:false }, state?.details || {});
+    let details = Object.assign({ removed:0, packed:0, matches:0, fallen:0, maxTray:0, trayFourCount:0, trayFullCount:0, addBoxUses:0, blocked:0, progress:0, completed:false, endlessLayers:1 }, state?.details || {});
     if(generatedFresh){
       for(let attempt=0; attempt<6 && currentScrews().filter(h => h.reachable).length < 10; attempt++){
         made = makeLevel();
@@ -8255,7 +8404,7 @@ function showGameRecords(game, page) {
       }
     }
     drawUI(); draw(); save();
-    function save(){ if(!over) saveProgress('screw', { panels, boxQueue, boxes, boxIndex, maxBoxes, addBoxUses, tray, seen, details }); }
+    function save(){ if(!over) saveProgress('screw', Object.assign({ panels, boxQueue, boxes, boxIndex, maxBoxes, addBoxUses, tray, seen, details }, choiceSavePatch('screw', choice))); }
     function rotatePoint(x,y,a){ const ca=Math.cos(a||0), sa=Math.sin(a||0); return { x:x*ca-y*sa, y:x*sa+y*ca }; }
     function localToWorld(p, lx, ly){ const r=rotatePoint(lx, ly, p.a || 0); return { x:p.x + r.x, y:p.y + r.y }; }
     function worldToLocal(p, x, y){ return rotatePoint(x - p.x, y - p.y, -(p.a || 0)); }
@@ -8445,7 +8594,13 @@ function showGameRecords(game, page) {
       over=true; clearProgress('screw');
       details.completed = false; details.progress = progressPct(); details.addBoxUses = addBoxUses;
       speak('screw','gameover');
-      showGameOver('screw','游戏结束','本局分数：0分，托盘已满', null, { completed:false, progress:details.progress, addBoxUses, details });
+      if(endless){
+        const score = Math.max(0, (details.matches || 0) * 120);
+        setScore('screw', score);
+        showGameOver('screw','游戏结束','本局分数：'+score+'分，收纳盒子'+(details.matches || 0)+'个，托盘已满', null, { completed:true, endless:true, progress:100, addBoxUses, details:Object.assign({}, details, { completed:true, endless:true }) });
+      } else {
+        showGameOver('screw','游戏结束','本局分数：0分，托盘已满', null, { completed:false, progress:details.progress, addBoxUses, details });
+      }
     }
     function finish(){
       over=true; clearProgress('screw');
@@ -8453,6 +8608,41 @@ function showGameRecords(game, page) {
       const score = Math.max(800, 5200 - Math.round(currentGameDurationMs()/1000)*7 - details.maxTray*90 - addBoxUses * 650);
       setScore('screw', score);
       showGameOver('screw','拧螺丝完成','本局分数：'+score+'分，打包'+details.packed+'颗螺丝' + (addBoxUses ? '，增加盒子扣分' : ''), null, { completed:true, score, progress:100, addBoxUses, details:Object.assign({}, details, { addBoxUses }) });
+    }
+    function livePanelCount(){
+      return panels.filter(p => !p.gone).length;
+    }
+    function liveScrewCount(){
+      return currentScrews().length;
+    }
+    function extendEndless(){
+      const next = makeLevel();
+      const active = panels.filter(p => !p.gone);
+      const zLift = next.panels.length + 1;
+      const layer = details.endlessLayers || 1;
+      const nextPanels = next.panels.map((p, i) => Object.assign(
+        { vx:0, vy:0, va:0, gone:false, falling:false, hanging:false },
+        p,
+        {
+          id:'e' + layer + '_' + (p.id || i),
+          z:i,
+          screws:(p.screws || []).map((s, j) => Object.assign({}, s, { id:'e' + layer + '_' + (s.id || (i + 's' + j)) }))
+        }
+      ));
+      panels = nextPanels.concat(active.map(p => Object.assign({}, p, { z:(Number(p.z) || 0) + zLift })));
+      boxQueue = boxQueue.concat(next.boxQueue || []);
+      seen.progress50 = 0;
+      seen.progress80 = 0;
+      details.endlessLayers = (details.endlessLayers || 1) + 1;
+      refillBoxes();
+      drainTray();
+      drawUI();
+      draw();
+      save();
+    }
+    function maybeExtendEndless(){
+      if(!endless || over) return;
+      if(liveScrewCount() <= 24 || livePanelCount() <= 8) extendEndless();
     }
     function step(){
       if(over || gamePaused) return;
@@ -8511,7 +8701,8 @@ function showGameRecords(game, page) {
           p.x = pivot.x - local.x; p.y = pivot.y - local.y;
         }
       });
-      if(panels.every(p => p.gone)) { finish(); return; }
+      if(panels.every(p => p.gone)) { if(endless) extendEndless(); else finish(); return; }
+      maybeExtendEndless();
       drawUI(); draw(); save();
     }
     screwTimer = setInterval(step, 33);
@@ -8519,10 +8710,12 @@ function showGameRecords(game, page) {
     function drawUI(){
       const pct = progressPct();
       details.progress = pct;
-      if(pct >= 50 && !seen.progress50){ seen.progress50 = 1; speak('screw','progress_50'); }
-      if(pct >= 80 && !seen.progress80){ seen.progress80 = 1; speak('screw','progress_80'); }
-      qs('#wb-screw-progress-fill', box).style.width = pct + '%';
-      qs('#wb-screw-progress-text', box).textContent = '进度 ' + pct + '%';
+      if(!endless && pct >= 50 && !seen.progress50){ seen.progress50 = 1; speak('screw','progress_50'); }
+      if(!endless && pct >= 80 && !seen.progress80){ seen.progress80 = 1; speak('screw','progress_80'); }
+      const progressWrap = qs('.wb-screw-progress', box);
+      if(progressWrap) progressWrap.classList.toggle('wb-endless-counter', endless);
+      qs('#wb-screw-progress-fill', box).style.width = endless ? '0%' : (pct + '%');
+      qs('#wb-screw-progress-text', box).textContent = endless ? ('收纳盒子 ' + (details.matches || 0) + ' 个') : ('进度 ' + pct + '%');
       qs('#wb-screw-boxes', box).innerHTML = boxes.map((b,i) => {
         const col = colorById(b.color);
         return '<div class="wb-screw-box'+(i===0?' active':'')+'" style="--c:'+col.hex+'">' + [0,1,2].map(n => '<span class="wb-screw-box-hole">' + (n < b.fill ? '<i style="background:'+col.hex+'"></i>' : '') + '</span>').join('') + '</div>';
@@ -9260,7 +9453,7 @@ function showGameRecords(game, page) {
     function move(dx,dy){ if (gamePaused) return false; const p={s:piece.s,x:piece.x+dx,y:piece.y+dy}; if(!hit(p)){ piece=p; if(dx) markTetris('move'); return true; } return false; }
     function rot(){ const s=piece.s[0].map((_,i)=>piece.s.map(r=>r[i]).reverse()); const p={s,x:piece.x,y:piece.y}; if(!hit(p)) piece=p; }
     function pileHeight(){ const first=board.findIndex(r=>r.some(Boolean)); return first < 0 ? 0 : H - first; }
-    function tick(){ if(over || gamePaused) return; if(!move(0,1)){ piece.s.forEach((r,y)=>r.forEach((v,x)=>{ if(v&&piece.y+y>=0) board[piece.y+y][piece.x+x]=1; })); const beforeHeight=pileHeight(); let cleared=0; board=board.filter(r=>{ if(r.every(Boolean)){ cleared++; return false; } return true; }); while(board.length<H) board.unshift(Array(W).fill(0)); const afterHeight=pileHeight(); if(beforeHeight >= Math.ceil(H * 2 / 3) && afterHeight <= Math.floor(H / 3)) details.rescues++; if(cleared){ details.lineClears[cleared] = (details.lineClears[cleared] || 0) + 1; totalLines += cleared; score += [0,100,300,500,800][cleared]; setScore('tetris',score); speak('tetris','line_'+cleared); if(score>=500&&score<600) speak('tetris','score_500'); if(score>=1500&&score<1600) speak('tetris','score_1500'); const milestone = Math.floor(score / 500) * 500; if(milestone >= 2000 && !tetrisSeen['score_'+milestone]){ tetrisSeen['score_'+milestone]=1; speak('tetris','score_2000_plus'); } } if(!tetrisSeen.danger && board.slice(0,5).some(r=>r.some(Boolean))){ markTetris('danger'); } piece=nextPiece; nextPiece=newPiece(); if(hit(piece)){ over=true; clearInterval(tetrisTimer); speak('tetris','gameover'); showGameOver('tetris', '游戏结束', '本局分数：' + score + '分', null, { lines: totalLines, details }); return; } } draw(); save(); }
+    function tick(){ if(over || gamePaused) return; if(!move(0,1)){ piece.s.forEach((r,y)=>r.forEach((v,x)=>{ if(v&&piece.y+y>=0) board[piece.y+y][piece.x+x]=1; })); const beforeHeight=pileHeight(); let cleared=0; board=board.filter(r=>{ if(r.every(Boolean)){ cleared++; return false; } return true; }); while(board.length<H) board.unshift(Array(W).fill(0)); const afterHeight=pileHeight(); if(beforeHeight >= Math.ceil(H * 2 / 3) && afterHeight <= Math.floor(H / 3)) details.rescues++; if(cleared){ details.lineClears[cleared] = (details.lineClears[cleared] || 0) + 1; totalLines += cleared; score += [0,100,300,500,800][cleared]; setScore('tetris',score); speak('tetris','line_'+cleared); if(score>=500&&score<600) speak('tetris','score_500'); if(score>=1500&&score<1600) speak('tetris','score_1500'); const milestone = Math.floor(score / 500) * 500; if(milestone >= 2000 && !tetrisSeen['score_'+milestone]){ tetrisSeen['score_'+milestone]=1; speak('tetris','score_2000_plus'); } } if(!tetrisSeen.danger && board.slice(0,5).some(r=>r.some(Boolean))){ markTetris('danger'); } piece=nextPiece; nextPiece=newPiece(); if(hit(piece)){ over=true; clearInterval(tetrisTimer); speak('tetris','gameover'); showGameOver('tetris', '游戏结束', '本局分数：' + score + '分，消除' + totalLines + '行', null, { lines: totalLines, details }); return; } } draw(); save(); }
     function tetrisBackground(){
       const theme = settings().theme || 'day';
       if (tetrisBgCache && tetrisBgCache.key === theme) return tetrisBgCache.canvas;
@@ -9283,7 +9476,7 @@ function showGameRecords(game, page) {
       return off;
     }
     function drawPreview(night, mono){ const panel={x:206,y:10,w:84,h:84}, s=nextPiece.s, cell=13; ctx.fillStyle=mono?'#f7f7f7':(night?'rgba(17,24,39,.88)':'rgba(255,250,242,.92)'); ctx.fillRect(panel.x,panel.y,panel.w,panel.h); ctx.strokeStyle=mono?'#111':(night?'rgba(255,255,255,.2)':'rgba(80,55,48,.22)'); ctx.strokeRect(panel.x+.5,panel.y+.5,panel.w-1,panel.h-1); ctx.fillStyle=mono?'#111':(night?'#f5eafa':'#5d4038'); ctx.font='12px Georgia, serif'; ctx.fillText('下一块', panel.x+10, panel.y+17); const ox=panel.x+(panel.w-s[0].length*cell)/2, oy=panel.y+34+(42-s.length*cell)/2; s.forEach((r,y)=>r.forEach((v,x)=>{ if(v){ ctx.fillStyle=mono?'#111111':'#ef8f7a'; ctx.fillRect(ox+x*cell+1,oy+y*cell+1,cell-2,cell-2); } })); }
-    function draw(){ const night=isNightTheme(), mono=(settings().theme || 'day') === 'mono'; ctx.drawImage(tetrisBackground(),0,0); const drawCell=(x,y,col)=>{ ctx.fillStyle=col; ctx.fillRect(x*S+1,y*S+1,S-2,S-2); }; board.forEach((r,y)=>r.forEach((v,x)=>v&&drawCell(x,y,mono?'#3b3b3b':'#9ccbbb'))); piece.s.forEach((r,y)=>r.forEach((v,x)=>v&&drawCell(piece.x+x,piece.y+y,mono?'#111111':'#ef8f7a'))); drawPreview(night, mono); }
+    function draw(){ const night=isNightTheme(), mono=(settings().theme || 'day') === 'mono'; ctx.drawImage(tetrisBackground(),0,0); const drawCell=(x,y,col)=>{ ctx.fillStyle=col; ctx.fillRect(x*S+1,y*S+1,S-2,S-2); }; board.forEach((r,y)=>r.forEach((v,x)=>v&&drawCell(x,y,mono?'#3b3b3b':'#9ccbbb'))); piece.s.forEach((r,y)=>r.forEach((v,x)=>v&&drawCell(piece.x+x,piece.y+y,mono?'#111111':'#ef8f7a'))); drawPreview(night, mono); ctx.fillStyle=mono?'#111':(night?'rgba(255,255,255,.92)':'rgba(80,55,48,.88)'); ctx.font='bold 16px system-ui, sans-serif'; ctx.fillText('消除 ' + totalLines + ' 行', 12, 24); }
   }
 
   function addSwipe(el, cb) { el.ontouchstart = e => { const t=e.touches[0]; touchStart={x:t.clientX,y:t.clientY}; }; el.ontouchend = e => { if(!touchStart) return; const t=e.changedTouches[0], dx=t.clientX-touchStart.x, dy=t.clientY-touchStart.y; if(Math.max(Math.abs(dx),Math.abs(dy))<24) return; cb(Math.abs(dx)>Math.abs(dy) ? (dx>0?'right':'left') : (dy>0?'down':'up')); touchStart=null; }; }
