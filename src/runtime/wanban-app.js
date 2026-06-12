@@ -1303,7 +1303,16 @@ export async function initWanbanXiaowu() {
   }
 	  function themeClass(value) {
 	    const t = value || settings().theme || 'day';
-	    return ({ day:'wb-day', night:'wb-night', spring:'wb-spring', cyber:'wb-cyber', mono:'wb-mono', tavern:'wb-tavern' })[t] || 'wb-day';
+	    return ({ day:'wb-day', arcade:'wb-arcade', night:'wb-night', spring:'wb-spring', cyber:'wb-cyber', mono:'wb-mono', tavern:'wb-tavern' })[t] || 'wb-day';
+	  }
+	  function clearTavernThemeVars(root) {
+	    if (!root) return;
+	    ['--wb-bg','--wb-panel','--wb-soft','--wb-text','--wb-sub','--wb-border','--wb-accent','--wb-accent2','--wb-board','--wb-input','--wb-glow','--wb-gold','--wb-screen','--wb-on-accent'].forEach(name => root.style.removeProperty(name));
+	  }
+	  function contrastTextForCss(color, fallback) {
+	    const lum = relativeLuminanceFromCss(color);
+	    if (!Number.isFinite(lum)) return fallback || '#fff';
+	    return lum > .55 ? '#172033' : '#fff';
 	  }
 	  function hostCssValue(name, fallback) {
 	    try {
@@ -1313,15 +1322,19 @@ export async function initWanbanXiaowu() {
 	    } catch(e) { return fallback || ''; }
 	  }
 	  function applyTavernThemeVars(root) {
-	    if (!root || (settings().theme || 'day') !== 'tavern') return;
+	    if (!root) return;
+	    if ((settings().theme || 'day') !== 'tavern') { clearTavernThemeVars(root); return; }
 	    const doc = getHostDocument();
 	    const win = getHostWindow();
 	    const bodyStyle = win.getComputedStyle(doc.body || doc.documentElement);
 	    const bodyBg = hostCssValue('--SmartThemeBodyColor', bodyStyle.backgroundColor || '#1f1f1f');
 	    const text = hostCssValue('--SmartThemeTextColor', bodyStyle.color || '#f5f5f5');
 	    const accent = hostCssValue('--SmartThemeQuoteColor', hostCssValue('--SmartThemeEmColor', '#8ab4f8'));
-	    const panel = hostCssValue('--SmartThemeBlurTintColor', hostCssValue('--SmartThemeBotMesBlurTintColor', bodyBg));
+	    let panel = hostCssValue('--SmartThemeBlurTintColor', hostCssValue('--SmartThemeBotMesBlurTintColor', bodyBg));
 	    const border = hostCssValue('--SmartThemeBorderColor', hostCssValue('--SmartThemeShadowColor', 'rgba(255,255,255,.22)'));
+	    const textLum = relativeLuminanceFromCss(text);
+	    const panelLum = relativeLuminanceFromCss(panel);
+	    if (Math.abs(textLum - panelLum) < .18) panel = textLum > .55 ? '#172033' : '#FFFFFF';
 	    root.style.setProperty('--wb-bg', bodyBg);
 	    root.style.setProperty('--wb-panel', panel);
 	    root.style.setProperty('--wb-soft', 'color-mix(in srgb, ' + panel + ' 78%, ' + accent + ' 22%)');
@@ -1330,13 +1343,21 @@ export async function initWanbanXiaowu() {
 	    root.style.setProperty('--wb-border', border);
 	    root.style.setProperty('--wb-accent', accent);
 	    root.style.setProperty('--wb-accent2', hostCssValue('--SmartThemeEmColor', accent));
+	    root.style.setProperty('--wb-on-accent', contrastTextForCss(accent, '#fff'));
 	    root.style.setProperty('--wb-board', 'color-mix(in srgb, ' + bodyBg + ' 78%, ' + panel + ' 22%)');
 	    root.style.setProperty('--wb-input', 'color-mix(in srgb, ' + panel + ' 86%, ' + bodyBg + ' 14%)');
 	    root.style.setProperty('--wb-glow', 'color-mix(in srgb, ' + accent + ' 28%, transparent 72%)');
 	    root.style.setProperty('--wb-screen', 'color-mix(in srgb, ' + bodyBg + ' 72%, ' + panel + ' 28%)');
 	  }
 	  function relativeLuminanceFromCss(color) {
-	    const m = String(color || '').match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+	    const raw = String(color || '').trim();
+	    const hex = raw.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+	    if(hex) {
+	      const h = hex[1].length === 3 ? hex[1].split('').map(x => x + x).join('') : hex[1];
+	      const vals = [0,2,4].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(c => c <= .03928 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4));
+	      return vals[0] * .2126 + vals[1] * .7152 + vals[2] * .0722;
+	    }
+	    const m = raw.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
 	    if(!m) return .5;
 	    const vals = [1,2,3].map(i => {
 	      const c = Number(m[i]) / 255;
@@ -1387,6 +1408,7 @@ export async function initWanbanXiaowu() {
 	      return { top:val('--wb-screen','#1f1f1f'), mid:val('--wb-board','#252525'), bottom:val('--wb-bg','#181818'), pattern:'rgba(255,255,255,.05)', grid:val('--wb-border','rgba(255,255,255,.18)'), border:val('--wb-accent','rgba(255,255,255,.34)'), text:val('--wb-text','#f5f5f5') };
 	    }
     if (t === 'mono') return { top:'#f4f4f4', mid:'#dedede', bottom:'#c8c8c8', pattern:'rgba(0,0,0,.06)', grid:'rgba(0,0,0,.24)', border:'rgba(0,0,0,.48)', text:'#171717' };
+    if (t === 'arcade') return { top:'#FFFFFF', mid:'#F3FBFF', bottom:'#D8F0FF', pattern:'rgba(43,148,209,.055)', grid:'rgba(43,148,209,.16)', border:'rgba(43,148,209,.28)', text:'#18364D' };
     if (t === 'spring') return { top:'#F4F1D3', mid:'#EAF6D4', bottom:'#D8EDB2', pattern:'rgba(111,168,90,.075)', grid:'rgba(76,59,42,.16)', border:'rgba(111,83,45,.32)', text:'#4C3B2A' };
     if (t === 'cyber') return { top:'#101A1D', mid:'#14201B', bottom:'#0D1512', pattern:'rgba(241,232,91,.07)', grid:'rgba(25,211,197,.18)', border:'rgba(241,232,91,.34)', text:'#F6F5DE' };
     if (t === 'night') return { top:'#1b1020', mid:'#211426', bottom:'#120b17', pattern:'rgba(244,194,215,.04)', grid:'rgba(244,194,215,.12)', border:'rgba(244,194,215,.16)', text:'#f7dce7' };
@@ -1398,6 +1420,7 @@ export async function initWanbanXiaowu() {
 	    const doc = getHostDocument();
 	    const win = getHostWindow();
 	    applySelectedFont();
+	    applyTavernThemeVars(mask);
 	    const shell = qs('#' + SHELL_ID, doc);
     const popup = qs('#' + POPUP_ID, doc);
     const mobile = (win.innerWidth || 800) <= 768;
@@ -1836,11 +1859,13 @@ export async function initWanbanXiaowu() {
         flex-direction: column;
       }
       @font-face { font-family: 'WanbanCyberPixel'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_885190757_1759071282816_qdqqd_d815d3.ttf') format('truetype'); font-display:swap; }
-      #${POPUP_ID}.wb-day { --wb-bg:#fff7fb; --wb-panel:#fffefd; --wb-soft:#ffeaf1; --wb-text:#2f2430; --wb-sub:#8a6470; --wb-border:#e8b9c5; --wb-accent:#c65b7c; --wb-accent2:#3a8f91; --wb-board:#fff2e6; --wb-input:#fff9fb; --wb-glow:rgba(198,91,124,.26); --wb-gold:#c99738; --wb-screen:#fff9f2; }
-      #${POPUP_ID}.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; }
-	      #${POPUP_ID}.wb-night { --wb-bg:#11121d; --wb-panel:#191a28; --wb-soft:#252033; --wb-text:#f5eafa; --wb-sub:#bba8c7; --wb-border:#54425f; --wb-accent:#ff7aa8; --wb-accent2:#6ed6d1; --wb-board:#111827; --wb-input:#151620; --wb-glow:rgba(255,122,168,.28); --wb-gold:#f3c56a; --wb-screen:#111827; }
-	      #${POPUP_ID}.wb-mono { --wb-bg:#f2f2f2; --wb-panel:#ffffff; --wb-soft:#dcdcdc; --wb-text:#151515; --wb-sub:#565656; --wb-border:#8f8f8f; --wb-accent:#111111; --wb-accent2:#4d4d4d; --wb-board:#e6e6e6; --wb-input:#f7f7f7; --wb-glow:rgba(0,0,0,.12); --wb-gold:#2e2e2e; --wb-screen:#eeeeee; }
-	      #${POPUP_ID}.wb-cyber { --wb-bg:#0D1512; --wb-panel:#18231E; --wb-soft:#24352D; --wb-text:#F6F5DE; --wb-sub:#B9C4B8; --wb-border:#4C5B4A; --wb-accent:#F1E85B; --wb-accent2:#19D3C5; --wb-board:#101A1D; --wb-input:#14201B; --wb-glow:rgba(241,232,91,.22); --wb-gold:#FF8A3D; --wb-screen:#1A221D; }
+      @font-face { font-family: 'WanbanLetter'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_1_885190757_1763396927198_qdqqd_gnxuoc.ttf') format('truetype'); font-display:swap; }
+      #${POPUP_ID}.wb-day { --wb-bg:#fff7fb; --wb-panel:#fffefd; --wb-soft:#ffeaf1; --wb-text:#2f2430; --wb-sub:#8a6470; --wb-border:#e8b9c5; --wb-accent:#c65b7c; --wb-accent2:#3a8f91; --wb-board:#fff2e6; --wb-input:#fff9fb; --wb-glow:rgba(198,91,124,.26); --wb-gold:#c99738; --wb-screen:#fff9f2; --wb-on-accent:#fff; }
+      #${POPUP_ID}.wb-arcade { --wb-bg:#F3FAFF; --wb-panel:#FFFDF8; --wb-soft:#E5F4FF; --wb-text:#28435A; --wb-sub:#6F8EA3; --wb-border:#B8DCEF; --wb-accent:#5FA8D7; --wb-accent2:#F6C8D8; --wb-board:#F8FCFF; --wb-input:#FFFDF8; --wb-glow:rgba(95,168,215,.14); --wb-gold:#5FA8D7; --wb-screen:#FFFDF8; --wb-on-accent:#fff; }
+      #${POPUP_ID}.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; --wb-on-accent:#fff; }
+	      #${POPUP_ID}.wb-night { --wb-bg:#11121d; --wb-panel:#191a28; --wb-soft:#252033; --wb-text:#f5eafa; --wb-sub:#bba8c7; --wb-border:#54425f; --wb-accent:#ff7aa8; --wb-accent2:#6ed6d1; --wb-board:#111827; --wb-input:#151620; --wb-glow:rgba(255,122,168,.28); --wb-gold:#f3c56a; --wb-screen:#111827; --wb-on-accent:#fff; }
+	      #${POPUP_ID}.wb-mono { --wb-bg:#f2f2f2; --wb-panel:#ffffff; --wb-soft:#dcdcdc; --wb-text:#151515; --wb-sub:#565656; --wb-border:#8f8f8f; --wb-accent:#111111; --wb-accent2:#4d4d4d; --wb-board:#e6e6e6; --wb-input:#f7f7f7; --wb-glow:rgba(0,0,0,.12); --wb-gold:#2e2e2e; --wb-screen:#eeeeee; --wb-on-accent:#fff; }
+	      #${POPUP_ID}.wb-cyber { --wb-bg:#0D1512; --wb-panel:#18231E; --wb-soft:#24352D; --wb-text:#F6F5DE; --wb-sub:#B9C4B8; --wb-border:#4C5B4A; --wb-accent:#F1E85B; --wb-accent2:#19D3C5; --wb-board:#101A1D; --wb-input:#14201B; --wb-glow:rgba(241,232,91,.22); --wb-gold:#FF8A3D; --wb-screen:#1A221D; --wb-on-accent:#0D1512; }
 	      #${POPUP_ID}.wb-tavern { --wb-bg:var(--SmartThemeBodyColor, #1f1f1f); --wb-panel:var(--SmartThemeBlurTintColor, var(--SmartThemeBotMesBlurTintColor, #2a2a2a)); --wb-soft:color-mix(in srgb, var(--wb-panel) 78%, var(--wb-accent) 22%); --wb-text:var(--SmartThemeTextColor, #f5f5f5); --wb-sub:color-mix(in srgb, var(--wb-text) 68%, var(--wb-bg) 32%); --wb-border:var(--SmartThemeBorderColor, rgba(255,255,255,.22)); --wb-accent:var(--SmartThemeQuoteColor, var(--SmartThemeEmColor, #8ab4f8)); --wb-accent2:var(--SmartThemeEmColor, var(--wb-accent)); --wb-board:color-mix(in srgb, var(--wb-bg) 78%, var(--wb-panel) 22%); --wb-input:color-mix(in srgb, var(--wb-panel) 86%, var(--wb-bg) 14%); --wb-glow:color-mix(in srgb, var(--wb-accent) 28%, transparent 72%); --wb-gold:var(--SmartThemeQuoteColor, #d7a64d); --wb-screen:color-mix(in srgb, var(--wb-bg) 72%, var(--wb-panel) 28%); font-family:inherit; }
       .wb-head { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 12px; border-bottom:1px solid var(--wb-border); background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.02)); }
       .wb-title { font-size:20px; font-weight:800; letter-spacing:2px; color:var(--wb-accent); white-space:nowrap; }
@@ -1854,7 +1879,7 @@ export async function initWanbanXiaowu() {
       .wb-tabs .wb-tab { border:0; border-right:1px solid var(--wb-border); min-width:94px; }
       .wb-tabs .wb-tab:last-child { border-right:0; }
       .wb-iconbtn { width:34px; padding:0; display:grid; place-items:center; font-size:18px; }
-      .wb-tab.active, .wb-btn.primary { background:var(--wb-accent); color:#fff; border-color:var(--wb-accent); }
+      .wb-tab.active, .wb-btn.primary { background:var(--wb-accent); color:var(--wb-on-accent,#fff); border-color:var(--wb-accent); }
       .wb-body { flex:1 1 auto; min-height:0; display:block; padding:14px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
       .wb-body.wb-swipe-enter-left { animation:wbSwipeEnterLeft .22s ease both; }
       .wb-body.wb-swipe-enter-right { animation:wbSwipeEnterRight .22s ease both; }
@@ -2047,7 +2072,7 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-cyber .wb-territory-dot { background:#F1E85B; border-color:rgba(25,211,197,.45); box-shadow:0 0 8px rgba(241,232,91,.38); }
       #${POPUP_ID}.wb-cyber .wb-territory-cell { background:rgba(25,211,197,.08); border-color:rgba(25,211,197,.18); color:#F6F5DE; }
       #${POPUP_ID}.wb-cyber .wb-territory-edge.user { background:#F1E85B; box-shadow:0 0 10px rgba(241,232,91,.32); }
-      #${POPUP_ID}.wb-cyber .wb-territory-cell.user { background:rgba(241,232,91,.86); color:#0D1512; }
+      #${POPUP_ID}.wb-cyber .wb-territory-cell.user { background:rgba(241,232,91,.86); color:var(--wb-on-accent,#0D1512); }
       #${POPUP_ID}.wb-cyber .wb-territory-cell.ta { background:rgba(255,79,163,.55); color:#F6F5DE; }
       .wb-oldmaid { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0, 1fr) minmax(0, 1fr) auto; gap:8px; align-items:stretch; }
       .wb-oldmaid-status { min-height:34px; display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; text-align:center; font-weight:800; color:var(--wb-text); }
@@ -2315,13 +2340,14 @@ export async function initWanbanXiaowu() {
       .wb-char-desc-preview { max-height:88px; overflow-y:auto; padding:7px 9px; line-height:1.45; white-space:pre-wrap; scrollbar-width:thin; }
       .wb-worldbook-list { display:flex; flex-wrap:wrap; gap:5px; max-height:118px; overflow-y:auto; padding:7px; background:var(--wb-soft); border:1px solid var(--wb-border); }
       .wb-tag { border:1px solid var(--wb-border); background:var(--wb-panel); color:var(--wb-text); padding:4px 8px; cursor:pointer; font-size:12px; }
-      .wb-tag.active { background:var(--wb-accent); color:#fff; border-color:var(--wb-accent); }
+      .wb-tag.active { background:var(--wb-accent); color:var(--wb-on-accent,#fff); border-color:var(--wb-accent); }
       .wb-section-title { color:var(--wb-accent); font-weight:800; letter-spacing:2px; border-bottom:1px solid var(--wb-border); padding-bottom:6px; margin-bottom:2px; }
-      .wb-modal-mask { position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; z-index:1000000; background:rgba(0,0,0,.88); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; animation:wbFadeIn .25s ease; --wb-bg:#fff7fb; --wb-panel:#fffefd; --wb-soft:#ffeaf1; --wb-text:#2f2430; --wb-sub:#8a6470; --wb-border:#e8b9c5; --wb-accent:#c65b7c; --wb-accent2:#3a8f91; --wb-board:#fff2e6; --wb-input:#fff9fb; --wb-glow:rgba(198,91,124,.26); --wb-gold:#c99738; --wb-screen:#fff9f2; }
-      .wb-modal-mask.wb-night { --wb-bg:#11121d; --wb-panel:#191a28; --wb-soft:#252033; --wb-text:#f5eafa; --wb-sub:#bba8c7; --wb-border:#54425f; --wb-accent:#ff7aa8; --wb-accent2:#6ed6d1; --wb-board:#111827; --wb-input:#151620; --wb-glow:rgba(255,122,168,.28); --wb-gold:#f3c56a; --wb-screen:#111827; }
-	      .wb-modal-mask.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; }
-	      .wb-modal-mask.wb-mono { --wb-bg:#f2f2f2; --wb-panel:#ffffff; --wb-soft:#dcdcdc; --wb-text:#151515; --wb-sub:#565656; --wb-border:#8f8f8f; --wb-accent:#111111; --wb-accent2:#4d4d4d; --wb-board:#e6e6e6; --wb-input:#f7f7f7; --wb-glow:rgba(0,0,0,.12); --wb-gold:#2e2e2e; --wb-screen:#eeeeee; }
-	      .wb-modal-mask.wb-cyber { --wb-bg:#0D1512; --wb-panel:#18231E; --wb-soft:#24352D; --wb-text:#F6F5DE; --wb-sub:#B9C4B8; --wb-border:#4C5B4A; --wb-accent:#F1E85B; --wb-accent2:#19D3C5; --wb-board:#101A1D; --wb-input:#14201B; --wb-glow:rgba(241,232,91,.22); --wb-gold:#FF8A3D; --wb-screen:#1A221D; }
+      .wb-modal-mask { position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; z-index:1000000; background:rgba(0,0,0,.88); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; animation:wbFadeIn .25s ease; --wb-bg:#fff7fb; --wb-panel:#fffefd; --wb-soft:#ffeaf1; --wb-text:#2f2430; --wb-sub:#8a6470; --wb-border:#e8b9c5; --wb-accent:#c65b7c; --wb-accent2:#3a8f91; --wb-board:#fff2e6; --wb-input:#fff9fb; --wb-glow:rgba(198,91,124,.26); --wb-gold:#c99738; --wb-screen:#fff9f2; --wb-on-accent:#fff; }
+      .wb-modal-mask.wb-night { --wb-bg:#11121d; --wb-panel:#191a28; --wb-soft:#252033; --wb-text:#f5eafa; --wb-sub:#bba8c7; --wb-border:#54425f; --wb-accent:#ff7aa8; --wb-accent2:#6ed6d1; --wb-board:#111827; --wb-input:#151620; --wb-glow:rgba(255,122,168,.28); --wb-gold:#f3c56a; --wb-screen:#111827; --wb-on-accent:#fff; }
+	      .wb-modal-mask.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; --wb-on-accent:#fff; }
+	      .wb-modal-mask.wb-mono { --wb-bg:#f2f2f2; --wb-panel:#ffffff; --wb-soft:#dcdcdc; --wb-text:#151515; --wb-sub:#565656; --wb-border:#8f8f8f; --wb-accent:#111111; --wb-accent2:#4d4d4d; --wb-board:#e6e6e6; --wb-input:#f7f7f7; --wb-glow:rgba(0,0,0,.12); --wb-gold:#2e2e2e; --wb-screen:#eeeeee; --wb-on-accent:#fff; }
+	      .wb-modal-mask.wb-cyber { --wb-bg:#0D1512; --wb-panel:#18231E; --wb-soft:#24352D; --wb-text:#F6F5DE; --wb-sub:#B9C4B8; --wb-border:#4C5B4A; --wb-accent:#F1E85B; --wb-accent2:#19D3C5; --wb-board:#101A1D; --wb-input:#14201B; --wb-glow:rgba(241,232,91,.22); --wb-gold:#FF8A3D; --wb-screen:#1A221D; --wb-on-accent:#0D1512; }
+	      .wb-modal-mask.wb-arcade { --wb-bg:#F3FAFF; --wb-panel:#FFFDF8; --wb-soft:#E5F4FF; --wb-text:#28435A; --wb-sub:#6F8EA3; --wb-border:#B8DCEF; --wb-accent:#5FA8D7; --wb-accent2:#F6C8D8; --wb-board:#F8FCFF; --wb-input:#FFFDF8; --wb-glow:rgba(95,168,215,.14); --wb-gold:#5FA8D7; --wb-screen:#FFFDF8; --wb-on-accent:#fff; }
 	      .wb-modal-mask.wb-tavern { --wb-bg:var(--SmartThemeBodyColor, #1f1f1f); --wb-panel:var(--SmartThemeBlurTintColor, var(--SmartThemeBotMesBlurTintColor, #2a2a2a)); --wb-soft:color-mix(in srgb, var(--wb-panel) 78%, var(--wb-accent) 22%); --wb-text:var(--SmartThemeTextColor, #f5f5f5); --wb-sub:color-mix(in srgb, var(--wb-text) 68%, var(--wb-bg) 32%); --wb-border:var(--SmartThemeBorderColor, rgba(255,255,255,.22)); --wb-accent:var(--SmartThemeQuoteColor, var(--SmartThemeEmColor, #8ab4f8)); --wb-accent2:var(--SmartThemeEmColor, var(--wb-accent)); --wb-board:color-mix(in srgb, var(--wb-bg) 78%, var(--wb-panel) 22%); --wb-input:color-mix(in srgb, var(--wb-panel) 86%, var(--wb-bg) 14%); --wb-glow:color-mix(in srgb, var(--wb-accent) 28%, transparent 72%); --wb-gold:var(--SmartThemeQuoteColor, #d7a64d); --wb-screen:color-mix(in srgb, var(--wb-bg) 72%, var(--wb-panel) 28%); font-family:inherit; }
       @keyframes wbFadeIn{from{opacity:0}to{opacity:1}}
       .wb-modal { background:linear-gradient(180deg, var(--wb-panel), var(--wb-bg)); color:var(--wb-text); border:1px solid var(--wb-border); border-top:3px solid var(--wb-accent); width:100%; max-width:560px; max-height:85vh; overflow-y:auto; animation:wbSlideUp .3s cubic-bezier(.34,1.56,.64,1); box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px var(--wb-glow); padding:18px 22px; border-radius:0; }
@@ -2455,7 +2481,7 @@ export async function initWanbanXiaowu() {
         background:transparent;
       }
       .wb-tabs .wb-tab.active {
-        color:#fff;
+        color:var(--wb-on-accent,#fff);
         background:linear-gradient(135deg, var(--wb-accent), color-mix(in srgb, var(--wb-accent2) 72%, var(--wb-accent) 28%));
         box-shadow:0 6px 14px var(--wb-glow), 0 1px 0 rgba(255,255,255,.32) inset;
       }
@@ -2477,21 +2503,21 @@ export async function initWanbanXiaowu() {
       }
       #${POPUP_ID}.wb-cyber .wb-btn.primary,
       #${POPUP_ID}.wb-cyber .wb-tab.active {
-        color:#0D1512;
+        color:var(--wb-on-accent,#0D1512);
         text-shadow:0 1px 0 rgba(255,255,255,.22);
       }
       .wb-btn:hover, .wb-iconbtn:hover, .wb-tab:hover { transform:translateY(-1px); filter:brightness(1.04); }
       .wb-btn.primary {
         background:linear-gradient(135deg, var(--wb-accent), color-mix(in srgb, var(--wb-accent) 54%, var(--wb-accent2) 46%));
         border-color:color-mix(in srgb, var(--wb-accent) 76%, #fff 24%);
-        color:#fff;
+        color:var(--wb-on-accent,#fff);
         box-shadow:0 12px 24px var(--wb-glow), 0 1px 0 rgba(255,255,255,.34) inset;
       }
       #${POPUP_ID}.wb-cyber .wb-btn.primary,
       #${POPUP_ID}.wb-cyber .wb-tab.active {
         background:linear-gradient(135deg, #F1E85B, #FF8A3D);
         border-color:#F6F5DE;
-        color:#0D1512;
+        color:var(--wb-on-accent,#0D1512);
         box-shadow:0 0 18px rgba(241,232,91,.26), 0 1px 0 rgba(255,255,255,.42) inset;
         text-shadow:0 1px 0 rgba(255,255,255,.24);
       }
@@ -2499,7 +2525,7 @@ export async function initWanbanXiaowu() {
       .wb-modal-mask.wb-cyber .wb-tab.active {
         background:linear-gradient(135deg, #F1E85B, #FF8A3D);
         border-color:#F6F5DE;
-        color:#0D1512;
+        color:var(--wb-on-accent,#0D1512);
         box-shadow:0 0 18px rgba(241,232,91,.26), 0 1px 0 rgba(255,255,255,.42) inset;
         text-shadow:0 1px 0 rgba(255,255,255,.24);
       }
@@ -2677,6 +2703,11 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-night .wb-ludo-cell.path { background:#2b1830; }
       #${POPUP_ID}.wb-night .wb-ludo-cell.home-red { background:#3a1c2a; }
       #${POPUP_ID}.wb-night .wb-ludo-cell.home-blue { background:#241d3a; }
+      #${POPUP_ID}.wb-arcade .wb-ludo { background-color:#E5F4FF; border-color:#B8DCEF; background-image:none; box-shadow:none; }
+      #${POPUP_ID}.wb-arcade .wb-ludo-cell { background:#FFFDF8; border-color:rgba(95,168,215,.18); }
+      #${POPUP_ID}.wb-arcade .wb-ludo-cell.path { background:#F8FCFF; }
+      #${POPUP_ID}.wb-arcade .wb-ludo-cell.home-red { background:#FCEAF1; }
+      #${POPUP_ID}.wb-arcade .wb-ludo-cell.home-blue { background:#DDEFFF; }
       #${POPUP_ID}.wb-spring .wb-ludo { background-color:#B98A54; border-color:#6F4F2C; }
       #${POPUP_ID}.wb-spring .wb-ludo-cell { background:#F6E7C8; border-color:rgba(76,59,42,.18); }
       #${POPUP_ID}.wb-spring .wb-ludo-cell.path { background:#D8EDB2; }
@@ -2716,6 +2747,849 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-night .wb-companion.on { background:linear-gradient(135deg, rgba(55,38,70,.92), rgba(25,55,64,.84)); border-top-color:rgba(110,214,209,.55); }
       #${POPUP_ID}.wb-night .wb-speech { background:rgba(13,19,32,.72); border:1px solid rgba(110,214,209,.18); color:#f5eafa; }
       #${POPUP_ID}.wb-night .wb-comp-name { color:#f3c56a; }
+      #${POPUP_ID}.wb-arcade .wb-side-companion { background:#FFFDF8; border-color:rgba(95,168,215,.28); box-shadow:none; }
+      #${POPUP_ID}.wb-arcade .wb-companion.on { background:#F8FCFF; border-top-color:rgba(246,200,216,.78); box-shadow:none; }
+      #${POPUP_ID}.wb-arcade .wb-speech { background:#FFFDF8; border:1px solid rgba(95,168,215,.24); color:#28435A; box-shadow:none; }
+      #${POPUP_ID}.wb-arcade .wb-comp-name { color:#4D9AC9; }
+      #${POPUP_ID}.wb-arcade,
+      .wb-modal-mask.wb-arcade {
+        font-family:'WanbanLetter','LXGW WenKai','霞鹜文楷','Klee One','Comic Sans MS','Microsoft YaHei',system-ui,sans-serif;
+      }
+      #${POPUP_ID}.wb-arcade {
+        background:
+          repeating-linear-gradient(180deg, transparent 0 27px, rgba(95,168,215,.10) 27px 28px),
+          var(--wb-bg);
+        border-color:#B8DCEF;
+        border-top-color:#F6C8D8;
+        box-shadow:0 18px 42px rgba(95,168,215,.14);
+      }
+      #${POPUP_ID}.wb-arcade .wb-head,
+      #${POPUP_ID}.wb-arcade .wb-body,
+      .wb-modal-mask.wb-arcade .wb-modal {
+        background:
+          repeating-linear-gradient(180deg, transparent 0 27px, rgba(95,168,215,.08) 27px 28px),
+          var(--wb-bg);
+      }
+      #${POPUP_ID}.wb-arcade .wb-head { border-bottom-color:#B8DCEF; }
+      #${POPUP_ID}.wb-arcade .wb-title { color:#4D9AC9; letter-spacing:1px; }
+      #${POPUP_ID}.wb-arcade .wb-title::after,
+      .wb-modal-mask.wb-arcade .wb-modal-title::after { background:#F6C8D8; opacity:1; }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-board-wrap,.wb-game-card,.wb-toolbar,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-worldbook-list,.wb-api-status,.wb-record-table-wrap,.wb-guess-history,.wb-clue-box,.wb-oldmaid-hand,.wb-oldmaid-log),
+      .wb-modal-mask.wb-arcade :is(.wb-modal,.wb-sticky-actions,.wb-api-status,.wb-worldbook-list) {
+        background:#FFFDF8;
+        border-color:#B8DCEF;
+        box-shadow:0 7px 16px rgba(73,126,158,.10), 0 1px 0 rgba(255,255,255,.78) inset;
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag) {
+        background:#FFFDF8;
+        border-color:#B8DCEF;
+        color:#28435A;
+        border-radius:6px;
+        box-shadow:none;
+        text-shadow:none;
+        letter-spacing:0;
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn.primary,.wb-tab.active,.wb-tag.active),
+      .wb-modal-mask.wb-arcade :is(.wb-btn.primary,.wb-tab.active,.wb-tag.active) {
+        background:#5FA8D7;
+        border-color:#5FA8D7;
+        color:#FFFFFF;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs {
+        background:#E5F4FF;
+        border-color:#B8DCEF;
+        box-shadow:0 4px 10px rgba(73,126,158,.08);
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card {
+        border-left-color:#F6C8D8;
+        transition:.14s border-color,.14s background-color;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:hover {
+        transform:none;
+        background:#F8FCFF;
+        border-color:#8FC9E8;
+        border-left-color:#F6C8D8;
+        box-shadow:0 9px 18px rgba(73,126,158,.13), 0 1px 0 rgba(255,255,255,.82) inset;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-icon {
+        background:#E5F4FF;
+        border-color:#B8DCEF;
+        color:#4D9AC9;
+        border-radius:6px;
+        box-shadow:0 3px 8px rgba(73,126,158,.08);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-canvas,.wb-grid2048,.wb-board3,.wb-gomoku,.wb-ludo,.wb-territory-board,.wb-cell,.wb-tile) {
+        box-shadow:0 5px 12px rgba(73,126,158,.09);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-cell,.wb-tile) { box-shadow:0 2px 5px rgba(73,126,158,.08); }
+      #${POPUP_ID}.wb-arcade .wb-cell { background:#FFFDF8; border-color:#B8DCEF; }
+      #${POPUP_ID}.wb-arcade .wb-arcade-btn {
+        background:#FFFDF8;
+        border-color:#9CCCE6;
+        color:#28435A;
+        box-shadow:none;
+        text-shadow:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-arcade-btn:active { filter:brightness(.98); box-shadow:none; }
+      #${POPUP_ID}.wb-arcade .wb-tetris-controls .up,
+      #${POPUP_ID}.wb-arcade .wb-tetris-controls .down {
+        background:#5FA8D7;
+        border-color:#5FA8D7;
+        color:#FFFFFF;
+        box-shadow:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-tetris-controls .up::after,
+      #${POPUP_ID}.wb-arcade .wb-tetris-controls .down::after {
+        color:#FFFFFF;
+        text-shadow:none;
+      }
+      #${POPUP_ID}.wb-arcade {
+        --wb-paper:#FFF7D8;
+        --wb-paper-line:rgba(95,168,215,.13);
+        --wb-paper-margin:rgba(246,200,216,.82);
+        --wb-paper-shadow:rgba(77,132,166,.13);
+        background:
+          linear-gradient(90deg, transparent 0 34px, var(--wb-paper-margin) 35px, var(--wb-paper-margin) 36px, transparent 37px),
+          repeating-linear-gradient(180deg, transparent 0 25px, var(--wb-paper-line) 26px, transparent 27px),
+          linear-gradient(180deg, #F8FCFF 0%, #F3FAFF 100%);
+        border:1px solid #A9D3EA;
+        border-radius:8px;
+        box-shadow:0 24px 54px rgba(65,112,143,.18), 0 2px 0 rgba(255,255,255,.86) inset;
+      }
+      #${POPUP_ID}.wb-arcade .wb-head,
+      #${POPUP_ID}.wb-arcade .wb-body,
+      .wb-modal-mask.wb-arcade .wb-modal {
+        background:
+          linear-gradient(90deg, transparent 0 34px, var(--wb-paper-margin) 35px, var(--wb-paper-margin) 36px, transparent 37px),
+          repeating-linear-gradient(180deg, transparent 0 25px, var(--wb-paper-line) 26px, transparent 27px),
+          rgba(248,252,255,.92);
+      }
+      .wb-modal-mask.wb-arcade .wb-modal {
+        position:relative;
+        border-radius:0;
+        background:var(--wb-paper);
+        border:0;
+        box-shadow:6px 8px 0 rgba(232,211,150,.38), 0 20px 46px rgba(65,112,143,.20);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-board-wrap,.wb-game-card,.wb-toolbar,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-worldbook-list,.wb-api-status,.wb-record-table-wrap,.wb-guess-history,.wb-clue-box,.wb-oldmaid-hand,.wb-oldmaid-log),
+      .wb-modal-mask.wb-arcade :is(.wb-sticky-actions,.wb-api-status,.wb-worldbook-list) {
+        position:relative;
+        background:#FFFDF8;
+        border:1px solid rgba(208,177,105,.42);
+        border-radius:0;
+        box-shadow:4px 6px 0 rgba(232,211,150,.34), 0 12px 24px var(--wb-paper-shadow);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-game-card,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-api-status)::before,
+      .wb-modal-mask.wb-arcade :is(.wb-api-status,.wb-worldbook-list)::before {
+        content:'';
+        position:absolute;
+        left:12px;
+        right:12px;
+        top:-1px;
+        height:2px;
+        background:rgba(95,168,215,.25);
+        pointer-events:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs {
+        background:rgba(229,244,255,.76);
+        border-radius:0;
+        padding:2px;
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab {
+        background:transparent;
+        border-color:transparent;
+        color:#527891;
+        border-radius:0;
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab.active {
+        background:#FFFDF8;
+        color:#3F8FBE;
+        box-shadow:0 2px 7px rgba(77,132,166,.10), inset 0 -2px 0 #5FA8D7;
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag) {
+        background:#FFFDF8;
+        border-color:rgba(118,177,210,.78);
+        border-radius:0;
+        box-shadow:0 2px 0 rgba(188,220,238,.36);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn.primary,.wb-tag.active),
+      .wb-modal-mask.wb-arcade :is(.wb-btn.primary,.wb-tag.active) {
+        background:#5FA8D7;
+        border-color:#4D9AC9;
+        color:#fff;
+        box-shadow:0 3px 0 rgba(61,126,166,.22);
+      }
+      #${POPUP_ID}.wb-arcade .wb-title,
+      #${POPUP_ID}.wb-arcade .wb-section-title,
+      .wb-modal-mask.wb-arcade .wb-modal-title {
+        color:#3F8FBE;
+      }
+      #${POPUP_ID}.wb-arcade .wb-title::after {
+        width:84px;
+        height:2px;
+        background:#F6C8D8;
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-game-card,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-api-status)::before,
+      .wb-modal-mask.wb-arcade :is(.wb-api-status,.wb-worldbook-list)::before {
+        content:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card {
+        align-items:flex-start;
+        gap:13px;
+        min-height:110px;
+        padding:18px 14px 14px;
+        background:#FFFDF8;
+        border:0;
+        border-left:0;
+        border-radius:0;
+        box-shadow:5px 7px 0 rgba(188,220,238,.40), 0 14px 28px rgba(77,132,166,.12);
+        overflow:visible;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card::after,
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-side-companion,.wb-companion.on,.wb-speech)::after,
+      .wb-modal-mask.wb-arcade .wb-modal::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:-9px;
+        width:72px;
+        height:16px;
+        transform:translateX(-50%) rotate(-1.5deg);
+        border:1px solid rgba(216,184,95,.18);
+        background:rgba(255,232,154,.68);
+        box-shadow:0 2px 5px rgba(83,130,158,.08);
+        pointer-events:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 1)::after { transform:translateX(-50%) rotate(1.8deg); }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 2)::after { transform:translateX(-50%) rotate(-2.2deg); }
+      #${POPUP_ID}.wb-arcade .wb-game-card:hover {
+        border-color:transparent;
+        box-shadow:6px 8px 0 rgba(188,220,238,.50), 0 16px 30px rgba(77,132,166,.16);
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-icon {
+        width:58px;
+        height:58px;
+        padding:4px;
+        background:#FFFFFF;
+        border:1px solid rgba(157,190,208,.62);
+        border-radius:0;
+        box-shadow:3px 4px 0 rgba(188,220,238,.38), 0 8px 15px rgba(77,132,166,.10);
+        transform:rotate(-1.4deg);
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(2n) .wb-game-icon { transform:rotate(1.2deg); }
+      #${POPUP_ID}.wb-arcade .wb-game-icon img {
+        border-radius:0;
+        outline:1px solid rgba(95,168,215,.18);
+        outline-offset:-1px;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-icon:not(.has-image) {
+        background:
+          linear-gradient(#FFFFFF,#FFFFFF) padding-box,
+          repeating-linear-gradient(180deg, #EAF6FF 0 8px, #F8FCFF 8px 16px) border-box;
+        color:#3F8FBE;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-name { color:#2F789F; letter-spacing:.5px; }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-side-companion,.wb-companion.on,.wb-speech),
+      .wb-modal-mask.wb-arcade .wb-modal {
+        overflow:visible;
+        box-shadow:5px 7px 0 rgba(188,220,238,.36), 0 14px 28px rgba(77,132,166,.12);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag) {
+        box-shadow:0 2px 0 rgba(188,220,238,.36);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag):hover,
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag):focus-visible,
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag):hover,
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag):focus-visible {
+        transform:translateY(-1px);
+        background:#F4FBFF;
+        border-color:#74B7DC;
+        color:#236F98;
+        box-shadow:0 3px 0 rgba(188,220,238,.48), 0 8px 16px rgba(77,132,166,.12);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn.primary,.wb-tag.active):hover,
+      #${POPUP_ID}.wb-arcade :is(.wb-btn.primary,.wb-tag.active):focus-visible,
+      .wb-modal-mask.wb-arcade :is(.wb-btn.primary,.wb-tag.active):hover,
+      .wb-modal-mask.wb-arcade :is(.wb-btn.primary,.wb-tag.active):focus-visible {
+        background:#4D9AC9;
+        border-color:#3F8FBE;
+        color:#fff;
+        box-shadow:0 4px 0 rgba(61,126,166,.26), 0 9px 18px rgba(77,132,166,.16);
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab:hover,
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab:focus-visible {
+        background:rgba(255,253,248,.72);
+        color:#236F98;
+        box-shadow:inset 0 -2px 0 rgba(95,168,215,.45);
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab.active:hover,
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab.active:focus-visible {
+        background:#FFFDF8;
+        color:#236F98;
+        box-shadow:0 3px 8px rgba(77,132,166,.12), inset 0 -2px 0 #4D9AC9;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:hover .wb-game-icon {
+        box-shadow:4px 5px 0 rgba(188,220,238,.48), 0 10px 18px rgba(77,132,166,.14);
+        border-color:rgba(95,168,215,.72);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag,.wb-game-card),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag) {
+        border-radius:0;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card {
+        background:#FFFDF8;
+        border:0;
+        border-left:0;
+        border-radius:0;
+        box-shadow:
+          0 1px 1px rgba(68,111,139,.08),
+          5px 7px 14px rgba(148,174,190,.30),
+          16px 20px 36px rgba(77,105,126,.14);
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:hover {
+        transform:translateY(-1px);
+        border-color:transparent;
+        box-shadow:
+          0 1px 2px rgba(68,111,139,.10),
+          7px 9px 18px rgba(148,174,190,.40),
+          20px 24px 42px rgba(77,105,126,.18);
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card::after {
+        border-color:transparent;
+        background:rgba(255,255,255,.82);
+        box-shadow:0 2px 8px rgba(87,112,130,.10);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-side-companion,.wb-companion.on,.wb-speech),
+      .wb-modal-mask.wb-arcade .wb-modal {
+        border-radius:0;
+        box-shadow:
+          0 1px 1px rgba(82,94,104,.08),
+          6px 8px 18px rgba(188,220,238,.24),
+          18px 22px 42px rgba(77,132,166,.12);
+      }
+      .wb-modal-mask.wb-arcade .wb-modal {
+        background:var(--wb-paper);
+        border:0;
+        box-shadow:
+          0 1px 1px rgba(112,88,36,.08),
+          7px 9px 18px rgba(232,211,150,.35),
+          22px 26px 52px rgba(65,112,143,.18);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag) {
+        border-color:transparent;
+        box-shadow:0 2px 0 rgba(148,174,190,.28), 0 7px 14px rgba(77,105,126,.10);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag):hover,
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag):focus-visible,
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag):hover,
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag):focus-visible {
+        border-color:transparent;
+        box-shadow:0 3px 0 rgba(148,174,190,.38), 0 9px 18px rgba(77,105,126,.14);
+      }
+      .wb-modal-mask.wb-arcade .wb-modal {
+        max-height:calc(100dvh - 40px);
+        overflow-y:auto;
+        overflow-x:hidden;
+        overscroll-behavior:contain;
+      }
+      .wb-modal-mask.wb-arcade .wb-modal::after {
+        top:8px;
+        z-index:1;
+      }
+      .wb-modal-mask.wb-arcade .wb-modal-title,
+      .wb-modal-mask.wb-arcade .wb-modal > :not(.wb-sticky-actions) {
+        position:relative;
+        z-index:2;
+      }
+      .wb-modal-mask.wb-arcade .wb-sticky-actions {
+        position:sticky;
+        bottom:-18px;
+        z-index:8;
+        margin:12px -22px -18px;
+        padding:10px 22px;
+        background:#FFF7D8;
+        border:0;
+        box-shadow:0 -10px 22px rgba(112,88,36,.08), 0 -1px 0 rgba(255,255,255,.58);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-game-card,.wb-panel,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-api-status,.wb-worldbook-list,.wb-record-table-wrap,.wb-guess-history,.wb-clue-box,.wb-oldmaid-hand,.wb-oldmaid-log) {
+        position:relative;
+        background:#FFFDF8;
+        border:0;
+        border-left:0;
+        border-radius:0;
+        box-shadow:
+          0 1px 1px rgba(68,111,139,.08),
+          5px 7px 14px rgba(148,174,190,.30),
+          16px 20px 36px rgba(77,105,126,.14);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-game-card,.wb-panel,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-api-status,.wb-worldbook-list)::before {
+        content:none;
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-game-card,.wb-panel,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-api-status,.wb-worldbook-list)::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:-9px;
+        width:72px;
+        height:16px;
+        transform:translateX(-50%) rotate(-1.5deg);
+        border:0;
+        background:rgba(255,232,154,.72);
+        box-shadow:0 2px 8px rgba(87,112,130,.10);
+        pointer-events:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 1)::after { transform:translateX(-50%) rotate(1.8deg); }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 2)::after { transform:translateX(-50%) rotate(-2.2deg); }
+      #${POPUP_ID}.wb-arcade :is(.wb-game-card,.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag):hover,
+      #${POPUP_ID}.wb-arcade :is(.wb-game-card,.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag):focus-visible {
+        border-color:transparent;
+        box-shadow:
+          0 1px 2px rgba(68,111,139,.10),
+          7px 9px 18px rgba(148,174,190,.40),
+          20px 24px 42px rgba(77,105,126,.18);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-input,.wb-select,.wb-textarea,.wb-pill,.wb-tag) {
+        border-color:transparent;
+        border-radius:0;
+        box-shadow:0 2px 0 rgba(148,174,190,.28), 0 7px 14px rgba(77,105,126,.10);
+      }
+      .wb-modal-mask.wb-arcade .wb-modal {
+        position:relative;
+        background:#FFF7D8;
+        border:0;
+        border-radius:0;
+        max-height:calc(100dvh - 40px);
+        overflow-y:auto;
+        overflow-x:hidden;
+        overscroll-behavior:contain;
+        box-shadow:
+          0 1px 1px rgba(112,88,36,.08),
+          7px 9px 18px rgba(232,211,150,.35),
+          22px 26px 52px rgba(65,112,143,.18);
+      }
+      .wb-modal-mask.wb-arcade .wb-modal::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:8px;
+        width:72px;
+        height:16px;
+        transform:translateX(-50%) rotate(-1.5deg);
+        border:0;
+        background:rgba(255,255,255,.86);
+        box-shadow:0 2px 8px rgba(87,112,130,.10);
+        pointer-events:none;
+        z-index:1;
+      }
+      .wb-modal-mask.wb-arcade .wb-modal-title,
+      .wb-modal-mask.wb-arcade .wb-modal > :not(.wb-sticky-actions) {
+        position:relative;
+        z-index:2;
+      }
+      .wb-modal-mask.wb-arcade .wb-sticky-actions {
+        position:sticky;
+        bottom:-18px;
+        z-index:8;
+        margin:12px -22px -18px;
+        padding:10px 22px;
+        background:#FFF7D8;
+        border:0;
+        box-shadow:0 -10px 22px rgba(112,88,36,.08), 0 -1px 0 rgba(255,255,255,.58);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag) {
+        border-color:rgba(148,174,190,.12);
+        border-radius:0;
+        transform:rotate(-.25deg);
+        box-shadow:2px 3px 8px rgba(86,111,128,.13);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag):nth-child(even),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag):nth-child(even) {
+        transform:rotate(.22deg);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn.primary,.wb-tag.active),
+      .wb-modal-mask.wb-arcade :is(.wb-btn.primary,.wb-tag.active) {
+        border-color:rgba(77,154,201,.16);
+        box-shadow:2px 3px 8px rgba(63,111,139,.16);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag):hover,
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag):focus-visible,
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag):hover,
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag):focus-visible {
+        transform:translateY(-1px) rotate(0deg);
+        border-color:rgba(116,183,220,.18);
+        box-shadow:3px 4px 10px rgba(86,111,128,.18);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-game-card,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-api-status,.wb-worldbook-list,.wb-record-table-wrap,.wb-guess-history,.wb-clue-box,.wb-oldmaid-hand,.wb-oldmaid-log)::after,
+      .wb-modal-mask.wb-arcade :is(.wb-modal,.wb-api-status,.wb-worldbook-list)::after {
+        content:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card::after,
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-body > .wb-panel::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:-9px;
+        width:72px;
+        height:16px;
+        transform:translateX(-50%) rotate(-1.5deg);
+        border:0;
+        background:rgba(255,232,154,.72);
+        box-shadow:0 2px 8px rgba(87,112,130,.10);
+        pointer-events:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 1)::after { transform:translateX(-50%) rotate(1.8deg); }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 2)::after { transform:translateX(-50%) rotate(-2.2deg); }
+      .wb-modal-mask.wb-arcade .wb-modal {
+        padding-top:26px;
+      }
+      .wb-modal-mask.wb-arcade .wb-modal::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:-10px;
+        width:84px;
+        height:18px;
+        transform:translateX(-50%) rotate(-1.2deg);
+        border:0;
+        background:rgba(255,255,255,.88);
+        box-shadow:0 3px 10px rgba(87,112,130,.12);
+        pointer-events:none;
+        z-index:10;
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-game-card,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-api-status,.wb-worldbook-list,.wb-record-table-wrap,.wb-guess-history,.wb-clue-box,.wb-oldmaid-hand,.wb-oldmaid-log)::after,
+      .wb-modal-mask.wb-arcade :is(.wb-modal,.wb-api-status,.wb-worldbook-list)::after {
+        content:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card,
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-body > .wb-panel,
+      .wb-modal-mask.wb-arcade .wb-modal {
+        overflow:visible;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card { padding-top:28px; }
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-body > .wb-panel { padding-top:28px; }
+      .wb-modal-mask.wb-arcade .wb-modal {
+        padding-top:36px;
+        overflow-y:auto;
+        overflow-x:hidden;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card::after,
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-body > .wb-panel::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:7px;
+        width:72px;
+        height:16px;
+        transform:translateX(-50%) rotate(-1.5deg);
+        border:0;
+        background:rgba(255,232,154,.76);
+        box-shadow:0 2px 8px rgba(87,112,130,.10);
+        pointer-events:none;
+        z-index:3;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 1)::after { transform:translateX(-50%) rotate(1.8deg); }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 2)::after { transform:translateX(-50%) rotate(-2.2deg); }
+      .wb-modal-mask.wb-arcade .wb-modal::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:8px;
+        width:84px;
+        height:18px;
+        transform:translateX(-50%) rotate(-1.2deg);
+        border:0;
+        background:rgba(255,255,255,.88);
+        box-shadow:0 3px 10px rgba(87,112,130,.12);
+        pointer-events:none;
+        z-index:10;
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs {
+        gap:6px;
+        background:transparent;
+        border:0;
+        box-shadow:none;
+        padding:0;
+        overflow:visible;
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab {
+        position:relative;
+        overflow:visible;
+        background:#FFFDF8;
+        color:#527891;
+        border:0;
+        border-radius:0;
+        transform:rotate(-.35deg);
+        box-shadow:
+          0 1px 1px rgba(68,111,139,.08),
+          3px 4px 10px rgba(148,174,190,.28),
+          10px 12px 22px rgba(77,105,126,.10);
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab:nth-child(even) { transform:rotate(.28deg); }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:3px;
+        width:34px;
+        height:8px;
+        transform:translateX(-50%) rotate(-1.4deg);
+        background:rgba(255,232,154,.76);
+        box-shadow:0 1px 5px rgba(87,112,130,.09);
+        pointer-events:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab.active {
+        background:#F8FCFF;
+        color:#236F98;
+        box-shadow:
+          0 1px 1px rgba(68,111,139,.10),
+          4px 5px 12px rgba(148,174,190,.34),
+          12px 14px 26px rgba(77,105,126,.13);
+      }
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab:hover,
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab:focus-visible {
+        transform:translateY(-1px) rotate(0deg);
+        background:#F4FBFF;
+        color:#236F98;
+        box-shadow:
+          0 1px 2px rgba(68,111,139,.10),
+          5px 6px 14px rgba(148,174,190,.38),
+          14px 16px 30px rgba(77,105,126,.16);
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-panel,.wb-side-companion,.wb-companion.on,.wb-speech,.wb-api-status,.wb-worldbook-list,.wb-record-table-wrap,.wb-guess-history,.wb-clue-box,.wb-oldmaid-hand,.wb-oldmaid-log)::after,
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab::after,
+      .wb-modal-mask.wb-arcade :is(.wb-modal,.wb-api-status,.wb-worldbook-list,.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag)::after {
+        content:none;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:7px;
+        width:72px;
+        height:16px;
+        transform:translateX(-50%) rotate(-1.5deg);
+        border:0;
+        background:rgba(255,232,154,.76);
+        box-shadow:0 2px 8px rgba(87,112,130,.10);
+        pointer-events:none;
+        z-index:3;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 1)::after { transform:translateX(-50%) rotate(1.8deg); }
+      #${POPUP_ID}.wb-arcade .wb-game-card:nth-child(3n + 2)::after { transform:translateX(-50%) rotate(-2.2deg); }
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-body > .wb-panel::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:7px;
+        width:72px;
+        height:16px;
+        transform:translateX(-50%) rotate(-1.5deg);
+        border:0;
+        background:rgba(255,232,154,.76);
+        box-shadow:0 2px 8px rgba(87,112,130,.10);
+        pointer-events:none;
+        z-index:3;
+      }
+      .wb-modal-mask.wb-arcade .wb-modal::after {
+        content:'';
+        position:absolute;
+        left:50%;
+        top:8px;
+        width:84px;
+        height:18px;
+        transform:translateX(-50%) rotate(-1.2deg);
+        border:0;
+        background:rgba(255,255,255,.88);
+        box-shadow:0 3px 10px rgba(87,112,130,.12);
+        pointer-events:none;
+        z-index:10;
+      }
+      @media (max-width: 768px) {
+        #${POPUP_ID}.wb-arcade .wb-cardgrid {
+          padding-top:10px;
+        }
+        #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-body {
+          padding-top:18px;
+        }
+        .wb-modal-mask.wb-arcade {
+          padding-top:calc(30px + env(safe-area-inset-top, 0px));
+        }
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card,
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-settings-grid > .wb-panel {
+        position:relative!important;
+        overflow:visible!important;
+        padding-top:30px!important;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card::after,
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-settings-grid > .wb-panel::after {
+        content:''!important;
+        display:block!important;
+        position:absolute!important;
+        left:50%!important;
+        top:-8px!important;
+        width:76px!important;
+        height:16px!important;
+        transform:translateX(-50%) rotate(-1.5deg)!important;
+        border:0!important;
+        background:rgba(255,232,154,.56)!important;
+        box-shadow:0 1px 4px rgba(87,112,130,.12)!important;
+        pointer-events:none!important;
+        z-index:20!important;
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-side-companion,.wb-companion.on,.wb-api-status,.wb-worldbook-list,.wb-record-table-wrap,.wb-guess-history,.wb-clue-box,.wb-oldmaid-hand,.wb-oldmaid-log)::after,
+      #${POPUP_ID}.wb-arcade .wb-tabs .wb-tab::after,
+      .wb-modal-mask.wb-arcade :is(.wb-api-status,.wb-worldbook-list,.wb-btn,.wb-iconbtn,.wb-tab,.wb-pill,.wb-tag)::after {
+        content:none!important;
+        display:none!important;
+      }
+      #${POPUP_ID}.wb-arcade .wb-speech {
+        background:#FFF7D8!important;
+        border-color:transparent!important;
+        font-family:'WanbanLetter','LXGW WenKai','霞鹜文楷','Klee One','Comic Sans MS','Microsoft YaHei',system-ui,sans-serif!important;
+        letter-spacing:.2px!important;
+      }
+      #${POPUP_ID}.wb-arcade .wb-speech *,
+      #${POPUP_ID}.wb-arcade #wb-speech {
+        font-family:'WanbanLetter','LXGW WenKai','霞鹜文楷','Klee One','Comic Sans MS','Microsoft YaHei',system-ui,sans-serif!important;
+      }
+      #${POPUP_ID}.wb-arcade .wb-speech::after {
+        content:none!important;
+        display:none!important;
+      }
+      .wb-modal-mask.wb-arcade {
+        align-items:center!important;
+        overflow-y:auto!important;
+        padding-top:calc(34px + env(safe-area-inset-top, 0px))!important;
+        padding-bottom:34px!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-modal {
+        position:relative!important;
+        max-height:none!important;
+        padding-top:34px!important;
+        overflow:visible!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-modal::after {
+        content:''!important;
+        display:block!important;
+        position:absolute!important;
+        left:50%!important;
+        top:-10px!important;
+        width:86px!important;
+        height:18px!important;
+        transform:translateX(-50%) rotate(-1.2deg)!important;
+        border:0!important;
+        background:rgba(255,255,255,.66)!important;
+        box-shadow:0 1px 5px rgba(87,112,130,.12)!important;
+        pointer-events:none!important;
+        z-index:20!important;
+      }
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-body {
+        padding-top:22px!important;
+      }
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-settings-grid {
+        overflow:visible!important;
+        padding-top:10px!important;
+      }
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-settings-grid > .wb-panel {
+        position:relative!important;
+        overflow:visible!important;
+        padding-top:30px!important;
+      }
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-settings-grid > .wb-panel::after {
+        content:''!important;
+        display:block!important;
+        position:absolute!important;
+        left:50%!important;
+        top:-8px!important;
+        width:76px!important;
+        height:16px!important;
+        transform:translateX(-50%) rotate(-1.5deg)!important;
+        border:0!important;
+        background:rgba(255,232,154,.56)!important;
+        box-shadow:0 1px 4px rgba(87,112,130,.12)!important;
+        pointer-events:none!important;
+        z-index:30!important;
+      }
+      #${POPUP_ID}.wb-arcade .wb-game-card,
+      #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-settings-grid > .wb-panel {
+        border-color:transparent!important;
+        box-shadow:0 3px 8px rgba(87,112,130,.14)!important;
+      }
+      #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag),
+      .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag) {
+        box-shadow:0 2px 5px rgba(87,112,130,.12)!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-modal {
+        background:#FFF3BC!important;
+        color:#244B66!important;
+        box-shadow:0 1px 1px rgba(42,73,96,.08), 0 4px 10px rgba(87,112,130,.14)!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-modal .wb-modal-title {
+        color:#244B66!important;
+        border-bottom:1px solid rgba(43,91,126,.52)!important;
+        padding-bottom:8px!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-table-wrap {
+        background:#FFF3BC!important;
+        border:1px solid rgba(43,91,126,.72)!important;
+        box-shadow:0 1px 4px rgba(87,112,130,.10)!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-table {
+        background:#FFF3BC!important;
+        color:#244B66!important;
+        border-collapse:collapse!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-table thead,
+      .wb-modal-mask.wb-arcade .wb-record-table tbody,
+      .wb-modal-mask.wb-arcade .wb-record-table tr,
+      .wb-modal-mask.wb-arcade .wb-record-table th,
+      .wb-modal-mask.wb-arcade .wb-record-table td {
+        background:#FFF3BC!important;
+        color:#244B66!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-table th,
+      .wb-modal-mask.wb-arcade .wb-record-table td {
+        border-bottom:1px solid rgba(43,91,126,.54)!important;
+        border-right:1px solid rgba(43,91,126,.42)!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-table th:last-child,
+      .wb-modal-mask.wb-arcade .wb-record-table td:last-child {
+        border-right:0!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-table th {
+        color:#1F587D!important;
+        font-weight:900!important;
+        box-shadow:0 1px 0 rgba(43,91,126,.38)!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-table tr:hover td {
+        background:#FFEEA8!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-table .wb-muted,
+      .wb-modal-mask.wb-arcade .wb-record-modal .wb-muted,
+      .wb-modal-mask.wb-arcade .wb-record-modal .wb-pill {
+        color:#416D88!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-modal :is(.wb-btn,.wb-pill) {
+        background:#FFF3BC!important;
+        color:#244B66!important;
+        border:1px solid rgba(43,91,126,.62)!important;
+        box-shadow:0 1px 3px rgba(43,91,126,.14)!important;
+      }
+      .wb-modal-mask.wb-arcade .wb-record-modal .wb-btn:hover,
+      .wb-modal-mask.wb-arcade .wb-record-modal .wb-btn:focus-visible {
+        background:#FFEEA8!important;
+        color:#1F587D!important;
+        border-color:rgba(43,91,126,.82)!important;
+        box-shadow:0 2px 5px rgba(43,91,126,.18)!important;
+      }
       #${POPUP_ID}.wb-spring .wb-side-companion { background:linear-gradient(155deg, #D8EDB2, #BFDFA0 72%); border-color:rgba(111,168,90,.34); box-shadow:0 14px 30px rgba(76,59,42,.14), 0 1px 0 rgba(255,255,255,.42) inset; }
       #${POPUP_ID}.wb-spring .wb-companion.on { background:linear-gradient(135deg, rgba(255,248,220,.88), rgba(199,225,160,.78)); border-top-color:rgba(217,123,84,.58); box-shadow:0 10px 22px rgba(76,59,42,.12), 0 1px 0 rgba(255,255,255,.55) inset; }
       #${POPUP_ID}.wb-spring .wb-speech { background:rgba(255,248,220,.70); border:1px solid rgba(111,168,90,.24); color:#4C3B2A; }
@@ -3689,7 +4563,7 @@ export async function initWanbanXiaowu() {
     const cfg = settings(); const p = qs('#' + POPUP_ID); syncPopupModeClass();
     p.onwheel = (e) => { e.stopPropagation(); };
     p.ontouchmove = (e) => { e.stopPropagation(); };
-    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏</button><button class="wb-tab" data-tab="double">双人游戏</button><button class="wb-tab" data-tab="intimacy">亲密互动</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V2.1.0，本游戏发布者 Gloria"><span><i>当前版本</i>V2.1.0</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
+    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏</button><button class="wb-tab" data-tab="double">双人游戏</button><button class="wb-tab" data-tab="intimacy">亲密互动</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V2.1.3，本游戏发布者 Gloria"><span><i>当前版本</i>V2.1.3</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
     qsa('.wb-tab', p).forEach(b => { b.classList.toggle('active', b.dataset.tab === currentTab); b.onclick = () => { flushSettingsProgress(); stopGame(); currentGame = null; currentTab = b.dataset.tab; saveWindowState(currentTab, ''); render(); }; });
     qs('#wb-close', p).onclick = () => { flushSettingsProgress(); saveWindowState(currentTab, currentGame); stopGame(); closePopupShell(); };
     try {
@@ -3851,7 +4725,7 @@ export async function initWanbanXiaowu() {
       + '<label class="wb-switch"><input id="wb-message-notify" type="checkbox" ' + (cfg.messageNotify ? 'checked' : '') + '>RP正文完成提醒</label>'
       + '<div class="wb-muted" style="font-size:11px;margin-top:-10px;padding-left:24px;line-height:1;">防沉迷系统（不是）</div>'
       + '<div class="wb-preset-row"><span class="wb-muted" style="flex:1;">正文标签：&lt;' + esc(cfg.messageNotifyTag || 'content') + '&gt;...&lt;/' + esc(cfg.messageNotifyTag || 'content') + '&gt;</span><button class="wb-btn" id="wb-message-tag-btn">设置正文标签</button></div>'
-	      + '<div class="wb-field"><label>美化主题</label><select class="wb-select" id="wb-theme"><option value="tavern">跟随酒馆美化主题</option><option value="day">【日】梦幻掌机</option><option value="spring">【日】春野物语</option><option value="mono">【日】黑白像素</option><option value="night">【夜】霓虹游戏舱</option><option value="cyber">【夜】赛博街机</option></select></div>'
+	      + '<div class="wb-field"><label>美化主题</label><select class="wb-select" id="wb-theme"><option value="tavern">跟随酒馆美化主题</option><option value="day">【日】梦幻掌机</option><option value="arcade">【日】晴日信箱</option><option value="spring">【日】春野物语</option><option value="mono">【日】黑白像素</option><option value="night">【夜】霓虹游戏舱</option><option value="cyber">【夜】赛博街机</option></select></div>'
 	      + '<div class="wb-field"><label>全局字体</label><div class="wb-preset-row"><select class="wb-select" id="wb-font-select">' + fontOptions + '</select><button class="wb-btn" id="wb-font-edit" type="button">编辑</button></div></div>'
       + '</div>'
       + '<div class="wb-panel"><div class="wb-section-title">API 配置</div>'
@@ -4186,7 +5060,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'2.1.0', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'2.1.3', exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -7227,9 +8101,11 @@ function showGameRecords(game, page) {
     let blue = Array.isArray(state?.blue) && state.blue.length === 10 ? state.blue.slice() : initialBlue.slice();
     let turn = state?.turn || (state?.firstMover === 'ta' ? 'blue' : 'red'), selected = -1, moveMap = new Map(), over = false, busy = false, moving = null;
     let masterActive = !!state?.masterActive, masterPath = Array.isArray(state?.masterPath) ? state.masterPath.slice() : [];
+    let masterUndoOpen = !!masterActive;
 	    let details = Object.assign({ rounds:0, userMaxJump:0, charMaxJump:0, userHomeCount:0, charHomeCount:0, shock:false, cheatUsed:0 }, state?.details || {});
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
 	    let aiRecentMoves = Array.isArray(state?.aiRecentMoves) ? state.aiRecentMoves.slice(-8) : [];
+	    let aiTargetBlockPressure = 0;
     box.innerHTML = '<div class="wb-draughts-panel"><div class="wb-draughts-info"><span class="wb-pill" id="wb-draughts-turn"></span><span class="wb-pill" id="wb-draughts-score"></span>' + (masterMode ? '<button type="button" class="wb-btn primary" id="wb-draughts-end">结束</button>' : '') + cheatButtonHTML(cheatLeft) + '</div><div class="wb-draughts-board" id="wb-draughts-board"></div></div>';
     setScore('draughts', 0);
     qs('#wb-cheat', box).onclick = cheatUndo;
@@ -7331,11 +8207,26 @@ function showGameRecords(game, page) {
 	    }
 	    function save(){ if(!over) saveProgress('draughts', Object.assign({ red, blue, turn, selected, masterActive, masterPath, details, cheatLeft, cheatAttempted, undoStack, aiRecentMoves }, choiceSavePatch('draughts', choice))); }
     function selectRed(idx){
-      if(gamePaused||over||busy||turn!=='red'||masterActive) return;
+      if(gamePaused||over||busy||turn!=='red') return;
+      if(masterActive){
+        if(idx === selected) return;
+        resetMasterAttempt(idx);
+        return;
+      }
       if(selected === idx){ selected=-1; moveMap=new Map(); draw(); return; }
       selected = idx;
       moveMap = masterMode ? immediateMoveMap(red[idx], false) : legalPaths(red[idx]);
       draw();
+    }
+    function resetMasterAttempt(nextIdx){
+      if(!masterMode || !masterActive || selected < 0 || !masterPath.length) return;
+      red[selected] = masterPath[0];
+      selected = nextIdx;
+      masterActive = false;
+      masterPath = [];
+      moveMap = immediateMoveMap(red[nextIdx], false);
+      draw();
+      save();
     }
     function moveTo(dest){
       if(selected < 0 || !moveMap.has(dest) || busy) return;
@@ -7374,7 +8265,10 @@ function showGameRecords(game, page) {
     }
     function isJumpStep(path){ return path && path.length >= 2 && !neighbors[path[0]].includes(path[path.length - 1]); }
     function masterStep(path){
-      if(!masterActive){ pushUndo(); markFirstMoverUserAction(); masterPath = [path[0]]; }
+      if(!masterActive){
+        if(!masterUndoOpen){ pushUndo(); markFirstMoverUserAction(); masterUndoOpen = true; }
+        masterPath = [path[0]];
+      }
       const idx = selected;
       selected = -1;
       moveMap = new Map();
@@ -7396,6 +8290,7 @@ function showGameRecords(game, page) {
       const path = masterPath.slice();
       selected = -1;
       masterActive = false;
+      masterUndoOpen = false;
       masterPath = [];
       moveMap = new Map();
       finishMove('red', idx, path);
@@ -7417,6 +8312,7 @@ function showGameRecords(game, page) {
       draw();
       save();
       if(checkWin(side)) return;
+      if(side === 'red') masterUndoOpen = false;
       turn = side === 'red' ? 'blue' : 'red';
       draw();
       save();
@@ -7447,6 +8343,27 @@ function showGameRecords(game, page) {
 	      if(!pt) return 0;
 	      return side === 'blue' ? pt.y * 36 - Math.abs(pt.x2) * 7 : -pt.y * 36 - Math.abs(pt.x2) * 7;
 	    }
+	    function targetBlockPressure(side, moves){
+	      const outside = moves.filter(m => !isTarget(side, m.from));
+	      if(!outside.length || outside.some(m => isTarget(side, m.to))) return 0;
+	      const near = sideArr(side).some(p => !isTarget(side, p) && distToTarget(side, p) <= 2);
+	      return near ? 1 : 0;
+	    }
+	    function homeDeltaForMove(side, move){
+	      return (!isTarget(side, move.from) && isTarget(side, move.to) ? 1 : 0) - (isTarget(side, move.from) && !isTarget(side, move.to) ? 1 : 0);
+	    }
+	    function outsidePieceCount(side){
+	      return sideArr(side).filter(p => !isTarget(side, p)).length;
+	    }
+	    function directHomeMoves(side, moves){
+	      return moves.filter(m => !isTarget(side, m.from) && isTarget(side, m.to));
+	    }
+	    function outsideProgressMoves(side, moves){
+	      return moves.filter(m => !isTarget(side, m.from) && distToTarget(side, m.to) < distToTarget(side, m.from));
+	    }
+	    function targetFreeingMoves(side, moves){
+	      return moves.filter(m => isTarget(side, m.from) && isTarget(side, m.to) && targetSlotValue(side, m.to) > targetSlotValue(side, m.from));
+	    }
 	    function bestReplyPenalty(side, limit){
 	      const foe = side === 'blue' ? 'red' : 'blue';
 	      const moves = allMoves(foe);
@@ -7457,13 +8374,18 @@ function showGameRecords(game, page) {
 	      const p0 = points[move.from], p1 = points[move.to], side = 'blue';
 	      const beforeDist = distToTarget(side, move.from), afterDist = distToTarget(side, move.to);
 	      const distGain = (beforeDist - afterDist) * 240;
-	      const enterTarget = !isTarget(side, move.from) && isTarget(side, move.to) ? 2600 : 0;
+	      const remainingOutside = outsidePieceCount(side);
+	      const directHome = !isTarget(side, move.from) && isTarget(side, move.to);
+	      const enterTarget = directHome ? 9000 + Math.max(0, 4 - remainingOutside) * 2200 : 0;
 	      const stayTarget = isTarget(side, move.from) ? (isTarget(side, move.to) ? 1250 : -25000) : 0;
 	      const finishBonus = homeCount(side) >= 8 && isTarget(side, move.to) ? 1200 : 0;
 	      const unresolved = 10 - homeCount(side);
 	      const targetShuffle = isTarget(side, move.from) && isTarget(side, move.to);
-	      const targetShufflePenalty = targetShuffle ? (unresolved > 0 ? -9000 : -900) : 0;
-	      const targetSlotGain = targetShuffle ? (targetSlotValue(side, move.to) - targetSlotValue(side, move.from)) * 18 : 0;
+	      const blockedOutside = unresolved > 0 && aiTargetBlockPressure > 0;
+	      const targetSlotDelta = targetShuffle ? targetSlotValue(side, move.to) - targetSlotValue(side, move.from) : 0;
+	      const targetShufflePenalty = targetShuffle ? (blockedOutside ? (targetSlotDelta > 0 ? -200 : -6500) : (unresolved > 0 ? -9000 : -900)) : 0;
+	      const targetSlotGain = targetShuffle ? targetSlotDelta * 18 : 0;
+	      const clearTargetBlock = targetShuffle && blockedOutside && targetSlotDelta > 0 ? targetSlotDelta * 46 + 2400 : 0;
 	      const leaveOwnHome = isOwnHome(side, move.from) && !isOwnHome(side, move.to) ? 520 : 0;
 	      const ownHomePenalty = isOwnHome(side, move.to) ? -420 : 0;
 	      const backwardPenalty = p1.y < p0.y && !isTarget(side, move.to) ? -1200 : 0;
@@ -7475,14 +8397,25 @@ function showGameRecords(game, page) {
 	      const repeatPenalty = aiRecentMoves.includes(repeatKey) ? -1800 : 0;
 	      const reversePenalty = aiRecentMoves.includes(reverseKey) ? -2400 : 0;
 	      const evalAfter = simulateDraughtsMove(side, move, () => boardEval(side) - bestReplyPenalty(side, .16));
-	      return evalAfter + distGain + enterTarget + stayTarget + finishBonus + targetShufflePenalty + targetSlotGain + leaveOwnHome + ownHomePenalty + backwardPenalty + center + jumpValue + repeatPenalty + reversePenalty + Math.random() * 3;
+	      return evalAfter + distGain + enterTarget + stayTarget + finishBonus + targetShufflePenalty + targetSlotGain + clearTargetBlock + leaveOwnHome + ownHomePenalty + backwardPenalty + center + jumpValue + repeatPenalty + reversePenalty + Math.random() * 3;
 	    }
 	    function ai(){
 	      if(over||gamePaused||busy||turn!=='blue') return;
 	      let moves = allMoves('blue');
 	      if(!moves.length) { turn='red'; draw(); save(); return; }
+	      const currentHome = homeCount('blue');
+	      const immediateWin = moves.filter(m => currentHome + homeDeltaForMove('blue', m) >= 10);
+	      const entering = directHomeMoves('blue', moves);
+	      const outsideCount = outsidePieceCount('blue');
+	      const progressing = outsideProgressMoves('blue', moves);
+	      aiTargetBlockPressure = targetBlockPressure('blue', moves);
+	      const freeing = targetFreeingMoves('blue', moves);
+	      if(immediateWin.length) moves = immediateWin;
+	      else if(entering.length && outsideCount <= 3) moves = entering;
+	      else if(progressing.length && outsideCount <= 3) moves = progressing;
+	      else if(aiTargetBlockPressure && freeing.length) moves = freeing;
 	      const outsideMoves = moves.filter(m => !isTarget('blue', m.from));
-	      if(outsideMoves.length) moves = outsideMoves;
+	      if(outsideMoves.length && !aiTargetBlockPressure) moves = outsideMoves;
 	      pushUndo();
 		      const best = moves.sort((a,b)=>scoreMove(b)-scoreMove(a))[0];
 	      aiRecentMoves.push(best.from + '>' + best.to);
@@ -7545,7 +8478,7 @@ function showGameRecords(game, page) {
         const item = occ.get(p.i), sel = item && item.side === 'red' && item.idx === selected, dest = dests.has(p.i), movingHere = moving && moving.pos === p.i;
         const left = 50 + p.x2 * 3.55, top = 50 + p.y * 5.6;
         const cls = ['wb-draughts-hole', zoneClass(p), item ? item.side : '', sel ? 'selected' : '', dest ? 'dest' : '', movingHere ? 'moving' : ''].filter(Boolean).join(' ');
-        const disabled = item ? (item.side !== 'red' || turn !== 'red' || busy || masterActive) : (!dest || busy || turn !== 'red');
+        const disabled = item ? (item.side !== 'red' || turn !== 'red' || busy) : (!dest || busy || turn !== 'red');
         const attr = item ? 'data-piece="' + item.idx + '"' : (dest ? 'data-dest="' + p.i + '"' : '');
         return '<button type="button" class="' + cls + '" style="left:' + left.toFixed(2) + '%;top:' + top.toFixed(2) + '%;" ' + attr + ' ' + (disabled ? 'disabled' : '') + '>' + (item ? '<span></span>' : '') + '</button>';
       }).join('');
