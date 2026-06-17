@@ -146,7 +146,9 @@ export async function initWanbanXiaowu() {
   const FOX_ASSET_BASE = PET_ASSET_BASE + 'fox/';
   const FOX_HOUSE_DAY_URL = PET_ASSET_BASE + 'scene/house-day.png';
   const APP_ICON_URL = GAME_ICON_BASE + 'wanban.png';
-  const CONTINUE_IMAGE_URL = GAME_ICON_BASE + 'continue.png';
+  const PET_BUTTON_URL = GAME_ICON_BASE + 'pet.png';
+  const HEART_CHALLENGE_URL = GAME_ICON_BASE + 'card-zhen.png';
+  const FARM_BUTTON_URL = GAME_ICON_BASE + 'farm.png';
   const OLDMAID_CARD_URL = GAME_ICON_BASE + 'oldmaid-card.jpg';
   const OLDMAID_BACK_URL = GAME_ICON_BASE + 'oldmaid-back.jpg';
   const MEMORY_CARD_URL = GAME_ICON_BASE + 'memory-card.jpg';
@@ -167,6 +169,7 @@ export async function initWanbanXiaowu() {
     minesweeper: { id: 'minesweeper', name: '扫雷', mode: 'single', unit: '分', icon: '雷', iconImage: GAME_ICON_BASE + 'minesweeper.png' },
     uyangle: { id: 'uyangle', name: 'U了个U', mode: 'single', unit: '分', icon: 'U', iconImage: GAME_ICON_BASE + 'sheep.png' },
     screw: { id: 'screw', name: '拧螺丝', mode: 'single', unit: '分', icon: '螺', iconImage: GAME_ICON_BASE + 'screw.png' },
+    popstar: { id: 'popstar', name: '消灭星星', mode: 'single', unit: '分', icon: '星', iconImage: GAME_ICON_BASE + 'star.png' },
     ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: GAME_ICON_BASE + 'ludo.jpg' },
     guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: GAME_ICON_BASE + 'guessnumber.jpg' },
     wordguess: { id: 'wordguess', name: '我说你猜', mode: 'double', unit: '胜', icon: '谜', iconImage: GAME_ICON_BASE + 'wordguess.jpg' },
@@ -244,6 +247,7 @@ export async function initWanbanXiaowu() {
     minesweeper: '每局会先选择难度：简单9×9、10雷；中等12×12、25雷；困难16×16、50雷。下方按钮可在“翻开”和“插旗”之间切换；数字格周围旗数等于数字时会按正式扫雷规则翻开周围未插旗格，旗插错会直接失败。',
     uyangle: '三消叠牌小游戏。普通模式可通关；无尽模式会在剩余牌较少时自动追加下一批牌层，失败时统计已消除数量。点击没有被上层遮挡的卡牌放入下方7格槽，同图标凑满3张会消除；槽位超过7格且没有消除时失败。',
     screw: '每局会选择普通模式或无尽模式，并保证每种颜色螺丝数量为3的倍数、工具盒数量正确。顶部同时出现3个随机颜色工具盒，点击可见螺丝后，同色螺丝进入对应工具盒；非当前盒颜色会进入5格临时托盘。任意工具盒收满3颗会自动打包并刷新下一个颜色。上层面板会遮挡下层螺丝；板件剩一个螺丝时会悬挂摆动，失去全部螺丝后受重力下落。普通模式清空全部面板即可过关，无尽模式会在快结束时续上下一批。',
+    popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5。消除后上方星星下落，空列向左收拢；无可消除组合时本关结算，剩余20个以内按(20-剩余数)×100奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。每局有3次打乱和3次单消道具。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '进入时可选择普通模式或无尽模式。普通模式任意方向先连成五子获胜；无尽模式双方各30颗棋子，连五后回收自己的五子并吃掉对方一子，直到一方棋子被吃完或双方无可用棋子。',
     territory: '在点阵之间画边，规则类似围方格。谁画下一个小方格的第4条边，谁就占领该格并继续行动。所有边画完后，占领格子多的一方获胜。',
@@ -323,6 +327,7 @@ export async function initWanbanXiaowu() {
     minesweeper: { start:'扫雷开局，16×16棋盘里藏着50个雷。', number:'玩家翻开安全格并出现数字。', flag:'玩家进行插旗或问号标记。', chord:'玩家点击已翻开的数字格，周围标记数量符合数字，成功试探并翻开新格。', big_open:'一次翻开超过5个安全格。', half:'安全格已经翻开一半。', last_5:'按剩余雷数和插旗数计算，显示只剩最后5个雷以内。', record:'扫雷刷新历史最高分。', gameover:'玩家踩到雷，本局失败。', random:'观看扫雷时的待机碎碎念。' },
     uyangle: { start:'U了个U开局。这是一个三消叠牌小游戏，玩家点击未被遮挡的卡牌放入7格槽，同图标3张会消除。', match:'玩家累计每完成3次三消时触发一次普通三消语录；如果同一步触发危险、最后10张、失败或完成等特殊事件，则优先特殊事件。', shuffle:'玩家使用打乱，重新随机排列剩余牌面。', moveout:'玩家使用移出，把槽内一张卡牌移到上方暂存区。', danger:'下方槽位已经占满6个以上，距离失败很近。', last_10:'场上剩余最后10张以内卡牌。', record:'U了个U刷新历史最高分。', gameover:'下方7格槽已满，玩家再放入一张卡牌后没有形成三消，槽位溢出导致失败。', random:'观看U了个U三消叠牌时的碎碎念。' },
     screw: { start:'拧螺丝开局，玩家需要按颜色盒子收集螺丝并清空玻璃面板。', match:'玩家完成一次三颗同色螺丝打包；每次打包后有30%概率触发。', add_box:'玩家点击增加盒子按钮，本局盒子上限增加但最终分数降低。', progress_50:'拧螺丝进度首次达到50%。', progress_80:'拧螺丝进度首次达到80%。', tray_4:'5个候补槽已经填满，下一颗不能进盒的螺丝会导致失败。', record:'拧螺丝刷新历史最高分。', gameover:'候补槽已满后又点击了无法直接进入工具盒的螺丝，拧螺丝失败。', random:'观看拧螺丝时的碎碎念。' },
+    popstar: { start:'消灭星星开局，10×10彩色星星棋盘已生成。', first_clear:'当前关第一次消除星星。', small_clear:'玩家只消除了2个星星。', high_clear:'玩家一次消除4个及以上星星，获得较高分数。', level_clear:'玩家通过当前关。', record:'消灭星星刷新历史最高分。', cheat:'玩家使用打乱或单消道具。', target_met:'玩家当前累计分数首次达到本关通关分数。', gameover:'消灭星星没有可消除组合且分数未达到本关目标。', random:'观看消灭星星时的碎碎念。' },
     tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'{{char}}阻挡了玩家即将连线的一步。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'{{char}}在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
     gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，{{char}}知道自己这把基本必输了。', ai_block:'{{char}}阻挡玩家形成强威胁。', ai_threat:'{{char}}形成强威胁，玩家需要防守。', user_capture:'五子棋无尽模式，玩家吃掉{{char}}一颗棋子并用自己的棋子替换该位置。', char_capture:'五子棋无尽模式，{{char}}吃掉玩家一颗棋子并用自己的棋子替换该位置。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'{{char}}五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
     territory: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', edge:'玩家画下一条边。', no_safe_edge:'场面没有普通边了，之后每条边都可能送分。', capture:'玩家围住某个方格最后一条边并占领得分。', chain:'玩家连续占领多个方格。', ta_capture:'{{char}}围住某个方格并占领得分。', user_turn:'{{char}}的回合结束，轮到玩家。', danger:'玩家选择可能送给{{char}}得分机会的边。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'所有边画完后玩家得分更高。', user_lose:'所有边画完后{{char}}得分更高。', draw:'所有边画完后双方平分。', random:'和user玩电子围地盘时的碎碎念。' },
@@ -383,7 +388,7 @@ export async function initWanbanXiaowu() {
   }
   function scores() {
     const loaded = safeObject(loadJSON(STORAGE_SCORES, {}));
-    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, uyangle: 0, screw: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 } };
+    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, uyangle: 0, screw: 0, popstar: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 } };
     ['ludo','guessnumber','wordguess','tictactoe','gomoku','territory','oldmaid','reversi','bombnumber','connect4d','draughts'].forEach(k => { if (typeof loaded[k] === 'number') loaded[k] = { user: loaded[k], ta: 0 }; });
     return Object.assign(base, loaded);
   }
@@ -629,6 +634,7 @@ export async function initWanbanXiaowu() {
     if (game === 'memory') return !!(state.moves || (state.done && state.done.length) || (state.open && state.open.length));
     if (game === 'uyangle') return !!(state.tiles && state.tiles.some(t => !t.gone)) || !!(state.tray && state.tray.length) || !!(state.hold && state.hold.length);
     if (game === 'screw') return !!(state.panels && state.panels.some(p => !p.gone)) || !!(state.tray && state.tray.length);
+    if (game === 'popstar') return !!state.score || Number(state.level || 1) > 1 || !!(state.board && state.board.some(row => row && row.some(Boolean)));
     if (game === 'minesweeper') return !!state.started || !!(state.cells && state.cells.some(c => c && (c.open || c.mark)));
     if (game === 'snake') return !!state.score;
     if (game === 'game2048') return !!state.score || (Array.isArray(state.board) && state.board.filter(Boolean).length > 2);
@@ -791,6 +797,7 @@ export async function initWanbanXiaowu() {
     if (game === 'sudoku') return ['时间','用时','分数','求助次数','陪伴者','日志','操作'];
     if (game === 'minesweeper') return ['时间','用时','胜负','分数','排对雷','陪伴者','日志','操作'];
     if (game === 'uyangle') return ['时间','用时','分数','打乱次数','移出次数','陪伴者','日志','操作'];
+    if (game === 'popstar') return ['时间','用时','分数','关卡','剩余','陪伴者','日志','操作'];
     if (game === 'wordguess') return ['时间','用时','猜中题数','陪伴者','日志','操作'];
     if (isRoundCountGame(game)) return ['时间','用时','胜负','回合数','陪伴者','日志','操作'];
     if ((GAME_META[game] || {}).mode === 'double') return ['时间','用时','胜负','陪伴者','日志','操作'];
@@ -804,6 +811,7 @@ export async function initWanbanXiaowu() {
     if (game === 'sudoku') return base.concat([sudokuRecordPoints(r), String(extractNumber(r?.scoreText || '', /求助\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
     if (game === 'minesweeper') return base.concat([minesweeperOutcomeText(r), singleRecordPoints(r), String(extractNumber(r?.scoreText || '', /排对\s*(\d+)\s*个雷/, 0)), recordCompanionDisplay(r)]);
     if (game === 'uyangle') return base.concat([singleRecordPoints(r), String(extractNumber(r?.scoreText || '', /打乱\s*(\d+)\s*次/, 0)), String(extractNumber(r?.scoreText || '', /移出\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
+    if (game === 'popstar') return base.concat([singleRecordPoints(r), String(r?.details?.level || extractNumber(r?.scoreText || '', /第\s*(\d+)\s*关/, 1)), String(r?.details?.remainingAtEnd ?? extractNumber(r?.scoreText || '', /剩余\s*(\d+)\s*个/, 0)), recordCompanionDisplay(r)]);
     if (game === 'wordguess') return base.concat([wordGuessHits(r), recordCompanionDisplay(r)]);
     if (isRoundCountGame(game)) return base.concat([userOutcomeText(r.result), recordRoundCount(r), recordCompanionDisplay(r)]);
     if ((GAME_META[game] || {}).mode === 'double') return base.concat([userOutcomeText(r.result), recordCompanionDisplay(r)]);
@@ -824,6 +832,7 @@ export async function initWanbanXiaowu() {
     if (game === 'minesweeper') return '字段说明：胜负是user的扫雷结果；排对雷表示插旗位置确实是雷的数量；成功时用时越短分数越高，失败时按已排对雷和已翻开安全格给少量分。';
     if (game === 'uyangle') return '字段说明：U了个U是三消叠牌小游戏；分数由用时和打乱次数共同计算，用时越短、打乱越少，分数越高。';
     if (game === 'screw') return '字段说明：拧螺丝是颜色盒子收集和玻璃层级解谜；普通模式分数由用时、候补槽压力和增加盒子次数共同计算；无尽模式失败时按当前盒子数量结算倍率，盒子越少倍率越高。';
+    if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5；无可消除组合后按剩余方块结算，累计分数达到关卡目标进入下一关。';
     if (game === 'wordguess') return '字段说明：猜中题数只表示user猜中的题数。';
     if ((GAME_META[game] || {}).mode === 'double') return '字段说明：胜负是user的胜负，胜表示user赢，负表示' + role + '赢。';
     return '字段说明：结果是user本局获得的分数。';
@@ -868,6 +877,7 @@ export async function initWanbanXiaowu() {
     if (game === 'sudoku') return '分数：' + sudokuRecordPoints(rec) + '；提示次数：' + (d.hints || 0) + '次；修改次数：' + (d.edits || 0) + '次；修改最多的格子修改次数：' + (d.maxEditsOneCell || 0) + '次；全部完成后错误次数：' + (d.finalErrors || 0) + '格。';
     if (game === 'minesweeper') return '结果：' + (d.won ? '成功' : '失败') + '；插旗数量：' + (d.flags || 0) + '；排对的雷：' + (d.correctFlags || 0) + '个；未插旗扫雷数量：' + (d.unflaggedMines || 0) + '个；踩雷时已开格子：' + (d.openedAtBlast || d.openedSafe || 0) + '格；犹豫次数：' + (d.hesitations || 0) + '次；数字试探成功次数：' + (d.chordSuccesses || 0) + '次；不确定试探成功次数：' + (d.riskyChordSuccesses || 0) + '次。';
     if (game === 'screw') return (d.endless ? '模式：无尽模式；收纳盒子：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '个；结算盒子数：' + (d.endlessBoxCount || (3 + (d.addBoxUses || 0))) + '个；基础分：' + (d.endlessBaseScore == null ? '未记录' : d.endlessBaseScore) + '；结算倍率：×' + (d.endlessScoreMultiplier || '未记录') + '；' : '结果：' + (d.completed ? '成功' : '失败') + '；最终进度：' + (d.progress || 0) + '%；打包次数：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '次；') + '候补槽最大占用：' + (d.maxTray || 0) + '格；候补槽填满5个次数：' + (d.trayFullCount || d.trayFourCount || 0) + '次；使用增加盒子次数：' + (d.addBoxUses || 0) + '次；被遮挡螺丝点击次数：' + (d.blocked || 0) + '次；掉落玻璃数量：' + (d.fallen || 0) + '块。';
+    if (game === 'popstar') return '最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '。';
     if (game === 'ludo') return cheatText + 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user飞行次数：' + (d.userFlights || 0) + '次；' + (rec.companion || '{{char}}') + '飞行次数：' + (d.charFlights || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
     if (game === 'guessnumber') return '每次猜测：\n' + ((d.guesses || []).map((x,i) => (i+1) + '. 猜“' + x.guess + '”：数字对' + x.nums + '个，位置对' + x.pos + '个').join('\n') || '无');
     if (game === 'wordguess') return '每题记录：\n' + ((d.rounds || []).map((r,i) => (i+1) + '. 题目：' + r.word + '；5条提示：' + (r.clues || []).join(' / ') + '；user猜过：' + ((r.guesses || []).join('、') || '无') + '；第几条提示猜中：' + (r.winClueIndex || '未猜中')).join('\n') || '无');
@@ -1031,6 +1041,14 @@ export async function initWanbanXiaowu() {
         'screw_fail：失败小剧场。拧螺丝失败且未命中其他特殊小剧场时触发。',
         '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
       ].join('\n');
+      if (game === 'popstar') return [
+        'super_good：超厉害小剧场。消灭星星里连续3次消除4个以上方块，表现角色对user连续高分连消的惊讶和兴奋。',
+        'super_bad：超菜小剧场。消灭星星在4关以内失败，适合轻松调侃、安慰和复盘。',
+        'popstar_clutch：命悬一线小剧场。消除最后一个可消除组合后分数才刚好达标过关，重点写险些失败、最后一手救回来的紧张感。',
+        'popstar_godmove：神之一手小剧场。剩余20个以内方块时使用打乱或单消道具，并最终通关，重点写残局靠道具救活。',
+        'record：破纪录小剧场。刷新当前游戏历史最高分。',
+        'normal：普通小剧场。没有命中特殊条件时，根据最终关卡、分数和剩余星星自然复盘。'
+      ].join('\n');
       return [
         'record：刷新当前游戏历史记录。',
         'super_good：超级厉害小剧场。2048合成超过2048的特别大数字；俄罗斯方块消除10行以上；合成大西瓜合成2个最终西瓜；贪吃蛇达到200分以上。',
@@ -1136,6 +1154,10 @@ export async function initWanbanXiaowu() {
     if (game === 'uyangle' && meta.badLuck) candidates.push('bad_luck');
     if (game === 'screw' && meta.completed && (meta.addBoxUses || 0) === 0) candidates.push('super_good');
     if (game === 'screw' && !meta.completed && (meta.progress || 0) >= 80) candidates.push('screw_regret');
+    if (game === 'popstar' && meta.completed && (meta.maxHighStreak || meta.details?.maxHighStreak || 0) >= 3) candidates.push('super_good');
+    if (game === 'popstar' && !meta.completed && (meta.level || meta.details?.level || 1) <= 4) candidates.push('super_bad');
+    if (game === 'popstar' && meta.clutch) candidates.push('popstar_clutch');
+    if (game === 'popstar' && meta.godMove) candidates.push('popstar_godmove');
     if (durationMs <= 15000 && ((game === 'tetris' && score < 200) || (game === 'snake' && score < 30) || ((game === 'jump' || game === 'plank') && score < 3) || (game === 'watermelon' && score < 120) || (game === 'game2048' && score < 128))) candidates.push('super_bad');
     if (durationMs >= 1200000) candidates.push('long_run');
     if (currentRoundRecord) candidates.push('record');
@@ -1222,6 +1244,8 @@ export async function initWanbanXiaowu() {
       ,screw_regret: '遗憾小剧场'
       ,screw_success: '成功小剧场'
       ,screw_fail: '失败小剧场'
+      ,popstar_clutch: '命悬一线小剧场'
+      ,popstar_godmove: '神之一手小剧场'
       ,flight_show: '飞行小剧场'
     }[special] || '特殊角色互动小剧场').replace(/{{char}}/g, displayCharName());
   }
@@ -1860,6 +1884,7 @@ export async function initWanbanXiaowu() {
       }
       @font-face { font-family: 'WanbanCyberPixel'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_885190757_1759071282816_qdqqd_d815d3.ttf') format('truetype'); font-display:swap; }
       @font-face { font-family: 'WanbanLetter'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_1_885190757_1763396927198_qdqqd_gnxuoc.ttf') format('truetype'); font-display:swap; }
+      @font-face { font-family: 'WanbanIntimacyButton'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_1_5673241091_1762496170336_qdqqd_cyuxp9.ttf') format('truetype'); font-display:swap; }
       #${POPUP_ID}.wb-day { --wb-bg:#fff7fb; --wb-panel:#fffefd; --wb-soft:#ffeaf1; --wb-text:#2f2430; --wb-sub:#8a6470; --wb-border:#e8b9c5; --wb-accent:#c65b7c; --wb-accent2:#3a8f91; --wb-board:#fff2e6; --wb-input:#fff9fb; --wb-glow:rgba(198,91,124,.26); --wb-gold:#c99738; --wb-screen:#fff9f2; --wb-on-accent:#fff; }
       #${POPUP_ID}.wb-arcade { --wb-bg:#F3FAFF; --wb-panel:#FFFDF8; --wb-soft:#E5F4FF; --wb-text:#28435A; --wb-sub:#6F8EA3; --wb-border:#B8DCEF; --wb-accent:#5FA8D7; --wb-accent2:#F6C8D8; --wb-board:#F8FCFF; --wb-input:#FFFDF8; --wb-glow:rgba(95,168,215,.14); --wb-gold:#5FA8D7; --wb-screen:#FFFDF8; --wb-on-accent:#fff; }
       #${POPUP_ID}.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; --wb-on-accent:#fff; }
@@ -1887,13 +1912,29 @@ export async function initWanbanXiaowu() {
       @keyframes wbSwipeEnterRight { from { opacity:.55; transform:translateX(-22px); } to { opacity:1; transform:translateX(0); } }
       .wb-body.wb-settings-mode { overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; max-height:calc(100dvh - 118px); min-height:0; padding-bottom:24px; }
       .wb-body.wb-game-mode { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden; -webkit-overflow-scrolling:touch; height:auto; }
-      .wb-body.wb-intimacy-mode { padding:12px; overflow:hidden; display:grid; min-height:0; }
-      .wb-intimacy-hub { min-height:0; display:grid; grid-template-columns:minmax(0, 1fr) minmax(220px, 280px); gap:12px; align-items:stretch; }
-      .wb-intimacy-image-wrap { min-height:0; display:grid; place-items:center; background:var(--wb-board); border:1px solid var(--wb-border); overflow:hidden; }
-      .wb-intimacy-image { width:auto; height:70%; max-width:92%; max-height:92%; min-height:0; object-fit:contain; display:block; }
-      .wb-pet-trial-card { min-height:0; display:grid; align-content:center; gap:12px; background:var(--wb-panel); border:1px solid var(--wb-border); padding:14px; }
-      .wb-pet-trial-title { font-size:18px; font-weight:900; color:var(--wb-accent); letter-spacing:1px; }
-      .wb-pet-trial-copy { color:var(--wb-sub); font-size:13px; line-height:1.5; }
+      .wb-body.wb-intimacy-mode { padding:12px; overflow:auto; display:block; min-height:0; }
+      .wb-intimacy-hub { min-height:0; display:grid; grid-template-columns:1fr; gap:10px; align-content:start; justify-items:center; width:100%; }
+      .wb-intimacy-button {
+        position:relative;
+        width:min(100%, 340px);
+        aspect-ratio:936 / 204;
+        display:grid;
+        place-items:center;
+        padding:0;
+        border:0;
+        background:transparent;
+        color:#2f2430;
+        box-shadow:none;
+        cursor:pointer;
+        overflow:hidden;
+        font-family:inherit;
+      }
+      .wb-intimacy-button::before { content:none; }
+      .wb-intimacy-button:hover { transform:translateY(-1px); filter:brightness(1.02); }
+      .wb-intimacy-button:active { transform:translateY(1px); box-shadow:none; }
+      .wb-intimacy-button img { position:absolute; inset:0; z-index:1; width:100%; height:100%; object-fit:fill; display:block; filter:saturate(.98) brightness(1.02); }
+      .wb-intimacy-button span { position:relative; z-index:2; min-width:0; font-family:'WanbanIntimacyButton', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif!important; font-size:clamp(30px, 3.4vw, 38px); font-weight:700; letter-spacing:2px; color:#4A2617; text-shadow:0 1px 0 rgba(255,255,255,.82), 0 2px 8px rgba(255,255,255,.62); white-space:nowrap; }
+      .wb-pet-trial-note { justify-self:stretch; padding:8px 10px; border:1px solid var(--wb-border); background:var(--wb-soft); color:var(--wb-text); font-weight:900; text-align:center; }
       .wb-pet-room { width:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0, 1fr) auto; gap:10px; }
       .wb-pet-room-top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
       .wb-pet-room-title { font-weight:900; color:var(--wb-accent); letter-spacing:1px; }
@@ -1934,9 +1975,9 @@ export async function initWanbanXiaowu() {
       .wb-pet-room-actions { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; }
       @media (max-width: 768px) {
         .wb-body.wb-intimacy-mode { padding:8px; }
-        .wb-intimacy-hub { grid-template-columns:1fr; grid-template-rows:minmax(0, 1fr) auto; }
-        .wb-intimacy-image { height:auto; width:68%; }
-        .wb-pet-trial-card { align-content:start; }
+        .wb-intimacy-hub { gap:8px; }
+        .wb-intimacy-button { width:min(96%, 360px); aspect-ratio:936 / 204; }
+        .wb-intimacy-button span { font-size:clamp(32px, 9.2vw, 40px); }
         .wb-pet-scene { width:min(100%, 92cqw, 64cqh); }
         .wb-pet-room-fox { top:46%; width:min(36cqw, 154px); min-width:96px; }
       }
@@ -1971,6 +2012,7 @@ export async function initWanbanXiaowu() {
       .wb-toolbar { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
       .wb-stat { display:flex; gap:6px; flex-wrap:wrap; }
       .wb-pill { background:var(--wb-soft); border:1px solid var(--wb-border); border-radius:0; padding:5px 9px; font-size:12px; font-weight:700; }
+      #wb-score.target-met { color:#fff; border-color:#16a34a; background:linear-gradient(135deg,#16a34a,#22c55e); box-shadow:0 0 16px rgba(34,197,94,.35); }
       .wb-board-wrap { position:relative; flex:1 1 auto; min-height:0; width:100%; display:grid; place-items:center; background:var(--wb-board); border:1px solid var(--wb-border); border-radius:0; padding:8px; touch-action:none; overflow:hidden; container-type:size; }
       .wb-pause-overlay { position:absolute; inset:8px; z-index:6; display:grid; place-items:center; background:rgba(0,0,0,.42); color:#fff; font-size:clamp(34px, 9vh, 84px); font-weight:900; letter-spacing:0; pointer-events:none; text-shadow:0 3px 18px rgba(0,0,0,.45); }
       .wb-pause-overlay span { padding:8px 18px; border:2px solid rgba(255,255,255,.55); background:rgba(0,0,0,.18); }
@@ -2216,6 +2258,49 @@ export async function initWanbanXiaowu() {
       .wb-mines-actions .wb-btn { min-width:86px; }
       @keyframes wbMinePress { 0%,100% { transform:translateY(0); } 50% { transform:translateY(1px); box-shadow:inset 1px 1px 0 rgba(0,0,0,.24); } }
       @keyframes wbMineBoom { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); filter:brightness(1.18); } }
+      .wb-popstar-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:7px; place-items:center; overflow:hidden; }
+      .wb-popstar-top { width:100%; min-width:0; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; align-items:center; }
+      .wb-popstar-stat { min-width:0; height:34px; display:grid; place-items:center; padding:3px 7px; border:1px solid color-mix(in srgb, var(--wb-border) 72%, var(--wb-accent2) 28%); background:linear-gradient(180deg, color-mix(in srgb, var(--wb-panel) 84%, var(--wb-accent2) 16%), color-mix(in srgb, var(--wb-soft) 82%, var(--wb-panel) 18%)); color:var(--wb-text); font-size:12px; font-weight:900; line-height:1.1; text-align:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; box-shadow:inset 0 1px 0 rgba(255,255,255,.42); }
+      .wb-popstar-stat.target-met { color:#fff; border-color:#16a34a; background:linear-gradient(135deg,#16a34a,#22c55e); box-shadow:0 0 16px rgba(34,197,94,.38), inset 0 1px 0 rgba(255,255,255,.46); }
+      .wb-popstar-stage { position:relative; width:var(--wb-popstar-size, min(560px, 100%, 100cqh)); height:var(--wb-popstar-size, min(560px, 100%, 100cqh)); max-width:100%; max-height:100%; aspect-ratio:1 / 1; border:2px solid color-mix(in srgb, var(--wb-accent2) 44%, var(--wb-border) 56%); background:radial-gradient(circle at 22% 18%, rgba(255,255,255,.55), transparent 18%), linear-gradient(180deg,#dff5ff,#fbe7f5 64%,#fff4d9); box-shadow:inset 0 0 0 6px rgba(255,255,255,.24), 0 12px 28px rgba(79,141,247,.15); overflow:hidden; contain:layout size; touch-action:none; box-sizing:border-box; }
+      .wb-popstar-board { position:absolute; inset:8px; aspect-ratio:1 / 1; box-sizing:border-box; }
+      .wb-popstar-cell { position:absolute; width:10%; height:10%; aspect-ratio:1 / 1; box-sizing:border-box; left:calc(var(--c) * 10%); top:calc(var(--r) * 10%); padding:3px; border:0; background:transparent; cursor:pointer; transition:left .24s cubic-bezier(.2,.8,.2,1), top .28s cubic-bezier(.2,.82,.2,1), transform .16s ease, opacity .18s ease, filter .16s ease; transform:scale(1); z-index:2; }
+      .wb-popstar-cell:not(:disabled):hover { transform:scale(1.08); filter:brightness(1.06) saturate(1.08); z-index:4; }
+      .wb-popstar-cell.hint { animation:wbPopstarHint .72s ease-in-out infinite alternate; }
+      .wb-popstar-cell.removing { opacity:0; transform:scale(.2) rotate(18deg); pointer-events:none; }
+      .wb-popstar-cell.settling { animation:wbPopstarSettle .34s ease-out 1; }
+      .wb-popstar-block { position:relative; width:100%; height:100%; display:grid; place-items:center; border-radius:10px; background:linear-gradient(145deg, color-mix(in srgb, var(--star-color) 68%, #fff 32%), color-mix(in srgb, var(--star-color) 92%, #000 8%)); box-shadow:inset 0 2px 0 rgba(255,255,255,.45), inset 0 -5px 9px rgba(0,0,0,.16), 0 4px 10px rgba(42,66,100,.18); border:1px solid color-mix(in srgb, var(--star-color) 72%, #3b3b3b 28%); overflow:hidden; }
+      .wb-popstar-block::before { content:''; position:absolute; inset:8% 12% auto 12%; height:30%; border-radius:999px; background:rgba(255,255,255,.28); filter:blur(.2px); }
+      .wb-popstar-star { position:relative; z-index:1; width:68%; height:68%; display:block; filter:drop-shadow(0 2px 2px rgba(0,0,0,.18)); }
+      .wb-popstar-star path { fill:color-mix(in srgb, var(--star-color) 28%, #fff 72%); stroke:rgba(255,255,255,.74); stroke-width:7; stroke-linejoin:round; }
+      .wb-popstar-score-pop { position:absolute; z-index:8; left:var(--x); top:var(--y); transform:translate(-50%,-50%); color:#fff; font-weight:1000; font-size:clamp(18px,4cqh,30px); line-height:1; text-shadow:0 2px 0 rgba(0,0,0,.24), 0 0 12px rgba(255,196,79,.9); pointer-events:none; animation:wbPopstarScore .78s ease-out forwards; }
+      .wb-popstar-shard { position:absolute; z-index:7; left:var(--x); top:var(--y); width:9px; height:9px; border-radius:3px; background:var(--color); box-shadow:0 0 8px color-mix(in srgb, var(--color) 58%, transparent 42%); pointer-events:none; animation:wbPopstarShard .62s ease-out forwards; }
+      .wb-popstar-actions { width:100%; display:flex; justify-content:center; gap:8px; flex-wrap:nowrap; }
+      .wb-popstar-actions .wb-btn { min-width:104px; }
+      .wb-popstar-badge { display:inline-grid; place-items:center; min-width:18px; height:18px; margin-left:4px; padding:0 4px; border-radius:999px; background:rgba(255,255,255,.36); color:inherit; font-size:11px; font-weight:1000; line-height:1; }
+      .wb-popstar-actions .wb-btn.primary .wb-popstar-badge { background:rgba(255,255,255,.22); }
+      .wb-popstar-settle { position:absolute; inset:0; z-index:10; display:grid; place-items:center; background:rgba(255,255,255,.38); color:#2f2430; font-weight:1000; text-align:center; pointer-events:none; animation:wbPopstarSettleMask .38s ease-out both; }
+      .wb-popstar-settle-card { min-width:min(280px,84%); padding:14px 18px; border:2px solid rgba(255,255,255,.78); background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,244,217,.9)); box-shadow:0 12px 30px rgba(79,141,247,.2); }
+      @keyframes wbPopstarHint { from { transform:scale(1); } to { transform:scale(1.09) rotate(-2deg); } }
+      @keyframes wbPopstarSettle { 0% { transform:translateY(-10px) scale(.98); } 70% { transform:translateY(2px) scale(1.03); } 100% { transform:translateY(0) scale(1); } }
+      @keyframes wbPopstarScore { from { opacity:0; transform:translate(-50%,-20%) scale(.75); } 18% { opacity:1; } to { opacity:0; transform:translate(-50%,-145%) scale(1.14); } }
+      @keyframes wbPopstarShard { from { opacity:1; transform:translate(-50%,-50%) scale(1) rotate(0); } to { opacity:0; transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.2) rotate(var(--rot)); } }
+      @keyframes wbPopstarSettleMask { from { opacity:0; transform:scale(.98); } to { opacity:1; transform:scale(1); } }
+      @media (max-width: 700px), (pointer: coarse) {
+        .wb-popstar-panel { gap:5px; }
+        .wb-popstar-stat { height:30px; padding:2px 5px; font-size:11px; box-shadow:none; }
+        .wb-popstar-stat.target-met { box-shadow:0 0 8px rgba(34,197,94,.24); }
+        .wb-popstar-stage { box-shadow:inset 0 0 0 3px rgba(255,255,255,.2); background:linear-gradient(180deg,#dff5ff,#fff1dc); }
+        .wb-popstar-board { inset:6px; }
+        .wb-popstar-cell { padding:2px; transition:left .18s cubic-bezier(.2,.8,.2,1), top .2s cubic-bezier(.2,.82,.2,1), transform .12s ease, opacity .14s ease; }
+        .wb-popstar-cell:not(:disabled):hover { transform:scale(1); filter:none; }
+        .wb-popstar-block { border-radius:8px; box-shadow:inset 0 1px 0 rgba(255,255,255,.38), inset 0 -3px 5px rgba(0,0,0,.12); }
+        .wb-popstar-block::before { display:none; }
+        .wb-popstar-star { filter:none; }
+        .wb-popstar-score-pop { text-shadow:0 1px 0 rgba(0,0,0,.24); animation-duration:.62s; }
+        .wb-popstar-shard { width:7px; height:7px; box-shadow:none; animation-duration:.48s; }
+        .wb-popstar-settle-card { box-shadow:0 6px 16px rgba(79,141,247,.14); }
+      }
       .wb-board-wrap.wb-gamebox-screw { height:100%; flex:1 1 0; align-items:stretch; justify-items:center; }
       .wb-screw-panel { width:min(100%, 560px); height:100%; max-height:100%; min-height:0; display:grid; grid-template-rows:124px minmax(0,1fr); gap:8px; justify-items:center; align-items:stretch; overflow:hidden; box-sizing:border-box; }
       .wb-screw-top { width:100%; height:124px; min-height:124px; display:grid; grid-template-rows:70px 32px; grid-template-columns:minmax(0,1fr); gap:8px; align-items:center; padding:8px; box-sizing:border-box; overflow:hidden; background:var(--wb-soft); border:1px solid var(--wb-border); color:var(--wb-text); box-shadow:inset 0 1px 0 rgba(255,255,255,.28); }
@@ -3590,6 +3675,49 @@ export async function initWanbanXiaowu() {
         border-color:rgba(43,91,126,.82)!important;
         box-shadow:0 2px 5px rgba(43,91,126,.18)!important;
       }
+      .wb-modal-mask.wb-arcade.wb-batch-lines-mask .wb-batch-lines-modal {
+        --wb-field-bg:#FFF8D2;
+        --wb-field-text:#244B66;
+        --wb-field-border:rgba(43,91,126,.62);
+        background:#FFF3BC!important;
+        background-image:none!important;
+        color:#244B66!important;
+        border:1px solid rgba(43,91,126,.42)!important;
+        box-shadow:0 1px 1px rgba(42,73,96,.08), 0 4px 10px rgba(87,112,130,.14)!important;
+        max-height:min(85vh, calc(100dvh - 68px))!important;
+        overflow-y:auto!important;
+      }
+      .wb-modal-mask.wb-arcade.wb-batch-lines-mask .wb-batch-lines-modal .wb-modal-title {
+        color:#244B66!important;
+        border-bottom:1px solid rgba(43,91,126,.52)!important;
+        padding-bottom:8px!important;
+      }
+      .wb-modal-mask.wb-arcade.wb-batch-lines-mask .wb-batch-lines-modal :is(.wb-worldbook-list,.wb-api-status,.wb-sticky-actions) {
+        background:#FFF3BC!important;
+        background-image:none!important;
+        color:#244B66!important;
+        border-color:rgba(43,91,126,.42)!important;
+        box-shadow:0 1px 4px rgba(87,112,130,.10)!important;
+      }
+      .wb-modal-mask.wb-arcade.wb-batch-lines-mask .wb-batch-lines-modal :is(.wb-input,.wb-select,.wb-textarea) {
+        background:#FFF8D2!important;
+        border-color:rgba(43,91,126,.62)!important;
+        color:#244B66!important;
+        -webkit-text-fill-color:#244B66;
+      }
+      .wb-modal-mask.wb-arcade.wb-batch-lines-mask .wb-batch-lines-modal :is(.wb-btn,.wb-pill) {
+        background:#FFF3BC!important;
+        color:#244B66!important;
+        border:1px solid rgba(43,91,126,.62)!important;
+        box-shadow:0 1px 3px rgba(43,91,126,.14)!important;
+      }
+      .wb-modal-mask.wb-arcade.wb-batch-lines-mask .wb-batch-lines-modal :is(.wb-btn,.wb-pill):hover,
+      .wb-modal-mask.wb-arcade.wb-batch-lines-mask .wb-batch-lines-modal :is(.wb-btn,.wb-pill):focus-visible {
+        background:#FFEEA8!important;
+        color:#1F587D!important;
+        border-color:rgba(43,91,126,.82)!important;
+        box-shadow:0 2px 5px rgba(43,91,126,.18)!important;
+      }
       #${POPUP_ID}.wb-spring .wb-side-companion { background:linear-gradient(155deg, #D8EDB2, #BFDFA0 72%); border-color:rgba(111,168,90,.34); box-shadow:0 14px 30px rgba(76,59,42,.14), 0 1px 0 rgba(255,255,255,.42) inset; }
       #${POPUP_ID}.wb-spring .wb-companion.on { background:linear-gradient(135deg, rgba(255,248,220,.88), rgba(199,225,160,.78)); border-top-color:rgba(217,123,84,.58); box-shadow:0 10px 22px rgba(76,59,42,.12), 0 1px 0 rgba(255,255,255,.55) inset; }
       #${POPUP_ID}.wb-spring .wb-speech { background:rgba(255,248,220,.70); border:1px solid rgba(111,168,90,.24); color:#4C3B2A; }
@@ -3909,6 +4037,35 @@ export async function initWanbanXiaowu() {
         filter:grayscale(1) contrast(1.12);
         image-rendering:pixelated;
       }
+      #${POPUP_ID}.wb-mono .wb-screw-top {
+        background:linear-gradient(180deg, #e8f6ff, #fff2f8);
+        border-color:#7DB9D8;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.72), 0 2px 8px rgba(79,141,247,.14);
+      }
+      #${POPUP_ID}.wb-mono .wb-screw-canvas {
+        background:linear-gradient(180deg, #c9ebff 0%, #a9d7f5 55%, #bfe4ff 100%);
+        border:4px solid #5FA8D7;
+        box-shadow:inset 0 0 0 1px rgba(255,255,255,.42), 0 6px 16px rgba(79,141,247,.18);
+        filter:none;
+        image-rendering:auto;
+      }
+      #${POPUP_ID}.wb-mono .wb-screw-box {
+        border-color:color-mix(in srgb, var(--c) 76%, #24536f 24%);
+        background:linear-gradient(180deg, color-mix(in srgb, var(--c) 22%, #fff 78%), color-mix(in srgb, var(--c) 58%, #f5fbff 42%));
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.58), 0 4px 10px rgba(79,141,247,.14);
+        filter:none;
+      }
+      #${POPUP_ID}.wb-mono .wb-screw-box::before {
+        background:linear-gradient(90deg, color-mix(in srgb, var(--c) 42%, #24536f 58%) 0 24%, color-mix(in srgb, var(--c) 74%, #fff 26%) 25% 75%, color-mix(in srgb, var(--c) 42%, #24536f 58%) 76%);
+      }
+      #${POPUP_ID}.wb-mono .wb-screw-box-hole {
+        background:#eef5f8;
+        border:1px solid rgba(36,83,111,.32);
+      }
+      #${POPUP_ID}.wb-mono .wb-screw-box-hole i,
+      #${POPUP_ID}.wb-mono .wb-screw-slot span {
+        filter:none;
+      }
       #${POPUP_ID}.wb-mono :is(.wb-cell,.wb-gcell,.wb-ludo-cell,.wb-reversi-cell,.wb-c4d-cell,.wb-memory-front,.wb-memory-back,.wb-tile) {
         background:#fff;
         background-image:none;
@@ -4101,6 +4258,83 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-mono .wb-watermelon-canvas {
         filter:none;
         background:#f7efe3;
+      }
+      #${POPUP_ID}.wb-day,
+      .wb-modal-mask {
+        --wb-field-bg:#fff9fb;
+        --wb-field-text:#2f2430;
+        --wb-field-border:#e8b9c5;
+      }
+      #${POPUP_ID}.wb-arcade,
+      .wb-modal-mask.wb-arcade {
+        --wb-field-bg:#FFFDF8;
+        --wb-field-text:#28435A;
+        --wb-field-border:#8DC9E8;
+      }
+      #${POPUP_ID}.wb-spring,
+      .wb-modal-mask.wb-spring {
+        --wb-field-bg:#F8EED6;
+        --wb-field-text:#4C3B2A;
+        --wb-field-border:#A98858;
+      }
+      #${POPUP_ID}.wb-mono,
+      .wb-modal-mask.wb-mono {
+        --wb-field-bg:#fff;
+        --wb-field-text:#111;
+        --wb-field-border:#111;
+      }
+      #${POPUP_ID}.wb-night,
+      .wb-modal-mask.wb-night {
+        --wb-field-bg:#151620;
+        --wb-field-text:#f5eafa;
+        --wb-field-border:#6b5578;
+      }
+      #${POPUP_ID}.wb-cyber,
+      .wb-modal-mask.wb-cyber {
+        --wb-field-bg:#101A1D;
+        --wb-field-text:#F6F5DE;
+        --wb-field-border:#19D3C5;
+      }
+      #${POPUP_ID}.wb-tavern,
+      .wb-modal-mask.wb-tavern {
+        --wb-field-bg:color-mix(in srgb, var(--wb-bg) 72%, #fff 28%);
+        --wb-field-text:var(--wb-text);
+        --wb-field-border:var(--wb-accent);
+      }
+      #${POPUP_ID} :is(.wb-select,.wb-input,.wb-textarea),
+      .wb-modal-mask :is(.wb-select,.wb-input,.wb-textarea) {
+        color:var(--wb-field-text)!important;
+        background:linear-gradient(180deg, var(--wb-field-bg), color-mix(in srgb, var(--wb-field-bg) 86%, var(--wb-panel) 14%))!important;
+        border-color:var(--wb-field-border)!important;
+        -webkit-text-fill-color:var(--wb-field-text);
+        color-scheme:light;
+      }
+      #${POPUP_ID} .wb-select option,
+      .wb-modal-mask .wb-select option {
+        color:var(--wb-field-text)!important;
+        background:var(--wb-field-bg)!important;
+      }
+      #${POPUP_ID}.wb-night :is(.wb-select,.wb-input,.wb-textarea),
+      #${POPUP_ID}.wb-cyber :is(.wb-select,.wb-input,.wb-textarea),
+      .wb-modal-mask.wb-night :is(.wb-select,.wb-input,.wb-textarea),
+      .wb-modal-mask.wb-cyber :is(.wb-select,.wb-input,.wb-textarea) {
+        color-scheme:dark;
+      }
+      #${POPUP_ID} :is(.wb-input,.wb-textarea)::placeholder,
+      .wb-modal-mask :is(.wb-input,.wb-textarea)::placeholder {
+        color:color-mix(in srgb, var(--wb-field-text) 54%, transparent 46%);
+        -webkit-text-fill-color:color-mix(in srgb, var(--wb-field-text) 54%, transparent 46%);
+      }
+      #${POPUP_ID}.wb-cyber .wb-speech,
+      #${POPUP_ID}.wb-cyber #wb-speech {
+        color:#F6F5DE!important;
+        background:rgba(13,21,18,.92)!important;
+        border:1px solid rgba(241,232,91,.38)!important;
+        text-shadow:0 0 8px rgba(241,232,91,.22);
+      }
+      #${POPUP_ID}.wb-cyber .wb-speech * {
+        color:#F6F5DE!important;
+        -webkit-text-fill-color:#F6F5DE;
       }
     `;
 
@@ -4626,13 +4860,13 @@ export async function initWanbanXiaowu() {
     }
     clearPetTimers();
     body.innerHTML = '<div class="wb-intimacy-hub">'
-      + '<div class="wb-intimacy-image-wrap"><img class="wb-intimacy-image" src="' + esc(CONTINUE_IMAGE_URL) + '" alt="亲密互动"></div>'
-      + '<div class="wb-pet-trial-card"><div class="wb-pet-trial-title">宠物系统试吃</div>'
-      + '<div class="wb-pet-trial-copy">进入小屋看看幼年小狐狸。可以喂食、抚摸，也可以让它出来溜溜变成桌宠。</div>'
-      + '<button class="wb-btn primary" id="wb-pet-trial">进入试吃</button></div>'
+      + '<button class="wb-intimacy-button" id="wb-pet-trial" type="button"><img src="' + esc(PET_BUTTON_URL) + '" alt=""><span>灵息小窝</span></button>'
+      + '<button class="wb-intimacy-button" data-soon="1" type="button"><img src="' + esc(HEART_CHALLENGE_URL) + '" alt=""><span>心跳挑战</span></button>'
+      + '<button class="wb-intimacy-button" data-soon="1" type="button"><img src="' + esc(FARM_BUTTON_URL) + '" alt=""><span>种下心动</span></button>'
       + '</div>';
     const trial = qs('#wb-pet-trial', body);
     if (trial) trial.onclick = renderPetHouse;
+    qsa('[data-soon="1"]', body).forEach(btn => { btn.onclick = () => toast('敬请期待'); });
   }
 
   function renderPetHouse() {
@@ -4641,7 +4875,7 @@ export async function initWanbanXiaowu() {
     const state = 'normal';
     setSettings({ petDesktopState: state, petForm:petCurrentForm() });
     body.className = 'wb-body wb-intimacy-mode';
-    body.innerHTML = '<div class="wb-pet-room" id="wb-pet-room">'
+    body.innerHTML = '<div class="wb-pet-room" id="wb-pet-room"><div class="wb-pet-trial-note">当前为测试界面，正式版还在施工中</div>'
       + '<div class="wb-pet-room-top"><div class="wb-pet-room-title">小狐狸的小屋</div><button class="wb-btn primary" id="wb-pet-walk">出来溜溜</button></div>'
       + '<div class="wb-pet-scene" style="background-image:url(' + esc(FOX_HOUSE_DAY_URL) + ')">'
       + '<div class="wb-pet-speech">' + esc(petLineFor(state)) + '</div>'
@@ -5491,6 +5725,7 @@ export async function initWanbanXiaowu() {
       if (game === 'minesweeper') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','bad_luck'], ['score','minesweeper_regret'], ['score','mine_lucky']];
       if (game === 'uyangle') return [['score','normal'], ['score','super_good'], ['score','uyangle_clutch'], ['score','bad_luck'], ['score','long_run']];
       if (game === 'screw') return [['score','screw_success'], ['score','screw_fail'], ['score','record'], ['score','super_good'], ['score','screw_regret'], ['score','long_run']];
+      if (game === 'popstar') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','popstar_clutch'], ['score','popstar_godmove'], ['score','long_run']];
       const jobs = [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run']];
       return jobs;
     }
@@ -5602,6 +5837,8 @@ export async function initWanbanXiaowu() {
       ,gomoku_endless_char_capture:'五子棋无尽模式，{{char}}通过回收五子后吃掉user棋子建立优势或获胜。必须写“吃子/换位/无尽模式”的局面，不要写成普通五连立刻结束。'
       ,screw_success:'成功小剧场。拧螺丝完成但未命中破纪录、超级厉害或超长时间等特殊条件；重点写{{char}}看见user清空玻璃和螺丝后的夸奖、松口气和复盘。'
       ,screw_fail:'失败小剧场。拧螺丝失败但未达到80%遗憾条件；重点写候补槽或最后几颗螺丝卡住后，{{char}}安慰、轻微调侃并约下一局。'
+      ,popstar_clutch:'命悬一线小剧场。消灭星星最后一组消完才刚好达标过关；重点写最后几颗星星、目标分数、分数跳过线的一瞬间。'
+      ,popstar_godmove:'神之一手小剧场。消灭星星剩余20个以内使用打乱或单消道具并通关；重点写残局靠道具救活、星星重新连起来的反转。'
     };
     const sceneText = jobs.map(([outcome, special]) => {
       const resultText = outcome === 'score' ? '单人分数结算' : formatRecordResultForPrompt(outcome);
@@ -5736,11 +5973,12 @@ export async function initWanbanXiaowu() {
 	    const savedAttempts = Math.max(1, Math.min(5, parseInt(cfg.batchAttempts, 10) || 1));
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
+    mask.classList.add('wb-batch-lines-mask');
     mask.id = 'wb-batch-lines-mask';
     const defaultLineTpl = promptTemplates().lineGeneration || PROMPT_TEMPLATES.lineGeneration || {};
     const defaultLinePromptText = [].concat(defaultLineTpl.header || [], defaultLineTpl.rules || [], defaultLineTpl.output || []).join('\n');
     const defaultTheaterPromptText = (promptTemplates().theater || PROMPT_TEMPLATES.theater).join('\n');
-	    mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">批量生成角色数据</div><label class="wb-field"><span>角色</span><select class="wb-select" id="wb-batch-role">' + roleOptions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('') + '</select></label><div class="wb-preset-row"><label class="wb-field" style="flex:1;margin:0;"><span>语录 API</span><select class="wb-select" id="wb-batch-lines-api">' + apiSelectOptions + '</select></label><label class="wb-field" style="flex:1;margin:0;"><span>小剧场 API</span><select class="wb-select" id="wb-batch-theater-api">' + apiSelectOptions + '</select></label></div><label class="wb-field"><span>生成次数</span><input class="wb-input" id="wb-batch-attempts" type="number" min="1" max="5" step="1" value="' + savedAttempts + '"><div class="wb-muted">每项数据最多生成的总次数；失败才会继续下一次，成功后停止。</div></label><div class="wb-actions" style="margin-bottom:8px;"><button class="wb-btn" id="wb-batch-all" type="button">全选</button><button class="wb-btn" id="wb-batch-missing" type="button">全选未生成</button><button class="wb-btn" id="wb-batch-clear" type="button">全部取消</button></div><div class="wb-worldbook-list" id="wb-batch-game-list" style="display:grid;grid-template-columns:1fr;max-height:360px;"></div><div class="wb-field" style="margin-top:10px;"><label>语录提示词</label><textarea class="wb-textarea" id="wb-batch-line-prompt" style="min-height:110px;">' + esc(cfg.batchLinePromptOverride || defaultLinePromptText) + '</textarea><button class="wb-btn" id="wb-batch-line-restore" type="button">恢复默认语录提示词</button></div><div class="wb-field"><label>小剧场提示词</label><textarea class="wb-textarea" id="wb-batch-theater-prompt" style="min-height:110px;">' + esc(cfg.batchTheaterPromptOverride || defaultTheaterPromptText) + '</textarea><button class="wb-btn" id="wb-batch-theater-restore" type="button">恢复默认小剧场提示词</button></div><div class="wb-sticky-actions"><div class="wb-api-status" id="wb-batch-info">请选择要生成的数据。</div><div class="wb-actions" style="margin-top:8px;"><button class="wb-btn primary" id="wb-batch-start" style="flex:1;">生成并覆盖</button><button class="wb-btn" id="wb-batch-cancel">返回</button></div></div></div>';
+	    mask.innerHTML = '<div class="wb-modal wb-summary-modal wb-batch-lines-modal"><div class="wb-modal-title">批量生成角色数据</div><label class="wb-field"><span>角色</span><select class="wb-select" id="wb-batch-role">' + roleOptions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('') + '</select></label><div class="wb-preset-row"><label class="wb-field" style="flex:1;margin:0;"><span>语录 API</span><select class="wb-select" id="wb-batch-lines-api">' + apiSelectOptions + '</select></label><label class="wb-field" style="flex:1;margin:0;"><span>小剧场 API</span><select class="wb-select" id="wb-batch-theater-api">' + apiSelectOptions + '</select></label></div><label class="wb-field"><span>生成次数</span><input class="wb-input" id="wb-batch-attempts" type="number" min="1" max="5" step="1" value="' + savedAttempts + '"><div class="wb-muted">每项数据最多生成的总次数；失败才会继续下一次，成功后停止。</div></label><div class="wb-actions" style="margin-bottom:8px;"><button class="wb-btn" id="wb-batch-all" type="button">全选</button><button class="wb-btn" id="wb-batch-missing" type="button">全选未生成</button><button class="wb-btn" id="wb-batch-clear" type="button">全部取消</button></div><div class="wb-worldbook-list" id="wb-batch-game-list" style="display:grid;grid-template-columns:1fr;max-height:360px;"></div><div class="wb-field" style="margin-top:10px;"><label>语录提示词</label><textarea class="wb-textarea" id="wb-batch-line-prompt" style="min-height:110px;">' + esc(cfg.batchLinePromptOverride || defaultLinePromptText) + '</textarea><button class="wb-btn" id="wb-batch-line-restore" type="button">恢复默认语录提示词</button></div><div class="wb-field"><label>小剧场提示词</label><textarea class="wb-textarea" id="wb-batch-theater-prompt" style="min-height:110px;">' + esc(cfg.batchTheaterPromptOverride || defaultTheaterPromptText) + '</textarea><button class="wb-btn" id="wb-batch-theater-restore" type="button">恢复默认小剧场提示词</button></div><div class="wb-sticky-actions"><div class="wb-api-status" id="wb-batch-info">请选择要生成的数据。</div><div class="wb-actions" style="margin-top:8px;"><button class="wb-btn primary" id="wb-batch-start" style="flex:1;">生成并覆盖</button><button class="wb-btn" id="wb-batch-cancel">返回</button></div></div></div>';
 	    appendModalMask(mask);
 	    const linesApiSel = qs('#wb-batch-lines-api', mask);
 	    const theaterApiSel = qs('#wb-batch-theater-api', mask);
@@ -6653,6 +6891,7 @@ export async function initWanbanXiaowu() {
     if (id === 'minesweeper') startMinesweeper(resumeState);
     if (id === 'uyangle') startUYangLe(resumeState);
     if (id === 'screw') startScrew(resumeState);
+    if (id === 'popstar') startPopStar(resumeState);
     if (id === 'game2048') start2048(resumeState);
     if (id === 'watermelon') startWatermelon(resumeState);
     if (id === 'memory') startMemory(resumeState);
@@ -9108,6 +9347,390 @@ function showGameRecords(game, page) {
     }
     qs('#wb-uyangle-shuffle', box).onclick = shuffleBoard;
     qs('#wb-uyangle-moveout', box).onclick = enableMoveOut;
+  }
+
+  function startPopStar(state) {
+    const box = qs('#wb-gamebox');
+    const N = 10;
+    const COLORS = [
+      { id:'red', hex:'#ff5d73' },
+      { id:'blue', hex:'#4f8df7' },
+      { id:'green', hex:'#39c66f' },
+      { id:'yellow', hex:'#ffc94d' },
+      { id:'purple', hex:'#a66bff' }
+    ];
+    box.innerHTML = '<div class="wb-popstar-panel">'
+      + '<div class="wb-popstar-top"><div class="wb-popstar-stat" id="wb-popstar-level"></div><div class="wb-popstar-stat" id="wb-popstar-score"></div><div class="wb-popstar-stat" id="wb-popstar-target"></div><div class="wb-popstar-stat" id="wb-popstar-left"></div></div>'
+      + '<div class="wb-popstar-stage" id="wb-popstar-stage"><div class="wb-popstar-board" id="wb-popstar-board"></div></div>'
+      + '<div class="wb-actions wb-popstar-actions"><button type="button" class="wb-btn" id="wb-popstar-shuffle">打乱 <span class="wb-popstar-badge" id="wb-popstar-shuffle-left">3</span></button><button type="button" class="wb-btn" id="wb-popstar-single">单消 <span class="wb-popstar-badge" id="wb-popstar-single-left">3</span></button></div>'
+      + '</div>';
+    const panel = qs('.wb-popstar-panel', box), stage = qs('#wb-popstar-stage', box), boardEl = qs('#wb-popstar-board', box);
+    const levelEl = qs('#wb-popstar-level', box), scoreEl = qs('#wb-popstar-score', box), targetEl = qs('#wb-popstar-target', box), leftEl = qs('#wb-popstar-left', box);
+    const shuffleBtn = qs('#wb-popstar-shuffle', box), singleBtn = qs('#wb-popstar-single', box);
+    const shuffleLeftEl = qs('#wb-popstar-shuffle-left', box), singleLeftEl = qs('#wb-popstar-single-left', box);
+    const lowFx = isMobileHost() || ((getHostWindow().innerWidth || 800) <= 768);
+    const fitPopStarStage = () => {
+      const panelRect = panel.getBoundingClientRect();
+      const topH = qs('.wb-popstar-top', panel)?.getBoundingClientRect().height || 0;
+      const actionsH = qs('.wb-popstar-actions', panel)?.getBoundingClientRect().height || 0;
+      const availableW = Math.max(0, panelRect.width);
+      const availableH = Math.max(0, panelRect.height - topH - actionsH - 18);
+      const size = Math.floor(Math.max(120, Math.min(560, availableW, availableH || availableW)));
+      stage.style.setProperty('--wb-popstar-size', size + 'px');
+    };
+    fitPopStarStage();
+    const ResizeObs = getHostWindow().ResizeObserver;
+    if(ResizeObs){
+      const ro = new ResizeObs(() => fitPopStarStage());
+      ro.observe(panel);
+      stage._wbPopStarResizeObserver = ro;
+    } else {
+      getHostWindow().addEventListener('resize', fitPopStarStage, { passive:true });
+    }
+    const targetScores = [1000, 2500, 4500, 7000, 9000, 11500, 13530];
+    const levelTarget = lv => lv <= targetScores.length ? targetScores[lv - 1] : targetScores[targetScores.length - 1] + (lv - targetScores.length) * 2500;
+    const starPath = 'M50 8 L61 35 L90 36 L67 54 L75 84 L50 67 L25 84 L33 54 L10 36 L39 35 Z';
+    let nextId = Number(state?.nextId || 1);
+    let level = Math.max(1, Number(state?.level || 1));
+    let score = Math.max(0, Number(state?.score || 0));
+    let shuffleLeft = Math.max(0, Math.min(3, Number(state?.shuffleLeft == null ? 3 : state.shuffleLeft)));
+    let singleLeft = Math.max(0, Math.min(3, Number(state?.singleLeft == null ? 3 : state.singleLeft)));
+    let toolMode = state?.toolMode === 'single' ? 'single' : '';
+    let busy = false, over = false;
+    let seen = state?.seen || {};
+    let targetMetThisLevel = !!state?.targetMetThisLevel;
+    let board = hydrateBoard(state?.board);
+    let details = Object.assign({
+      level:1, score:0, removedTotal:0, highClears:{ '5':0, '6':0, '7':0, '8plus':0 },
+      clutchCount:0, highStreak:0, highComboCount:0, maxHighStreak:0, remainingCounts:{}, shuffleUsed:0, singleUsed:0,
+      toolUsedAtLowRemains:false, godMove:false, clutch:false, completed:false, remainingAtEnd:0
+    }, state?.details || {});
+    ensurePlayableBoard();
+    drawUI();
+    renderBoard();
+    save();
+
+    function hydrateBoard(raw){
+      if(Array.isArray(raw) && raw.length === N){
+        const out = Array.from({ length:N }, (_, r) => Array.from({ length:N }, (_, c) => {
+          const item = raw[r] && raw[r][c];
+          if(!item) return null;
+          const color = COLORS.some(x => x.id === item.color) ? item.color : COLORS[(r + c) % COLORS.length].id;
+          const id = String(item.id || ('ps' + (nextId++)));
+          return { id, color };
+        }));
+        if(out.some(row => row.some(Boolean))) return out;
+      }
+      return makeBoard();
+    }
+    function save(){
+      if(over) return;
+      saveProgress('popstar', { board, level, score, shuffleLeft, singleLeft, toolMode, seen, targetMetThisLevel, nextId, details });
+    }
+    function makeCell(color){ return { id:'ps' + (nextId++), color }; }
+    function makeBoard(){
+      const out = Array.from({ length:N }, () => Array.from({ length:N }, () => makeCell(COLORS[Math.floor(Math.random() * COLORS.length)].id)));
+      return out;
+    }
+    function ensurePlayableBoard(){
+      let guard = 0;
+      while(!hasMoves(board) && guard < 20){ board = makeBoard(); guard++; }
+    }
+    function colorHex(id){ return (COLORS.find(c => c.id === id) || COLORS[0]).hex; }
+    function inBounds(r,c){ return r >= 0 && r < N && c >= 0 && c < N; }
+    function cellAt(r,c){ return inBounds(r,c) ? board[r][c] : null; }
+    function groupAt(r,c){
+      const start = cellAt(r,c);
+      if(!start) return [];
+      const seenKey = new Set(), q = [[r,c]], out = [];
+      seenKey.add(r + ',' + c);
+      while(q.length){
+        const cur = q.shift(), rr = cur[0], cc = cur[1], cell = cellAt(rr,cc);
+        if(!cell || cell.color !== start.color) continue;
+        out.push({ r:rr, c:cc, cell });
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(d => {
+          const nr = rr + d[0], nc = cc + d[1], key = nr + ',' + nc;
+          if(!inBounds(nr,nc) || seenKey.has(key)) return;
+          const next = cellAt(nr,nc);
+          if(next && next.color === start.color){ seenKey.add(key); q.push([nr,nc]); }
+        });
+      }
+      return out;
+    }
+    function hasMoves(bd){
+      for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+        const cell = bd[r][c];
+        if(!cell) continue;
+        if((r + 1 < N && bd[r + 1][c] && bd[r + 1][c].color === cell.color) || (c + 1 < N && bd[r][c + 1] && bd[r][c + 1].color === cell.color)) return true;
+      }
+      return false;
+    }
+    function remainingCount(){ return board.flat().filter(Boolean).length; }
+    function scoreFor(n){ return n * n * 5; }
+    function remainingBonus(left){ return left < 20 ? (20 - left) * 100 : 0; }
+    function centerOf(items){
+      const rect = stage.getBoundingClientRect();
+      const avgR = items.reduce((s,x)=>s+x.r,0) / Math.max(1, items.length);
+      const avgC = items.reduce((s,x)=>s+x.c,0) / Math.max(1, items.length);
+      return { x:(avgC + .5) / N * rect.width, y:(avgR + .5) / N * rect.height };
+    }
+    function addScorePop(text, x, y){
+      const el = getHostDocument().createElement('div');
+      el.className = 'wb-popstar-score-pop';
+      el.style.setProperty('--x', x + 'px');
+      el.style.setProperty('--y', y + 'px');
+      el.textContent = text;
+      stage.appendChild(el);
+      setTimeout(() => el.remove(), 850);
+    }
+    function addShards(items){
+      const rect = stage.getBoundingClientRect();
+      const maxItems = lowFx ? Math.min(items.length, 12) : items.length;
+      const shardEach = lowFx ? 2 : 5;
+      const frag = getHostDocument().createDocumentFragment();
+      items.slice(0, maxItems).forEach(item => {
+        const x = (item.c + .5) / N * rect.width, y = (item.r + .5) / N * rect.height;
+        for(let i=0;i<shardEach;i++){
+          const shard = getHostDocument().createElement('span');
+          shard.className = 'wb-popstar-shard';
+          const a = Math.random() * Math.PI * 2, dist = (lowFx ? 14 : 18) + Math.random() * (lowFx ? 20 : 32);
+          shard.style.setProperty('--x', x + 'px');
+          shard.style.setProperty('--y', y + 'px');
+          shard.style.setProperty('--dx', Math.cos(a) * dist + 'px');
+          shard.style.setProperty('--dy', Math.sin(a) * dist + 'px');
+          shard.style.setProperty('--rot', (Math.random() * 260 - 130) + 'deg');
+          shard.style.setProperty('--color', colorHex(item.cell.color));
+          frag.appendChild(shard);
+          setTimeout(() => shard.remove(), 720);
+        }
+      });
+      stage.appendChild(frag);
+    }
+    function renderBoard(){
+      const live = new Set();
+      for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+        const cell = board[r][c];
+        if(!cell) continue;
+        live.add(cell.id);
+        let el = qs('[data-popstar-id="' + cell.id + '"]', boardEl);
+        if(!el){
+          el = getHostDocument().createElement('button');
+          el.type = 'button';
+          el.dataset.popstarId = cell.id;
+          el.innerHTML = '<span class="wb-popstar-block"><svg class="wb-popstar-star" viewBox="0 0 100 100" aria-hidden="true"><path d="' + starPath + '"></path></svg></span>';
+          boardEl.appendChild(el);
+        }
+        el.className = 'wb-popstar-cell';
+        el.style.setProperty('--r', r);
+        el.style.setProperty('--c', c);
+        el.style.setProperty('--star-color', colorHex(cell.color));
+        el.disabled = busy || gamePaused || over;
+        el.onclick = () => clickCell(r,c);
+      }
+      qsa('.wb-popstar-cell', boardEl).forEach(el => {
+        if(!live.has(el.dataset.popstarId) && !el.classList.contains('removing')) el.remove();
+      });
+    }
+    function drawUI(){
+      fitPopStarStage();
+      const target = levelTarget(level), left = remainingCount();
+      levelEl.textContent = '第 ' + level + ' 关';
+      scoreEl.textContent = '分数 ' + score;
+      targetEl.textContent = '目标 ' + target;
+      leftEl.textContent = '剩余 ' + left;
+      targetEl.classList.toggle('target-met', score >= target);
+      const toolbarScore = qs('#wb-score');
+      if(toolbarScore) toolbarScore.classList.toggle('target-met', score >= target);
+      shuffleLeftEl.textContent = shuffleLeft;
+      singleLeftEl.textContent = singleLeft;
+      if(shuffleBtn){ shuffleBtn.disabled = busy || over || shuffleLeft <= 0 || left <= 1; shuffleBtn.classList.toggle('primary', toolMode === 'shuffle'); }
+      if(singleBtn){ singleBtn.disabled = busy || over || singleLeft <= 0 || left <= 0; singleBtn.classList.toggle('primary', toolMode === 'single'); }
+      setScore('popstar', score);
+    }
+    function markTargetMet(){
+      if(targetMetThisLevel || score < levelTarget(level)) return;
+      targetMetThisLevel = true;
+      speak('popstar','target_met');
+      toast('分数达标！收尾后进入下一关');
+    }
+    function applyGravityAndCompact(){
+      for(let c=0;c<N;c++){
+        const cells = [];
+        for(let r=N-1;r>=0;r--) if(board[r][c]) cells.push(board[r][c]);
+        for(let r=N-1, i=0;r>=0;r--, i++) board[r][c] = cells[i] || null;
+      }
+      const cols = [];
+      for(let c=0;c<N;c++) if(board.some(row => row[c])) cols.push(c);
+      const next = Array.from({ length:N }, () => Array(N).fill(null));
+      cols.forEach((oldC, newC) => { for(let r=0;r<N;r++) next[r][newC] = board[r][oldC]; });
+      board = next;
+    }
+    function updateStatsForClear(n){
+      details.removedTotal = (details.removedTotal || 0) + n;
+      if(n >= 5 && n <= 7) details.highClears[String(n)] = (details.highClears[String(n)] || 0) + 1;
+      else if(n >= 8) details.highClears['8plus'] = (details.highClears['8plus'] || 0) + 1;
+      if(n >= 4){
+        if((details.highStreak || 0) > 0) details.highComboCount = (details.highComboCount || 0) + 1;
+        details.highStreak = (details.highStreak || 0) + 1;
+        details.maxHighStreak = Math.max(details.maxHighStreak || 0, details.highStreak);
+      } else {
+        details.highStreak = 0;
+      }
+    }
+    function removeCells(items, points){
+      items.forEach(item => {
+        const el = qs('[data-popstar-id="' + item.cell.id + '"]', boardEl);
+        if(el) el.classList.add('removing');
+        board[item.r][item.c] = null;
+      });
+      addShards(items);
+      if(points){
+        const p = centerOf(items);
+        addScorePop('+' + points, p.x, p.y);
+      }
+    }
+    function afterBoardChanged(crossedOnThisMove){
+      applyGravityAndCompact();
+      const noMoves = !hasMoves(board);
+      if(crossedOnThisMove && noMoves) details.clutch = true;
+      renderBoard();
+      drawUI();
+      if(noMoves) setTimeout(() => finishLevel(), 520);
+      else save();
+    }
+    function clickCell(r,c){
+      if(gamePaused || busy || over) return;
+      const cell = cellAt(r,c);
+      if(!cell) return;
+      if(toolMode === 'single'){
+        busy = true;
+        singleLeft--;
+        details.singleUsed = (details.singleUsed || 0) + 1;
+        if(remainingCount() <= 20) details.toolUsedAtLowRemains = true;
+        speak('popstar','cheat');
+        removeCells([{ r,c,cell }], 0);
+        toolMode = '';
+        setTimeout(() => { busy = false; afterBoardChanged(false); }, 220);
+        drawUI();
+        save();
+        return;
+      }
+      const group = groupAt(r,c);
+      if(group.length < 2){
+        const el = qs('[data-popstar-id="' + cell.id + '"]', boardEl);
+        if(el){ el.classList.add('hint'); setTimeout(() => el.classList.remove('hint'), 650); }
+        return;
+      }
+      busy = true;
+      const beforeScore = score;
+      const points = scoreFor(group.length);
+      score += points;
+      updateStatsForClear(group.length);
+      if(!seen['first_' + level]){ seen['first_' + level] = 1; speak('popstar','first_clear'); }
+      if(group.length === 2) speak('popstar','small_clear');
+      else if(group.length >= 4) speak('popstar','high_clear');
+      removeCells(group, points);
+      markTargetMet();
+      const crossedOnThisMove = beforeScore < levelTarget(level) && score >= levelTarget(level);
+      setTimeout(() => {
+        busy = false;
+        afterBoardChanged(crossedOnThisMove);
+      }, 260);
+      drawUI();
+      save();
+    }
+    function shuffleBoard(){
+      if(gamePaused || busy || over || shuffleLeft <= 0) return;
+      const slots = [];
+      for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c]) slots.push({ r,c });
+      if(slots.length <= 1) return;
+      busy = true;
+      shuffleLeft--;
+      details.shuffleUsed = (details.shuffleUsed || 0) + 1;
+      if(remainingCount() <= 20) details.toolUsedAtLowRemains = true;
+      speak('popstar','cheat');
+      for(let attempt=0; attempt<18; attempt++){
+        const shuffled = slots.map(pos => board[pos.r][pos.c]).sort(() => Math.random() - .5);
+        const next = board.map(row => row.slice());
+        slots.forEach((pos, i) => { next[pos.r][pos.c] = shuffled[i]; });
+        if(hasMoves(next) || attempt === 17){ board = next; break; }
+      }
+      renderBoard();
+      drawUI();
+      setTimeout(() => {
+        busy = false;
+        renderBoard();
+        if(!hasMoves(board)) finishLevel();
+        else { drawUI(); save(); }
+      }, 280);
+    }
+    async function finishLevel(){
+      if(over || busy) return;
+      busy = true;
+      const left = remainingCount(), bonus = remainingBonus(left), target = levelTarget(level), pass = score + bonus >= target;
+      details.remainingCounts[left] = (details.remainingCounts[left] || 0) + 1;
+      details.remainingAtEnd = left;
+      showSettle('本关结算', '剩余 ' + left + ' 个，奖励 +' + bonus);
+      const cells = [];
+      for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c]) cells.push({ r,c,cell:board[r][c] });
+      for(let i=0;i<cells.length;i++){
+        const item = cells[i];
+        if(board[item.r] && board[item.r][item.c]){
+          removeCells([item], 0);
+          board[item.r][item.c] = null;
+        }
+        if(i % 3 === 0) await delay(42);
+      }
+      if(bonus){
+        score += bonus;
+        addScorePop('+' + bonus, stage.clientWidth / 2, stage.clientHeight / 2);
+      }
+      details.score = score;
+      details.level = level;
+      details.completed = pass;
+      if(pass && details.toolUsedAtLowRemains) details.godMove = true;
+      if(pass && details.clutch) details.clutchCount = (details.clutchCount || 0) + 1;
+      drawUI();
+      await delay(650);
+      clearSettle();
+      if(pass){
+        speak('popstar','level_clear');
+        level++;
+        targetMetThisLevel = false;
+        board = makeBoard();
+        ensurePlayableBoard();
+        busy = false;
+        renderBoard();
+        drawUI();
+        save();
+        return;
+      }
+      over = true;
+      clearProgress('popstar');
+      details.score = score;
+      details.level = level;
+      details.completed = false;
+      speak('popstar','gameover');
+      showGameOver('popstar','游戏结束','本局分数：' + score + '分，第' + level + '关，目标' + target + '，剩余' + left + '个', null, { completed:false, level, score, maxHighStreak:details.maxHighStreak || 0, clutch:!!details.clutch, godMove:!!details.godMove, details });
+    }
+    function showSettle(title, text){
+      clearSettle();
+      const el = getHostDocument().createElement('div');
+      el.className = 'wb-popstar-settle';
+      el.id = 'wb-popstar-settle';
+      el.innerHTML = '<div class="wb-popstar-settle-card"><div style="font-size:20px;">' + esc(title) + '</div><div style="margin-top:6px;">' + esc(text) + '</div></div>';
+      stage.appendChild(el);
+    }
+    function clearSettle(){ const old = qs('#wb-popstar-settle', stage); if(old) old.remove(); }
+    function delay(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+    qs('#wb-popstar-shuffle', box).onclick = shuffleBoard;
+    qs('#wb-popstar-single', box).onclick = () => {
+      if(gamePaused || busy || over || singleLeft <= 0) return;
+      toolMode = toolMode === 'single' ? '' : 'single';
+      drawUI();
+      toast(toolMode === 'single' ? '选择一个星星单独消除' : '已取消单消');
+      save();
+    };
   }
 
   function startMinesweeper(state) {
