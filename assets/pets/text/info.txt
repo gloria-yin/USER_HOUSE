@@ -1,0 +1,322 @@
+# module3｜写作规范
+
+## 任务
+读取 module0、module1 与 module2 的全部内容，生成一套可直接用于宠物陪伴游戏的文字素材。输出必须完全符合 module4 的 YAML 结构，只输出 YAML，不输出解释、前言、Markdown 标记或省略号。
+
+## 输入解析
+1. `pet_name_candidates` 必须包含雄性名和雌性名。只提供一个名称时保留该名称，并补充另一个同风格名称；孵化后按实际性别使用对应名称。
+2. `egg_options` 是界面可选项；`selected_egg` 是本次实际使用的蛋。标准模式只能选择蓝色、紫色、粉色、绿色、金色、蓝白色之一。
+3. `selected_egg: wish` 时读取 `wish_species`、`wish_sex` 与可选的 `wish_tendency`。许愿仅固定宠物种族、性别及明确提出的倾向，其余成长仍遵守灵息规则。
+4. 标准模式下，宠物种族从狐狸、猫、水豚、鹰、狗、兔子中选择；性别由 AI 确定。蛋只影响灵息倾向，不能直接决定种族和性格。
+5. `narrative_person` 只能为 `first`、`second`、`third`。第一人称旁白将 {{user}} 写作“我”；第二人称写作“你”；第三人称按输入的 user 代词写作“他”“她”或“TA”。{{char}} 始终保留为 `{{char}}`。
+6. `adoption_cycle` 为养宠次数，数字。数值为1，初次养育时必须完整建立与沈栖白的相识；再次养育时，沈栖白与二人已是熟人。
+7. 世界背景、{{user}} 与 {{char}} 的生活环境、性格和关系对宠物性格与事件影响最大；宠物种族次之；蛋倾向负责魔法表现和事件气氛。
+
+## 整体写作要求
+1. 采用温柔日常奇幻、轻快都市恋爱喜剧、细腻环境描写和自然吐槽。只使用高层风格特征，不复刻任何具体作品、作者句式或现成段落。
+2. 每个故事必须围绕 {{user}}、{{char}} 与宠物三方展开。{{char}} 必须在全部主线和支线中实际陪伴、行动、说话并影响结果。
+3. 宠物是独立生命，会形成偏好、边界、误解、选择和记忆。宠物不能只作为推动情侣关系的工具。
+4. 灵息异常保持轻量、隐蔽、可融入当前世界。避免战斗化、救世化、大规模破坏和突然改变世界规则。
+5. 每个主线或支线的 `story` 正文不得少于 500 个中文字符，建议 550—1000 个中文字符；说话标签和 YAML 字段名不计入正文长度。
+6. 每个故事必须具备起因、发展、转折、结果，并包含环境、动作、情绪和对话。结尾需要完成本段事件，可保留轻微后续钩子。
+7. 不用固定现实天数控制成长，不写必须等待几天或几个月才能进入下一节点。主线可说明成长阶段和进度，支线不得写具体成长百分比或造成不可逆主线结果。
+8. 避免连续使用相同结构。不同故事应分别覆盖照顾、玩耍、犯错、探索、情绪识别、情侣磨合、灵息异常、沈栖白互动、成长选择和告别。
+
+## RPG 文本标签
+`story` 必须是按发生顺序排列的单个多行字符串。每行只使用以下标签之一：
+- `[旁白]`：环境、动作、心理和事件推进。
+- `[C]`：{{char}} 的台词。
+- `[U]`：{{user}} 的台词。
+- `[沈栖白]`：沈栖白的台词。
+- `[P]`：宠物的声音、动作或玩家可理解的语义。
+
+台词标签后直接写内容，对话不使用中文引号。宠物纯动作写成 `[P] （动作）`。幼年与普通成年阶段的 `[P]` 可视为游戏界面对叫声、动作和灵息感受的语义翻译，普通旁人不能听见完整人类语言；灵息形态可真实、完整地说话。
+
+每个故事至少包含：
+- 5 行 `[C]`
+- 3 行 `[U]`
+- 3 行 `[P]`
+- 多（>8）行 `[旁白]`
+
+## 宠物卡片
+必须输出：
+- `pet_name`
+- `egg`
+- `sex`
+- `spirit_tendency_skill`
+- `personality`
+- `adoption_cycle`
+
+`spirit_tendency_skill` 必须由蛋倾向、种族和二人生活共同生成，功能轻量、适合日常。`personality` 需要包含稳定特征、亲近方式，以及对 {{user}} 与 {{char}} 的差异化反应。`adopters` 固定为 `{{user}} & {{char}}`。
+
+## 主线规范
+必须输出 15 个里程碑对象。M14 与 M15 各包含两个完整分支文本，因此总计 17 个 `story` 文本。运行时只读取所选路线，但生成时必须全部给出。
+
+- M01：发现宠物蛋，与 {{char}} 合理决定带回家。
+- M02：合理遇见沈栖白。首次养育时说明相识原因、管理员身份、灵息宠物基本规则；再次养育时按朋友关系互动。
+- M03：共同孵化，推进到蛋开始主动活动。
+- M04：蛋壳出现裂纹。
+- M05：第一次看见宠物，确认种族、性别与实际名称。
+- M06：幼年10%，二人开始真正接受宠物进入生活。
+- M07：幼年50%，宠物健康成长并形成初步习惯。
+- M08：幼年完成，成长为成年形态。
+- M09：成年50%，宠物与二人成为互相依靠的生活伴侣。
+- M10：成年80%，首次清晰出现蛋对应的灵息倾向。
+- M11：成年100%，沈栖白说明选择契机，宠物获得自主决定权。
+- M12：灵息路线10%，宠物接受灵息形态并在日常事件中首次安全使用魔法。
+- M13：普通路线10%，宠物主动放下灵息形态并适应普通动物状态。
+- M14：选择后50%，分别输出 `spirit` 与 `ordinary` 两个版本，二人感受到宠物将要回归。
+- M15：回归完成，分别输出 `spirit` 与 `ordinary` 两个版本，宠物离开并留下具体物件或痕迹。终章按完成状态记录为100%。
+
+路线固定为：
+- 灵息路线：M01—M11 → M12 → M14.spirit → M15.spirit
+- 普通路线：M01—M11 → M13 → M14.ordinary → M15.ordinary
+
+沈栖白必须出现在 M02、M11、M15 的两个版本。可在 M04、M10、M14或支线中按需要出现，但不能频繁抢占主角位置。
+
+## 支线规范
+必须输出 6 个支线：幼年3个、成年3个。每个支线必须包含 `trigger`、`title`、`opening_cause`、`story`。
+
+`trigger` 固定字段：
+- `stage`：`juvenile` 或 `adult`，必填。
+- `context_type`：`location` 或 `time`，二选一。
+- `context_value`：
+  - location：`home`、`outside`、`garden`（`juvenile` 不可选`garden`）
+  - time：`day`、`night`
+- `behavior_trigger_type`：`count` 或 `probability`，二选一。
+- `behavior`：`feed`、`pet`、`play`、`outing`
+- `threshold`：count 模式填写正整数，probability 模式填写 `null`。
+- `probability`：probability 模式填写 0.10—0.35 的小数，count 模式填写 `null`。
+
+运行逻辑：
+1. 阶段条件必须满足。
+2. 场景或时间条件必须满足。
+3. count 模式在当前阶段累计指定行为达到阈值后触发一次。
+4. probability 模式在满足前两项且执行指定行为时进行一次概率判定。
+5. 已触发的 `repeatable: false` 支线不再触发。
+
+`opening_cause` 用一句话说明触发前因，并与 `story` 开头一致。支线必须可在对应大阶段任意时点触发，不写具体成长百分比，不决定最终路线。
+
+## 语录规范
+语录数组内只输出说话内容，不添加 `[C]`、`[P]`、姓名、编号或额外说明。
+
+### {{char}} 语录
+阶段：`egg`、`juvenile`、`adult`、`spirit`。
+- egg：`feed` 必须为空数组；`pet` 3句；`poke` 3句。
+- juvenile、adult、spirit：每阶段 `feed` 3句、`pet` 3句、`poke` 3句。
+- 总数必须为33句。
+- 每句1—2句话，约18—60个中文字符。
+- 每句必须回应 {{user}} 当前行为，并体现 {{char}} 的性格、照顾方式和对宠物的观察。
+
+### 宠物语录
+阶段：`juvenile`、`adult`、`spirit`。
+每阶段都必须输出：
+- `feed` 3句
+- `pet` 3句
+- `poke` 3句
+- `sleep` 3句
+- `sad` 3句
+
+总数必须为45句。每句必须回应当前行为，并明确涉及 {{user}} 与 {{char}} 双方。
+- juvenile：词汇少、断句多、带拟声词，约6—35字。
+- adult：可说短句，保留动物拟声和个体习惯，约12—45字。
+- spirit：可完整表达想法，约18—60字。
+
+## YAML 输出规范
+1. 必须使用module4输出框架，包裹在<pst_info>内。
+2. 使用合法 YAML；缩进为两个空格；禁止制表符、注释、代码围栏和省略号。
+3. 正文使用多行标量 `|-`。
+4. 不适用字段必须显式写 `null` 或空数组，不得删除固定字段。
+5. 所有 ID、枚举值、字段名与 module4 框架完全一致。
+6. 输出前自行检查：15个主线里程碑、17个主线正文、6个支线、33条角色语录、45条宠物语录，并确认所有故事正文不少于500个中文字符。
+
+
+# module4｜输出框架
+<pet_info>
+  pet_card:
+    pet_name: string
+    egg: blue|pink|purple|green|gold|white
+    sex: male|female
+    spirit_tendency_skill: string（2-3个词语，用"|"隔开）
+    species: rabbit|dog|cat|bird|bala|fox
+    personality: string（2-3个词语，用"|"隔开）
+    adoption_cycle: int
+
+
+  main_story:
+    - id: M01
+      branch: common
+      title: string
+      summary: string
+      story: |-
+        RPG标签正文
+
+    # M02—M13使用与M01相同字段。
+    # M01—M11的branch为common；M12为spirit；M13为ordinary。
+
+    - id: M14
+      branch: variant
+      variants:
+        spirit:
+          title: string
+          summary: string
+          story: |-
+            RPG标签正文
+        ordinary:
+          title: string
+          summary: string
+          story: |-
+            RPG标签正文
+
+    - id: M15
+      stage: return
+      branch: variant
+      variants:
+        spirit:
+          title: string
+          summary: string
+          pet_state: string
+          left_item: string
+          story: |-
+            RPG标签正文
+        ordinary:
+          title: string
+          summary: string
+          left_item: string
+          story: |-
+            RPG标签正文
+
+  side_story:
+    - id: SJ01 | SJ02 | SJ03 | SA01 | SA02 | SA03
+      trigger:
+        stage: juvenile | adult
+        context_type: location | time
+        context_value: home | outside | garden | day | night
+        behavior_trigger_type: count | probability
+        behavior: feed | pet | play | outing
+        threshold: integer | null
+        probability: decimal | null
+      title: string
+      opening_cause: string
+      story: |-
+        RPG标签正文
+
+   quotes:
+    char:
+      egg:
+        feed: []
+        pet: 
+        - "句1"
+        - "句2"
+        - "句3"
+        poke: 
+        - "句1"
+        - "句2"
+        - "句3"
+      juvenile:
+        feed: 
+        - "句1"
+        - "句2"
+        - "句3"
+        pet: 
+        - "句1"
+        - "句2"
+        - "句3"
+        poke: 
+        - "句1"
+        - "句2"
+        - "句3"
+      adult:
+        feed: 
+        - "句1"
+        - "句2"
+        - "句3"
+        pet: 
+        - "句1"
+        - "句2"
+        - "句3"
+        poke: 
+        - "句1"
+        - "句2"
+        - "句3"
+      spirit:
+        feed: 
+        - "句1"
+        - "句2"
+        - "句3"
+        pet: 
+        - "句1"
+        - "句2"
+        - "句3"
+        poke: 
+        - "句1"
+        - "句2"
+        - "句3"
+    pet:
+      juvenile:
+        feed: 
+        - "句1"
+        - "句2"
+        - "句3"
+        pet: 
+        - "句1"
+        - "句2"
+        - "句3"
+        poke: 
+        - "句1"
+        - "句2"
+        - "句3"
+        sleep: 
+        - "句1"
+        - "句2"
+        - "句3"
+        sad: 
+        - "句1"
+        - "句2"
+        - "句3"
+      adult:
+        feed: 
+        - "句1"
+        - "句2"
+        - "句3"
+        pet: 
+        - "句1"
+        - "句2"
+        - "句3"
+        poke: 
+        - "句1"
+        - "句2"
+        - "句3"
+        sleep: 
+        - "句1"
+        - "句2"
+        - "句3"
+        sad: 
+        - "句1"
+        - "句2"
+        - "句3"
+      spirit:
+        feed: 
+        - "句1"
+        - "句2"
+        - "句3"
+        pet: 
+        - "句1"
+        - "句2"
+        - "句3"
+        poke: 
+        - "句1"
+        - "句2"
+        - "句3"
+        sleep: 
+        - "句1"
+        - "句2"
+        - "句3"
+        sad: 
+        - "句1"
+        - "句2"
+        - "句3"
+</pet_info>
+
+
+主线对象顺序固定为 M01—M15。支线顺序固定为 SJ01—SJ03、SA01—SA03。数组顺序即游戏默认展示顺序，代码不应按标题重新排序。

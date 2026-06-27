@@ -84,6 +84,8 @@ export async function initWanbanXiaowu() {
   const STORAGE_SUMMARY_REQ = SCRIPT_ID + '_summaryReq_v1';
   const STORAGE_PROGRESS = SCRIPT_ID + '_progress_v1';
   const STORAGE_RECORDS = SCRIPT_ID + '_records_v1';
+  const STORAGE_PET_TEST = SCRIPT_ID + '_petTest_v1';
+  const STORAGE_PET_FULL = SCRIPT_ID + '_petFull_v1';
   const STORAGE_WORD_GUESS_BANK = SCRIPT_ID + '_wordGuessBank_v1';
   const STORAGE_WORD_GUESS_BANK_SOURCE = SCRIPT_ID + '_wordGuessBankSource_v1';
   const STORAGE_WORD_GUESS_BANK_FILTER = SCRIPT_ID + '_wordGuessBankFilter_v1';
@@ -132,6 +134,9 @@ export async function initWanbanXiaowu() {
   let petAnimationTimer = null;
   let petStateReturnTimer = null;
   let petReturnHouseOnRender = false;
+  let petStoryTapLockedUntil = 0;
+  let petDesktopPokeLockedUntil = 0;
+  let petAutoDailyLogRunning = {};
   let lineGenerationBusy = false;
   let lineGenerationStatus = '当前状态：空闲';
   let lineGenerationKind = '';
@@ -215,6 +220,9 @@ export async function initWanbanXiaowu() {
     petDesktopX: 78,
     petDesktopY: 240,
     petDesktopState: 'normal',
+    petDesktopTalk: false,
+    petAutoDailyLog: false,
+    petBallRecord: 0,
     petInteractCount: 0,
     petForm: 'baby',
     messageNotify: false,
@@ -460,6 +468,17 @@ export async function initWanbanXiaowu() {
   }
   function apiPresets() { return safeArray(loadJSON(STORAGE_API_PRESETS, [])); }
   function saveApiPresets(v) { saveJSON(STORAGE_API_PRESETS, v); }
+  function apiConfigFromPresetIndex(index) {
+    const idx = parseInt(index, 10);
+    const pr = apiPresets()[idx];
+    return pr ? Object.assign({}, settings(), { apiUrl:pr.apiUrl || '', apiKey:pr.apiKey || '', apiModel:pr.apiModel || '' }) : settings();
+  }
+  function apiFieldsFromPresetIndex(index) {
+    const idx = parseInt(index, 10);
+    const pr = apiPresets()[idx];
+    const cfg = pr || settings();
+    return { apiUrl:cfg.apiUrl || '', apiKey:cfg.apiKey || '', apiModel:cfg.apiModel || '' };
+  }
   function worldPresets() { return safeArray(loadJSON(STORAGE_WORLD_PRESETS, [])); }
   function saveWorldPresets(v) { saveJSON(STORAGE_WORLD_PRESETS, v); }
   function worldPresetForRole(roleName) {
@@ -735,7 +754,7 @@ export async function initWanbanXiaowu() {
     commitGameActiveDuration(false);
     const all = records(); const g = GAME_META[game] || { name: game, mode: 'single' }; const result = explicitResult || inferResult(game, title, scoreText);
     const item = { id:'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), playedAt: new Date().toLocaleString(), savedAt: Date.now(), durationMs: currentGameDurationMs(), game: g.name, result, scoreText: displayCharTextForGame(scoreText || '', game), companion: displayCharNameForGame(game), details: meta && meta.details ? meta.details : null, log: '' };
-    if (!all[game]) all[game] = []; all[game].unshift(item); all[game] = all[game].slice(0, 100); saveRecords(all); return item;
+    if (!all[game]) all[game] = []; all[game].unshift(item); all[game] = all[game].slice(0, 100); saveRecords(all); petApplyGameReward(g, result, item.durationMs); return item;
   }
   function formatDuration(ms) { const sec = Math.max(0, Math.round((ms || 0) / 1000)); const m = Math.floor(sec / 60), s = sec % 60; return (m ? m + '分' : '') + s + '秒'; }
   function formatRecordTime(r) {
@@ -1309,15 +1328,67 @@ export async function initWanbanXiaowu() {
     if (!cfg.specialLanguageEnabled) return '';
     const lang = specialLanguageOptions().includes(cfg.specialLanguage) ? cfg.specialLanguage : '粤语';
     if (kind === 'line') {
-      if (lang === '古言') return '【强制语言要求】\n当前特殊语言风格：古言。\n请使用白话古风文风生成角色语录，可带古风称呼、语气、句式和含蓄表达。\n整体必须易懂，不要写成艰涩文言文。\n不要出现现代翻译括号。\n语录必须仍然贴合当前游戏事件，不要写成脱离游戏的古风套话。';
-      return '【强制语言要求】\n当前特殊语言风格：' + lang + '。\n语录整体必须使用普通话，普通中文读者必须能顺畅看懂。\n禁止输出真正的外语单词、外语短句、外语字母或外语文字。\n请只保留“该语言使用者说普通话时的口吻和节奏”，可以体现在语气词、称呼、断句、词序、轻微翻译腔、情绪表达方式和常见说话习惯上。\n语言风格必须自然融入角色对白，不要像翻译练习、语言教材或刻意卖弄。\n语录必须仍然符合角色性格、关系感和当前游戏事件，不要为了语言风格牺牲角色口吻。';
+      if (lang === '古言') return `【强制语言要求】
+当前特殊语言风格：古言。
+请使用白话古风文风生成角色语录，可带古风称呼、语气、句式和含蓄表达。
+整体必须易懂，不要写成艰涩文言文。
+不要出现现代翻译括号。
+语录必须仍然贴合当前游戏事件，不要写成脱离游戏的古风套话。`;
+      return `【强制语言要求】
+当前特殊语言风格：${lang}。
+语录整体必须使用普通话，普通中文读者必须能顺畅看懂。
+禁止输出真正的外语单词、外语短句、外语字母或外语文字。
+请只保留“该语言使用者说普通话时的口吻和节奏”，可以体现在语气词、称呼、断句、词序、轻微翻译腔、情绪表达方式和常见说话习惯上。
+语言风格必须自然融入角色对白，不要像翻译练习、语言教材或刻意卖弄。
+语录必须仍然符合角色性格、关系感和当前游戏事件，不要为了语言风格牺牲角色口吻。`;
+    }
+    if (kind === 'petLog') {
+      if (lang === '古言') return `【强制语言要求】
+当前特殊语言风格：古言。
+宠物日志请使用白话古风文风，像当前角色为你们和宠物写下的一段小记。
+可以使用古风措辞、含蓄情绪、旧时称谓和文雅句式。
+整体必须通顺易懂，不要写成艰涩文言文。
+日志必须围绕今日养宠互动、剧情记忆、{{user}}、{{char}}与宠物的关系变化，不要写成脱离宠物生活的抒情。
+不要出现外语括号翻译格式。`;
+      return `【强制语言要求】
+当前特殊语言风格：${lang}。
+宠物日志整体以普通话为主，普通中文读者必须能顺畅看懂。
+请保留“该语言使用者说普通话时的口吻和节奏”，可以体现在语气词、称呼、断句、词序、轻微翻译腔、情绪表达方式和常见说话习惯上。
+可以少量加入符合该语言氛围的简单外语词、短句或称呼。
+外语内容必须简短，并在首次出现时用括号给出中文含义。
+不要整段外语，不要让日志变成翻译文本或语言教学。
+语言风格必须服务于当前角色口吻、养宠日常、关系感和今日记忆。`;
     }
     if (kind === 'log') {
-      if (lang === '古言') return '【强制语言要求】\n当前特殊语言风格：古言。\n日志请使用白话古风文风，像当前角色事后写下的一段古风小记。\n可以使用古风措辞、含蓄情绪、旧时称谓和文雅句式。\n整体必须通顺易懂，不要写成艰涩文言文。\n日志必须自然提及本局游戏、胜负或分数、用时和关键过程，不要写成脱离游戏的古风抒情。\n不要出现外语括号翻译格式。';
-      return '【强制语言要求】\n当前特殊语言风格：' + lang + '。\n日志整体必须以普通话为主，普通中文读者必须能顺畅看懂。\n请保留“该语言使用者说普通话时的口吻和节奏”，可以体现在语气词、称呼、断句、词序、轻微翻译腔、情绪表达方式和常见说话习惯上。\n可以少量加入符合该语言氛围的简单外语词、短句或称呼。\n外语内容必须简短，并在首次出现时用括号给出中文含义，例如：bonjour（你好）。\n不要整段外语，不要让日志变成翻译文本或语言教学。\n语言风格必须服务于角色口吻、关系感、当局情绪和游戏过程，不要盖过日志内容。';
+      if (lang === '古言') return `【强制语言要求】
+当前特殊语言风格：古言。
+日志请使用白话古风文风，像当前角色事后写下的一段古风小记。
+可以使用古风措辞、含蓄情绪、旧时称谓和文雅句式。
+整体必须通顺易懂，不要写成艰涩文言文。
+日志必须自然提及本局游戏、胜负或分数、用时和关键过程，不要写成脱离游戏的古风抒情。
+不要出现外语括号翻译格式。`;
+      return `【强制语言要求】
+当前特殊语言风格：${lang}。
+日志整体必须以普通话为主，普通中文读者必须能顺畅看懂。
+请保留“该语言使用者说普通话时的口吻和节奏”，可以体现在语气词、称呼、断句、词序、轻微翻译腔、情绪表达方式和常见说话习惯上。
+可以少量加入符合该语言氛围的简单外语词、短句或称呼。
+外语内容必须简短，并在首次出现时用括号给出中文含义，例如：bonjour（你好）。
+不要整段外语，不要让日志变成翻译文本或语言教学。
+语言风格必须服务于角色口吻、关系感、当局情绪和游戏过程，不要盖过日志内容。`;
     }
-    if (lang === '古言') return '【强制语言要求】\n当前特殊语言风格：古言。\n小剧场整体请使用白话古风文风来写，包括叙述、动作、心理、场景和对白。\n文风要像通顺易懂的古风短篇，不要写成艰涩文言文。\n可以使用古风称谓、含蓄情绪、衣袖、灯影、案前、棋局、旧约等意象。\n角色对白和叙述都可以带古风，但仍必须承接小游戏输赢、角色关系和当局情绪。\n必须自然提及或承接本局游戏，不要写成完全脱离小游戏的古风段子。';
-    return '【强制语言要求】\n当前特殊语言风格：' + lang + '。\n小剧场的叙述、动作、心理、场景描写必须使用普通话，保证普通中文读者顺畅阅读。\n当角色说出外语时，必须严格使用格式：“外语原文”（*中文翻译*），例如：“bonjour”（*你好*）。禁止输出花括号。\n旁白、动作描写、心理描写不得写成外语。\n语言风格必须服务于角色性格、关系感、小游戏输赢和当局情绪，不要写成翻译练习或语言教材。';
+    if (lang === '古言') return `【强制语言要求】
+当前特殊语言风格：古言。
+小剧场整体请使用白话古风文风来写，包括叙述、动作、心理、场景和对白。
+文风要像通顺易懂的古风短篇，不要写成艰涩文言文。
+可以使用古风称谓、含蓄情绪、衣袖、灯影、案前、棋局、旧约等意象。
+角色对白和叙述都可以带古风，但仍必须承接小游戏输赢、角色关系和当局情绪。
+必须自然提及或承接本局游戏，不要写成完全脱离小游戏的古风段子。`;
+    return `【强制语言要求】
+当前特殊语言风格：${lang}。
+小剧场的叙述、动作、心理、场景描写必须使用普通话，保证普通中文读者顺畅阅读。
+当角色说出外语时，必须严格使用格式：“外语原文”（*中文翻译*），例如：“bonjour”（*你好*）。禁止输出花括号。
+旁白、动作描写、心理描写不得写成外语。
+语言风格必须服务于角色性格、关系感、小游戏输赢和当局情绪，不要写成翻译练习或语言教材。`;
   }
   function addTaWin(game) { const sc = scores(); const cur = sc[game] && typeof sc[game] === 'object' ? sc[game] : { user: sc[game] || 0, ta: 0 }; cur.ta = (cur.ta || 0) + 1; sc[game] = cur; saveJSON(STORAGE_SCORES, sc); }
   function isMobileHost() {
@@ -1786,6 +1857,7 @@ export async function initWanbanXiaowu() {
         width:104px;
         height:104px;
         z-index:999998;
+        overflow:visible!important;
         touch-action:none;
         cursor:grab;
         user-select:none;
@@ -1835,6 +1907,24 @@ export async function initWanbanXiaowu() {
       .wb-pet-desk-speech {
         display:none;
       }
+      #${PET_FLOAT_ID}.talk-on .wb-pet-desk-speech {
+        display:block;
+        position:absolute;
+        left:50%;
+        bottom:108px;
+        transform:translateX(-50%);
+        min-width:150px;
+        max-width:230px;
+        padding:7px 9px;
+        border:1px solid rgba(255,255,255,.76);
+        background:rgba(255,255,255,.9);
+        color:#2f2430;
+        font-size:12px;
+        font-weight:800;
+        line-height:1.45;
+        box-shadow:0 10px 22px rgba(0,0,0,.22);
+        pointer-events:none;
+      }
       .wb-pet-fox {
         width:100%;
         aspect-ratio:1 / 1;
@@ -1842,6 +1932,13 @@ export async function initWanbanXiaowu() {
         background-repeat:no-repeat;
         background-size:400% 100%;
         background-position:0 0;
+        image-rendering:auto;
+      }
+      .wb-pet-asset, .wb-pet-egg-img {
+        display:block;
+        width:100%;
+        height:100%;
+        object-fit:contain;
         image-rendering:auto;
       }
       .wb-pet-fox.animating { animation:wbPetFoxFrames 2s step-end 1; }
@@ -1857,6 +1954,32 @@ export async function initWanbanXiaowu() {
         .wb-pet-round { width:38px; height:38px; font-size:19px; }
         .wb-pet-desk-speech { display:none; }
       }
+      /* Desktop pet mode: radial pixel/frosted controls, panels and ball game. */
+      #${PET_FLOAT_ID}{width:110px;height:110px;z-index:1000002;}
+      .wb-pet-desk-fox{width:110px;height:110px;border:0!important;background:transparent!important;box-shadow:none!important;}
+      .wb-pet-desk-menu,.wb-pet-desk-submenu{position:absolute;left:50%;top:50%;width:1px;height:1px;display:block!important;transform:translate(-50%,-50%);pointer-events:none;}
+      .wb-pet-desk-menu .wb-pet-round,.wb-pet-desk-submenu .wb-pet-round{position:absolute;left:0;top:0;opacity:0;transform:translate(-50%,-50%) scale(.42) rotate(-10deg);pointer-events:none;transition:transform .22s cubic-bezier(.2,1.35,.35,1),opacity .16s ease;}
+      #${PET_FLOAT_ID}.menu-open .wb-pet-desk-menu .wb-pet-round,#${PET_FLOAT_ID}.interact-open .wb-pet-desk-submenu .wb-pet-round{opacity:1;pointer-events:auto;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1) rotate(0);}
+      .wb-pet-desk-menu .wb-pet-round:nth-child(1){--dx:-76px;--dy:-62px;transition-delay:.02s}.wb-pet-desk-menu .wb-pet-round:nth-child(2){--dx:0px;--dy:-90px;transition-delay:.05s}.wb-pet-desk-menu .wb-pet-round:nth-child(3){--dx:76px;--dy:-62px;transition-delay:.08s}.wb-pet-desk-menu .wb-pet-round:nth-child(4){--dx:104px;--dy:10px;transition-delay:.11s}
+      .wb-pet-desk-submenu .wb-pet-round:nth-child(1){--dx:-76px;--dy:-24px;transition-delay:.02s}.wb-pet-desk-submenu .wb-pet-round:nth-child(2){--dx:-76px;--dy:3px;transition-delay:.05s}.wb-pet-desk-submenu .wb-pet-round:nth-child(3){--dx:-76px;--dy:30px;transition-delay:.08s}
+      .wb-pet-round{width:43px!important;height:43px!important;border-radius:999px!important;border:1px solid rgba(255,255,255,.92)!important;background:rgba(255,255,255,.76)!important;color:#415466!important;box-shadow:0 6px 16px rgba(83,105,130,.18),inset 0 0 0 1px rgba(255,255,255,.65)!important;backdrop-filter:blur(10px) saturate(1.15);-webkit-backdrop-filter:blur(10px) saturate(1.15);font-size:0!important;display:grid!important;place-items:center!important;}
+      .wb-pet-round svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+      .wb-pet-desk-panel{position:absolute;left:50%;top:105px;width:224px;max-height:158px;transform:translateX(-50%);padding:9px;border:1px solid rgba(255,255,255,.82);background:rgba(255,255,255,.74);color:#2f3b46;box-shadow:0 10px 28px rgba(58,74,92,.18),inset 0 0 0 1px rgba(255,255,255,.58);backdrop-filter:blur(12px) saturate(1.18);-webkit-backdrop-filter:blur(12px) saturate(1.18);display:none;overflow:auto;image-rendering:pixelated;z-index:2;}
+      .wb-pet-desk-chat{z-index:4}.wb-pet-desk-status{z-index:3}
+      #${PET_FLOAT_ID}.status-on .wb-pet-desk-status,#${PET_FLOAT_ID}.chat-on .wb-pet-desk-chat{display:block;}#${PET_FLOAT_ID}.status-on.chat-on .wb-pet-desk-status{top:105px;}#${PET_FLOAT_ID}.status-on.chat-on .wb-pet-desk-chat{top:190px;}
+      .wb-pet-desk-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:12px;font-weight:900;color:#61748a}.wb-pet-desk-close{width:22px;height:22px;border-radius:999px;border:1px solid rgba(100,125,148,.25);background:rgba(255,255,255,.7);color:#61748a;display:grid;place-items:center;padding:0;cursor:pointer}.wb-pet-desk-stats{display:grid;gap:5px;font-size:12px;line-height:1.35}.wb-pet-desk-bar{height:7px;border:1px solid rgba(80,103,125,.28);background:rgba(235,243,250,.78);overflow:hidden}.wb-pet-desk-bar span{display:block;height:100%;width:var(--v);background:#9bc7ef}.wb-pet-desk-chat{max-height:150px}.wb-pet-desk-chat-actions{display:flex;gap:5px;margin-bottom:6px}.wb-pet-desk-chat-actions button{flex:1;min-height:25px;border:1px solid rgba(100,125,148,.24);background:rgba(255,255,255,.72);color:#415466;font-size:11px;font-weight:900;padding:2px 5px;cursor:pointer}.wb-pet-desk-chat-text{min-height:44px;max-height:88px;overflow:auto;font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.wb-pet-ball-score{position:fixed;left:50%;top:14px;z-index:1000000;transform:translateX(-50%);padding:7px 12px;border:1px solid rgba(255,255,255,.86);background:rgba(255,255,255,.78);color:#415466;box-shadow:0 8px 22px rgba(58,74,92,.18);backdrop-filter:blur(10px);font-weight:900;pointer-events:none}.wb-pet-ball{position:fixed;z-index:999999;width:28px;height:28px;border-radius:999px;background:radial-gradient(circle at 32% 28%,#fff 0 12%,#ffe08a 13% 34%,#ff9c76 35% 100%);border:1px solid rgba(255,255,255,.86);box-shadow:0 6px 16px rgba(80,62,28,.20);pointer-events:none}
+      #wb-pet-desktop-chat-mask{position:fixed!important;inset:0!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100dvh!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:18px!important;box-sizing:border-box!important;z-index:1000006!important;}
+      #wb-pet-desktop-chat-mask .wb-pet-modal{position:relative!important;margin:0 auto!important;transform:none!important;max-height:calc(100dvh - 36px)!important;}
+      .wb-pet-desk-menu .wb-pet-round{width:46px!important;height:30px!important;border-radius:12px!important;font-size:11px!important;font-weight:900;letter-spacing:0;color:#263746!important;}
+      .wb-pet-desk-submenu .wb-pet-round{width:42px!important;height:22px!important;border-radius:7px!important;font-size:10px!important;font-weight:900!important;letter-spacing:0!important;color:#263746!important;}
+      .wb-pet-desk-submenu .wb-pet-round svg{display:none!important}
+      .wb-pet-desk-panel{width:196px;max-height:116px;padding:6px;}
+      .wb-pet-desk-panel-head{margin-bottom:3px;font-size:11px}.wb-pet-desk-close{width:18px;height:18px;border:0!important;background:transparent!important;box-shadow:none!important;color:#111!important;font-size:13px;line-height:1}.wb-pet-desk-close svg{display:none}.wb-pet-desk-stats{gap:3px;font-size:11px}.wb-pet-desk-stat-row{display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:4px}.wb-pet-desk-stat-row b{font-size:10px}.wb-pet-desk-bar{height:5px}.wb-pet-desk-chat-actions{display:flex;align-items:center;gap:3px;margin-bottom:4px}.wb-pet-desk-chat-title{flex:1;font-size:11px;font-weight:900;color:#61748a;white-space:nowrap}.wb-pet-desk-chat-actions button{flex:0 0 auto;min-height:18px!important;height:18px;font-size:10px;padding:0 4px;border-radius:6px}.wb-pet-desk-chat-actions button[data-pet-chat=close]{flex:0 0 22px;border:0!important;background:transparent!important;box-shadow:none!important;color:#111!important;font-size:13px}.wb-pet-desk-chat-actions button[data-pet-chat=close] svg{display:none}.wb-pet-desk-chat-text{min-height:42px;max-height:74px;overflow-y:auto!important;overflow-x:hidden;font-size:11px;line-height:1.34;padding:4px;border:1px solid rgba(100,125,148,.18);background:rgba(255,255,255,.52);white-space:pre-wrap;overflow-wrap:anywhere;-webkit-overflow-scrolling:touch}.wb-pet-desk-panel *{touch-action:auto}
+      #${PET_FLOAT_ID}.speech-on .wb-pet-desk-speech{display:block!important;position:absolute;right:calc(100% + 8px);left:auto;top:34px;bottom:auto;transform:none;min-width:86px;max-width:132px;padding:4px 6px;border:2px solid #fff;border-radius:9px;background:#fff;color:#2b2137;box-shadow:0 0 0 1px rgba(43,33,55,.8),0 3px 0 rgba(0,0,0,.12);font-size:10px;font-weight:900;line-height:1.18;pointer-events:none;white-space:normal;overflow-wrap:anywhere;z-index:4;}
+      #${PET_FLOAT_ID}.speech-on .wb-pet-desk-speech:after{content:'';position:absolute;right:-7px;top:18px;border-width:5px 0 5px 7px;border-style:solid;border-color:transparent transparent transparent #fff;}
+      #${PET_FLOAT_ID}.speech-on.speech-right .wb-pet-desk-speech{left:calc(100% + 8px);right:auto;}
+      #${PET_FLOAT_ID}.speech-on.speech-right .wb-pet-desk-speech:after{left:-7px;right:auto;border-width:5px 7px 5px 0;border-color:transparent #fff transparent transparent;}
+      @media (max-width:768px){#${PET_FLOAT_ID},.wb-pet-desk-fox{width:86px;height:86px}.wb-pet-desk-menu .wb-pet-round{width:42px!important;height:28px!important;font-size:10px!important}.wb-pet-desk-submenu .wb-pet-round{width:40px!important;height:21px!important;font-size:9px!important}.wb-pet-round svg{width:16px;height:16px}.wb-pet-desk-menu .wb-pet-round:nth-child(1){--dx:-60px;--dy:-48px}.wb-pet-desk-menu .wb-pet-round:nth-child(2){--dx:0px;--dy:-72px}.wb-pet-desk-menu .wb-pet-round:nth-child(3){--dx:60px;--dy:-48px}.wb-pet-desk-menu .wb-pet-round:nth-child(4){--dx:80px;--dy:8px}.wb-pet-desk-submenu .wb-pet-round:nth-child(1){--dx:-60px;--dy:-18px}.wb-pet-desk-submenu .wb-pet-round:nth-child(2){--dx:-60px;--dy:8px}.wb-pet-desk-submenu .wb-pet-round:nth-child(3){--dx:-60px;--dy:34px}.wb-pet-desk-panel{top:86px;width:184px;max-height:112px;padding:6px}#${PET_FLOAT_ID}.status-on.chat-on .wb-pet-desk-status{top:86px}#${PET_FLOAT_ID}.status-on.chat-on .wb-pet-desk-chat{top:173px}.wb-pet-desk-chat-text{max-height:62px}#${PET_FLOAT_ID}.speech-on .wb-pet-desk-speech{max-width:112px;font-size:9px;padding:3px 5px;top:30px}}
       #${POPUP_ID}, #${POPUP_ID} * { box-sizing: border-box; }
       #${POPUP_ID} {
         position: fixed;
@@ -1913,6 +2036,7 @@ export async function initWanbanXiaowu() {
       .wb-body.wb-settings-mode { overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; max-height:calc(100dvh - 118px); min-height:0; padding-bottom:24px; }
       .wb-body.wb-game-mode { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden; -webkit-overflow-scrolling:touch; height:auto; }
       .wb-body.wb-intimacy-mode { padding:12px; overflow:auto; display:block; min-height:0; }
+      .wb-body.wb-pet-mode { overflow:hidden; padding:8px; display:flex; flex-direction:column; }
       .wb-intimacy-hub { min-height:0; display:grid; grid-template-columns:1fr; gap:10px; align-content:start; justify-items:center; width:100%; }
       .wb-intimacy-button {
         position:relative;
@@ -1934,27 +2058,41 @@ export async function initWanbanXiaowu() {
       .wb-intimacy-button:active { transform:translateY(1px); box-shadow:none; }
       .wb-intimacy-button img { position:absolute; inset:0; z-index:1; width:100%; height:100%; object-fit:fill; display:block; filter:saturate(.98) brightness(1.02); }
       .wb-intimacy-button span { position:relative; z-index:2; min-width:0; font-family:'WanbanIntimacyButton', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif!important; font-size:clamp(30px, 3.4vw, 38px); font-weight:700; letter-spacing:2px; color:#4A2617; text-shadow:0 1px 0 rgba(255,255,255,.82), 0 2px 8px rgba(255,255,255,.62); white-space:nowrap; }
-      .wb-pet-trial-note { justify-self:stretch; padding:8px 10px; border:1px solid var(--wb-border); background:var(--wb-soft); color:var(--wb-text); font-weight:900; text-align:center; }
-      .wb-pet-room { width:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0, 1fr) auto; gap:10px; }
-      .wb-pet-room-top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+      .wb-pet-trial-note { min-width:0; padding:6px 8px; border:1px solid var(--wb-border); background:var(--wb-soft); color:var(--wb-text); font-weight:900; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .wb-pet-room { width:min(100%, 760px); margin:0 auto; flex:1 1 auto; min-height:0; display:grid; grid-template-rows:auto auto minmax(0, 1fr) minmax(86px, 22cqh); gap:7px; overflow:hidden; }
+      .wb-pet-room-top { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; align-items:center; gap:8px; }
       .wb-pet-room-title { font-weight:900; color:var(--wb-accent); letter-spacing:1px; }
+      .wb-pet-top-actions { display:flex; gap:6px; align-items:center; justify-self:end; margin-left:auto; }
+      .wb-pet-iconbtn {
+        width:36px;
+        height:36px;
+        min-height:36px;
+        padding:0;
+        display:grid;
+        place-items:center;
+        font-size:18px;
+        line-height:1;
+      }
+      .wb-pet-stage { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; min-height:0; justify-self:center; width:min(100%, 680px); }
       .wb-pet-scene {
         position:relative;
-        width:min(100%, 560px, 100cqh);
+        width:100%;
+        height:100%;
+        max-height:min(54cqh, 430px);
         aspect-ratio:1 / 1;
         justify-self:center;
         align-self:center;
         min-height:0;
         overflow:hidden;
         border:1px solid var(--wb-border);
-        background:var(--wb-board) center / 100% 100% no-repeat;
+        background:var(--wb-board) center / cover no-repeat;
       }
       .wb-pet-room-fox {
         position:absolute;
         left:50%;
         top:46%;
-        width:min(30cqh, 30cqw, 176px);
-        min-width:108px;
+        width:min(30cqh, 28cqw, 174px);
+        min-width:86px;
         transform:translate(-50%, -50%);
         filter:drop-shadow(0 14px 20px rgba(0,0,0,.22));
       }
@@ -1972,14 +2110,51 @@ export async function initWanbanXiaowu() {
         font-weight:700;
         text-align:center;
       }
-      .wb-pet-room-actions { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; }
+      .wb-pet-npc-portrait {
+        position:absolute;
+        left:50%;
+        top:50%;
+        width:min(100%,512px);
+        height:min(100%,512px);
+        transform:translate(-50%,-50%);
+        object-fit:contain;
+        border:0;
+        background:transparent;
+        z-index:5;
+      }
+      .wb-pet-room-actions { display:grid; grid-template-columns:1fr; gap:6px; align-content:start; width:44px; }
+      .wb-pet-room-actions .wb-pet-iconbtn { width:44px; height:42px; min-height:42px; }
+      .wb-pet-bars { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; width:100%; }
+      .wb-pet-bar { display:grid; gap:3px; color:var(--wb-sub); font-size:12px; font-weight:800; }
+      .wb-pet-bar-track { height:8px; border:1px solid var(--wb-border); background:var(--wb-board); overflow:hidden; }
+      .wb-pet-bar-fill { height:100%; width:var(--v, 0%); background:var(--c, var(--wb-accent)); }
+      .wb-pet-dialogue { min-height:0; overflow:hidden; border:2px solid var(--wb-border); background:color-mix(in srgb, var(--wb-panel) 92%, #000 8%); padding:9px 10px; color:var(--wb-text); font-weight:700; display:grid; grid-template-rows:auto minmax(0, 1fr) auto; gap:5px; cursor:pointer; }
+      .wb-pet-dialogue-name { color:var(--wb-accent); font-weight:900; font-size:12px; }
+      .wb-pet-dialogue-text { min-height:0; overflow:hidden; line-height:1.55; font-size:14px; }
+      .wb-pet-dialogue-actions { display:flex; gap:6px; justify-content:flex-end; align-items:center; }
+      .wb-pet-dialogue-actions .wb-btn { min-height:28px; padding:4px 8px; font-size:12px; }
+      .wb-pet-locations { position:absolute; left:8px; top:8px; display:flex; gap:6px; z-index:4; }
+      .wb-pet-locations .wb-btn { width:32px; height:30px; min-height:30px; padding:0; font-size:16px; }
+      .wb-pet-story-badge { color:var(--wb-on-accent,#fff); background:var(--wb-accent); border:1px solid var(--wb-accent); padding:3px 8px; font-size:12px; font-weight:900; }
+      .wb-pet-rpg-line { border:1px solid var(--wb-border); background:var(--wb-panel); padding:8px 10px; margin:0 0 8px; }
+      .wb-pet-rpg-speaker { display:inline-block; margin-bottom:4px; color:var(--wb-accent); font-weight:900; }
+      .wb-pet-rpg-line.speaker-u .wb-pet-rpg-speaker { color:#3a8f91; }
+      .wb-pet-rpg-line.speaker-c .wb-pet-rpg-speaker { color:#c65b7c; }
+      .wb-pet-rpg-line.speaker-p .wb-pet-rpg-speaker { color:#c99738; }
+      .wb-pet-rpg-line.speaker-shen .wb-pet-rpg-speaker { color:#5FA8D7; }
       @media (max-width: 768px) {
         .wb-body.wb-intimacy-mode { padding:8px; }
+        .wb-body.wb-pet-mode { padding:6px; }
         .wb-intimacy-hub { gap:8px; }
         .wb-intimacy-button { width:min(96%, 360px); aspect-ratio:936 / 204; }
         .wb-intimacy-button span { font-size:clamp(32px, 9.2vw, 40px); }
-        .wb-pet-scene { width:min(100%, 92cqw, 64cqh); }
-        .wb-pet-room-fox { top:46%; width:min(36cqw, 154px); min-width:96px; }
+        .wb-pet-room { width:100%; grid-template-rows:auto auto minmax(0, 1fr) minmax(94px, 24cqh); gap:6px; }
+        .wb-pet-stage { width:100%; grid-template-columns:minmax(0, 1fr) 40px; gap:6px; }
+        .wb-pet-scene { max-height:none; aspect-ratio:auto; }
+        .wb-pet-room-actions { width:40px; gap:5px; }
+        .wb-pet-room-actions .wb-pet-iconbtn { width:40px; height:38px; min-height:38px; font-size:16px; }
+        .wb-pet-room-fox { top:48%; width:min(34cqw, 138px); min-width:78px; }
+        .wb-pet-dialogue-text { font-size:13px; line-height:1.45; }
       }
       #${POPUP_ID}.wb-playing { bottom:28px; }
       @media (min-width: 769px) {
@@ -3344,7 +3519,7 @@ export async function initWanbanXiaowu() {
         transform:translateX(-50%) rotate(-1.2deg);
         border:0;
         background:rgba(255,255,255,.88);
-        box-shadow:0 3px 10px rgba(87,112,130,.12);
+        box-shadow:1px 2px 4px rgba(87,112,130,.08);
         pointer-events:none;
         z-index:10;
       }
@@ -3391,7 +3566,7 @@ export async function initWanbanXiaowu() {
         transform:translateX(-50%) rotate(-1.2deg);
         border:0;
         background:rgba(255,255,255,.88);
-        box-shadow:0 3px 10px rgba(87,112,130,.12);
+        box-shadow:1px 2px 4px rgba(87,112,130,.08);
         pointer-events:none;
         z-index:10;
       }
@@ -3492,7 +3667,7 @@ export async function initWanbanXiaowu() {
         transform:translateX(-50%) rotate(-1.2deg);
         border:0;
         background:rgba(255,255,255,.88);
-        box-shadow:0 3px 10px rgba(87,112,130,.12);
+        box-shadow:1px 2px 4px rgba(87,112,130,.08);
         pointer-events:none;
         z-index:10;
       }
@@ -3606,7 +3781,7 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-arcade .wb-game-card,
       #${POPUP_ID}.wb-arcade.wb-tab-settings .wb-settings-grid > .wb-panel {
         border-color:transparent!important;
-        box-shadow:0 3px 8px rgba(87,112,130,.14)!important;
+        box-shadow:1px 2px 4px rgba(87,112,130,.08)!important;
       }
       #${POPUP_ID}.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag),
       .wb-modal-mask.wb-arcade :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-tag) {
@@ -4360,44 +4535,923 @@ export async function initWanbanXiaowu() {
 	    shell.style.height = h + 'px';
 	    shell.style.setProperty('--wb-vvh', h + 'px');
 	  }
+  let petTestInfoCache = null;
+  let petTestInfoLoading = null;
+  let petFullActiveCaretakerId = '';
+  let petRuntimeMode = '';
+  const PET_STAGE_CAP = { egg:100, juvenile:100, adult:100, spirit:50, ordinary:50 };
+  const PET_MAIN_TRIGGERS = [
+    { id:'M01', stage:'any', at:0 },
+    { id:'M02', stage:'egg', custom:s => (s.eggInteractions || 0) >= 2 },
+    { id:'M03', stage:'egg', at:50 },
+    { id:'M04', stage:'egg', at:80 },
+    { id:'M05', stage:'egg', at:100 },
+    { id:'M06', stage:'juvenile', at:10 },
+    { id:'M07', stage:'juvenile', at:50 },
+    { id:'M08', stage:'juvenile', at:100 },
+    { id:'M09', stage:'adult', at:50 },
+    { id:'M10', stage:'adult', at:80 },
+    { id:'M11', stage:'adult', at:100 },
+    { id:'M12', stage:'spirit', at:5, route:'spirit' },
+    { id:'M13', stage:'ordinary', at:5, route:'ordinary' },
+    { id:'M14', stage:'chosen', at:25 },
+    { id:'M15', stage:'chosen', at:50, final:true }
+  ];
+  function cleanPetInfoText(text) {
+    return String(text || '').replace(/\r\n/g, '\n').split('\n')
+      .filter(line => !/^\s*```/.test(line) && !/^\s*<\/?p(?:e|s)t_info>\s*$/.test(line))
+      .join('\n');
+  }
+  function parsePetInfoValue(line) {
+    const m = String(line || '').match(/^\s*([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
+    return m ? { key:m[1], value:m[2].trim() } : null;
+  }
+  function stripPetQuote(value) {
+    return String(value || '').trim().replace(/^-\s*/, '').replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
+  }
+  function parsePetStoryLines(raw) {
+    return String(raw || '').split('\n').map(line => {
+      const m = line.trim().match(/^\[([^\]]+)\]\s*(.*)$/);
+      return m ? { speaker:m[1], text:m[2] } : { speaker:'旁白', text:line.trim() };
+    }).filter(x => x.text);
+  }
+  function parsePetFields(lines) {
+    const out = {};
+    for (let i = 0; i < lines.length; i++) {
+      const parsed = parsePetInfoValue(lines[i]);
+      if (!parsed) continue;
+      if (parsed.key === 'story' && /^\|-/.test(parsed.value)) {
+        const story = [];
+        i++;
+        while (i < lines.length) {
+          const next = parsePetInfoValue(lines[i]);
+          if (next && next.key !== 'story' && !/^\s+\[/.test(lines[i])) { i--; break; }
+          story.push(String(lines[i] || '').replace(/^\s{2,4}/, ''));
+          i++;
+        }
+        out.story = story.join('\n').trim();
+      } else if (parsed.key !== 'variants' && parsed.key !== 'trigger') {
+        out[parsed.key] = parsed.value;
+      }
+    }
+    return out;
+  }
+  function parsePetTrigger(lines) {
+    const trigger = {};
+    let inside = false;
+    lines.forEach(line => {
+      const parsed = parsePetInfoValue(line);
+      if (!parsed) return;
+      if (parsed.key === 'trigger') { inside = true; return; }
+      if (inside && ['title','opening_cause','story'].includes(parsed.key)) { inside = false; return; }
+      if (!inside) return;
+      let value = parsed.value;
+      if (value === 'null') value = null;
+      else if (/^\d+(\.\d+)?$/.test(value)) value = Number(value);
+      trigger[parsed.key] = value;
+    });
+    return trigger;
+  }
+  function normalizePetStory(item, petName) {
+    if (!item) return null;
+    return Object.assign({}, item, {
+      title: item.title || item.id || '剧情',
+      summary: item.summary || item.opening_cause || '',
+      story: item.story || '',
+      lines: parsePetStoryLines(item.story || ''),
+      petName: petName || '宠物'
+    });
+  }
+  function defaultPetFullData() { return { activeCaretakerId:'', caretakers:[] }; }
+  function petFullData() {
+    const data = Object.assign(defaultPetFullData(), safeObject(loadJSON(STORAGE_PET_FULL, {})));
+    data.caretakers = Array.isArray(data.caretakers) ? data.caretakers : [];
+    data.caretakers.forEach(c => { c.pets = Array.isArray(c.pets) ? c.pets : []; });
+    return data;
+  }
+  function savePetFullData(data) { saveJSON(STORAGE_PET_FULL, Object.assign(defaultPetFullData(), data || {})); }
+  function petFullActiveCaretaker(data) {
+    if (petRuntimeMode === 'test') return null;
+    const all = data || petFullData();
+    const id = petFullActiveCaretakerId || all.activeCaretakerId;
+    return (all.caretakers || []).find(c => c.id === id) || (all.caretakers || []).find(c => (c.pets || []).length) || (all.caretakers || [])[0] || null;
+  }
+  function petFullActivePet(data, caretaker) {
+    if (petRuntimeMode === 'test') return null;
+    const c = caretaker || petFullActiveCaretaker(data);
+    if (!c) return null;
+    return (c.pets || []).find(p => p.id === c.activePetId) || (c.pets || [])[0] || null;
+  }
+  function petFullIsActive() { return !!petFullActivePet(); }
+  function withPetFullActive(caretakerId) {
+    petRuntimeMode = 'full';
+    petFullActiveCaretakerId = caretakerId || '';
+    const data = petFullData();
+    data.activeCaretakerId = petFullActiveCaretakerId;
+    savePetFullData(data);
+    petTestInfoCache = null;
+    petTestInfoLoading = null;
+  }
+  function savePetFullActivePetState(state) {
+    const data = petFullData();
+    const c = petFullActiveCaretaker(data);
+    if (!c) return false;
+    const pet = petFullActivePet(data, c);
+    if (!pet) return false;
+    pet.state = Object.assign(defaultPetTestState(), state || {});
+    if (pet.state.ended) pet.endedAt = pet.endedAt || Date.now();
+    c.activePetId = pet.id;
+    data.activeCaretakerId = c.id;
+    savePetFullData(data);
+    return true;
+  }
+  function petFullCaretakerById(id) { return (petFullData().caretakers || []).find(c => c.id === id) || null; }
+  function petFullPetCompleted(pet) {
+    const st = safeObject(pet && pet.state || {});
+    return !!(pet && (pet.endedAt || st.ended));
+  }
+  function petFullCompletedCount(caretaker) {
+    return ((caretaker && caretaker.pets) || []).filter(petFullPetCompleted).length;
+  }
+  function petFullAdoptionCycle(caretaker) { return Math.max(1, petFullCompletedCount(caretaker) + 1); }
+  function petFullAllLogsText(caretaker) {
+    const lines = [];
+    ((caretaker && caretaker.pets) || []).filter(petFullPetCompleted).forEach((pet, idx) => {
+      const state = safeObject(pet.state || {});
+      const info = petFullParsedInfo(pet);
+      const card = info && info.pet_card ? info.pet_card : {};
+      const cardLines = [
+        '宠物名片：',
+        '  名字：' + (card.pet_name || '未知'),
+        '  蛋：' + (card.egg || pet.egg || state.testEgg || '未知'),
+        '  品种：' + (card.species || '未知'),
+        '  性别：' + (card.sex || card.gender || '未知'),
+        '  性格：' + (card.personality || '未知'),
+        '  灵息能力：' + (card.spirit || card.spirit_ability || '未知'),
+        '  路线/阶段：' + petDisplayStage(state)
+      ];
+      const logs = Object.keys(state.logs || {}).sort().map(date => ({ date, log:state.logs[date] || {} }));
+      const picked = logs.length <= 3 ? logs : [logs[0], logs[Math.floor((logs.length - 1) / 2)], logs[logs.length - 1]];
+      picked.forEach(({ date, log }) => {
+        cardLines.push('日志｜' + date + '｜' + (log.title || '日志') + '\n' + (log.body || log.diary || ''));
+      });
+      if (!picked.length) cardLines.push('日志：无');
+      (state.storyRecords || []).slice().reverse().slice(0, 8).forEach(story => {
+        if (story && (story.title || story.summary)) cardLines.push('剧情回忆｜' + (story.title || story.id || '') + '：' + (story.summary || ''));
+      });
+      lines.push('第' + (idx + 1) + '次养宠\n' + cardLines.join('\n'));
+    });
+    return lines.join('\n\n---\n\n') || '无';
+  }
+  function petFullAllLogsTextLegacy(caretaker) {
+    const lines = [];
+    ((caretaker && caretaker.pets) || []).filter(petFullPetCompleted).forEach((pet, idx) => {
+      const state = safeObject(pet.state || {});
+      Object.keys(state.logs || {}).sort().forEach(date => {
+        const log = state.logs[date] || {};
+        lines.push('第' + (idx + 1) + '只宠物｜' + date + '｜' + (log.title || '日志') + '\n' + (log.body || log.diary || ''));
+      });
+      (state.storyRecords || []).slice().reverse().forEach(story => {
+        lines.push('第' + (idx + 1) + '只宠物｜剧情｜' + (story.title || story.id || '') + '\n' + (story.summary || '') + '\n' + (story.story || ''));
+      });
+    });
+    return lines.join('\n\n---\n\n') || '无';
+  }
+  function petFullParsedInfo(pet) {
+    try { return pet && pet.infoText ? parsePetInfoText(pet.infoText) : null; }
+    catch (_) { return null; }
+  }
+  function petLatestCaretakerConfig(caretaker) {
+    const c = caretaker || {};
+    const cfg = settings();
+    const name = normalizePresetName(c.name || c.charName || '');
+    const currentName = normalizePresetName((cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : companionName());
+    if (name && currentName && name === currentName) {
+      return Object.assign({}, cfg, {
+        charName:name,
+        charDescriptionSnapshot:currentCharDescription(Object.assign({}, cfg, { charName:name, charDescriptionSnapshot:'' })),
+        summarySnapshot:summarySnapshotFromId(cfg.summaryId) || cfg.summarySnapshot || null,
+        worldText:selectedWorldText(cfg) || c.worldText || ''
+      });
+    }
+    const pr = worldPresets().find(x => normalizePresetName(x && (x.name || x.charName)) === name);
+    if (!pr) return null;
+    const merged = Object.assign({}, cfg, pr, { charName:pr.charName || pr.name || name });
+    return Object.assign({}, merged, {
+      worldText:selectedWorldText(merged) || pr.worldText || c.worldText || '',
+      summarySnapshot:pr.summarySnapshot || summarySnapshotFromId(pr.summaryId) || null,
+      charDescriptionSnapshot:pr.charDescriptionSnapshot || currentCharDescription(Object.assign({}, merged, { charDescriptionSnapshot:'' }))
+    });
+  }
+  function petCaretakerPromptConfig(caretaker) {
+    const c = caretaker || petFullActiveCaretaker();
+    const cfg = settings();
+    if (!c) return cfg;
+    const latest = petLatestCaretakerConfig(c) || {};
+    const src = Object.assign({}, c, latest);
+    const merged = Object.assign({}, cfg, {
+      charName:src.charName || src.name || cfg.charName,
+      avatarUrl:src.avatarUrl || cfg.avatarUrl || '',
+      worldText:src.worldText || '',
+      injectUserDesc:src.injectUserDesc !== undefined ? src.injectUserDesc : cfg.injectUserDesc,
+      injectCharDesc:src.injectCharDesc !== undefined ? src.injectCharDesc : cfg.injectCharDesc,
+      injectChat:src.injectChat !== undefined ? src.injectChat : cfg.injectChat,
+      specialLanguageEnabled:src.specialLanguageEnabled !== undefined ? src.specialLanguageEnabled : cfg.specialLanguageEnabled,
+      specialLanguage:src.specialLanguage || cfg.specialLanguage,
+      breakLimitPrompt:src.breakLimitPrompt || cfg.breakLimitPrompt || '',
+      userPersona:src.userPersona || cfg.userPersona || '',
+      charDescMode:src.charDescMode || cfg.charDescMode || 'auto',
+      manualCharPersona:src.manualCharPersona || cfg.manualCharPersona || '',
+      charDescriptionSnapshot:src.charDescriptionSnapshot || (src.worldText ? ((src.name || src.charName || cfg.charName || '{{char}}') + '：\n' + src.worldText) : ''),
+      summaryId:src.summaryId || cfg.summaryId || '',
+      summarySnapshot:src.summarySnapshot || '',
+      selectedWorldEntries:Array.isArray(src.selectedWorldEntries) ? src.selectedWorldEntries : (cfg.selectedWorldEntries || []),
+      selectedWorldPresetName:src.selectedWorldPresetName || cfg.selectedWorldPresetName || ''
+    });
+    return merged;
+  }
+  function petFullRecordContext(info, state) {
+    const c = petFullActiveCaretaker();
+    if (!c) return null;
+    const pets = (c.pets || []).map((pet, idx) => {
+      const parsed = petFullParsedInfo(pet) || info;
+      return { pet, petIndex:idx + 1, info:parsed, state:Object.assign(defaultPetTestState(), pet.state || {}) };
+    });
+    return { caretaker:c, pets };
+  }
+  function petFullSetActivePet(caretakerId, petId) {
+    const data = petFullData();
+    const c = (data.caretakers || []).find(x => x.id === caretakerId);
+    if (!c) return false;
+    c.activePetId = petId || c.activePetId || '';
+    data.activeCaretakerId = c.id;
+    savePetFullData(data);
+    withPetFullActive(c.id);
+    return true;
+  }
+  function petFullCaretakerOptions() {
+    const opts = [];
+    const cfg = settings();
+    const snapshot = (base, extra) => {
+      const merged = Object.assign({}, base || cfg, extra || {});
+      return {
+        injectUserDesc:merged.injectUserDesc,
+        injectCharDesc:merged.injectCharDesc,
+        injectChat:merged.injectChat,
+        specialLanguageEnabled:!!merged.specialLanguageEnabled,
+        specialLanguage:merged.specialLanguage || cfg.specialLanguage,
+        breakLimitPrompt:merged.breakLimitPrompt || '',
+        userPersona:merged.userPersona || '',
+        charDescMode:merged.charDescMode || 'auto',
+        manualCharPersona:merged.manualCharPersona || '',
+        charName:merged.charName || '',
+        charDescriptionSnapshot:merged.charDescriptionSnapshot || '',
+        summaryId:merged.summaryId || '',
+        summarySnapshot:merged.summarySnapshot || '',
+        selectedWorldEntries:Array.isArray(merged.selectedWorldEntries) ? merged.selectedWorldEntries : [],
+        selectedWorldPresetName:merged.selectedWorldPresetName || ''
+      };
+    };
+    const push = (name, avatarUrl, roleCfg, idx) => {
+      const n = String(name || '').trim();
+      if (!n || opts.some(x => x.name === n)) return;
+      const merged = Object.assign({}, roleCfg || {}, { charName:n });
+      opts.push(Object.assign({ name:n, avatarUrl:avatarUrl || '', worldText:selectedWorldText(merged) || merged.worldText || '', worldIndex:idx }, snapshot(cfg, merged)));
+    };
+    push(petCharName(), cfg.avatarUrl || findCurrentCardAvatar() || '', Object.assign({}, cfg, { charDescriptionSnapshot:currentCharDescription(cfg) }), -1);
+    worldPresets().forEach((pr, i) => push(pr.name || pr.charName || ('角色' + (i + 1)), pr.avatarUrl || '', Object.assign({}, cfg, pr || {}, { selectedWorldEntries:pr.selectedWorldEntries || [], selectedWorldPresetName:pr.selectedWorldPresetName || pr.name || '' }), i));
+    return opts;
+  }
+  function petFullEnsureCaretaker(opt) {
+    const data = petFullData();
+    let c = data.caretakers.find(x => x.name === opt.name);
+    const fields = ['worldIndex','worldText','injectUserDesc','injectCharDesc','injectChat','specialLanguageEnabled','specialLanguage','breakLimitPrompt','userPersona','charDescMode','manualCharPersona','charName','charDescriptionSnapshot','summaryId','summarySnapshot','selectedWorldEntries','selectedWorldPresetName'];
+    if (!c) {
+      c = { id:'petc_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), name:opt.name, avatarUrl:opt.avatarUrl || '', activePetId:'', pets:[], createdAt:Date.now() };
+      fields.forEach(k => { if (opt[k] !== undefined) c[k] = opt[k]; });
+      data.caretakers.unshift(c);
+    } else {
+      c.avatarUrl = opt.avatarUrl || c.avatarUrl || '';
+      fields.forEach(k => { if (opt[k] !== undefined) c[k] = opt[k]; });
+    }
+    data.activeCaretakerId = c.id;
+    savePetFullData(data);
+    withPetFullActive(c.id);
+    return c;
+  }
+  function petFullAddPet(caretakerId, infoText, state, meta) {
+    const data = petFullData();
+    const c = data.caretakers.find(x => x.id === caretakerId);
+    if (!c) return null;
+    const id = 'pet_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+    const pet = Object.assign({ id, infoText, state:Object.assign(defaultPetTestState(), state || {}), createdAt:Date.now() }, meta || {});
+    c.pets = c.pets || [];
+    c.pets.push(pet);
+    c.activePetId = id;
+    data.activeCaretakerId = c.id;
+    savePetFullData(data);
+    withPetFullActive(c.id);
+    return pet;
+  }
+  function petFullRemoveActivePet(caretakerId) {
+    const data = petFullData();
+    const c = data.caretakers.find(x => x.id === caretakerId);
+    if (!c) return false;
+    const id = c.activePetId || ((c.pets || [])[0] && (c.pets || [])[0].id);
+    if (!id) return false;
+    c.pets = (c.pets || []).filter(p => p.id !== id);
+    c.activePetId = ((c.pets || [])[c.pets.length - 1] || {}).id || '';
+    data.activeCaretakerId = c.id;
+    savePetFullData(data);
+    withPetFullActive(c.id);
+    petTestInfoCache = null;
+    petTestInfoLoading = null;
+    return true;
+  }
+
+  function parsePetInfoText(text) {
+    const cleaned = cleanPetInfoText(text);
+    const lines = cleaned.split('\n');
+    const info = { pet_card:{}, main_story:[], side_story:[], quotes:{ char:{}, pet:{} }, parseWarnings:[] };
+    const cardStart = lines.findIndex(line => /^\s*pet_card\s*:\s*$/.test(line));
+    const mainStart = lines.findIndex(line => /^\s*main_story\s*:\s*$/.test(line));
+    const sideStart = lines.findIndex(line => /^\s*side_story\s*:\s*$/.test(line));
+    const quotesStart = lines.findIndex(line => /^\s*quotes\s*:\s*$/.test(line));
+    if (cardStart >= 0 && mainStart > cardStart) {
+      lines.slice(cardStart + 1, mainStart).forEach(line => {
+        const parsed = parsePetInfoValue(line);
+        if (parsed) info.pet_card[parsed.key] = parsed.value;
+      });
+    }
+    const storyEnd = quotesStart >= 0 ? quotesStart : lines.length;
+    const storyLines = lines.slice(mainStart >= 0 ? mainStart + 1 : 0, storyEnd);
+    const starts = [];
+    storyLines.forEach((line, i) => {
+      const m = line.match(/^\s*-\s*id:\s*([A-Z]+\d+)/);
+      if (m) starts.push({ index:i, id:m[1] });
+    });
+    starts.forEach((start, idx) => {
+      const block = storyLines.slice(start.index, idx + 1 < starts.length ? starts[idx + 1].index : storyLines.length);
+      const id = start.id;
+      if (id === 'M14' || id === 'M15') {
+        const item = Object.assign({ id, variants:{} }, parsePetFields(block));
+        ['spirit','ordinary'].forEach(route => {
+          const routeIdx = block.findIndex(line => new RegExp('^\\s*' + route + '\\s*:\\s*$').test(line));
+          if (routeIdx >= 0) {
+            const otherIdx = block.findIndex((line, i) => i > routeIdx && /^\s*(spirit|ordinary)\s*:\s*$/.test(line));
+            item.variants[route] = normalizePetStory(Object.assign({ id, route }, parsePetFields(block.slice(routeIdx + 1, otherIdx >= 0 ? otherIdx : block.length))), info.pet_card.pet_name);
+          }
+        });
+        info.main_story.push(item);
+      } else if (/^M\d+/.test(id)) {
+        info.main_story.push(normalizePetStory(Object.assign({ id }, parsePetFields(block)), info.pet_card.pet_name));
+      } else {
+        const item = normalizePetStory(Object.assign({ id, trigger:parsePetTrigger(block) }, parsePetFields(block)), info.pet_card.pet_name);
+        info.side_story.push(item);
+      }
+    });
+    if (quotesStart >= 0) {
+      let target = null, stage = null, action = null;
+      const quoteLines = lines.slice(quotesStart + 1);
+      quoteLines.forEach((raw, idx) => {
+        const line = raw.trim();
+        if (!line) return;
+        const nextMeaningful = quoteLines.slice(idx + 1).map(x => x.trim()).find(Boolean) || '';
+        if (line === 'char:' || (line === 'pet:' && /^(egg|juvenile|adult|spirit):\s*$/.test(nextMeaningful))) { target = line.slice(0, -1); stage = null; action = null; return; }
+        if (!target) return;
+        const key = line.match(/^([A-Za-z_]+):\s*(.*)$/);
+        if (key) {
+          if (['egg','juvenile','adult','spirit'].includes(key[1])) {
+            stage = key[1]; action = null;
+            info.quotes[target][stage] = info.quotes[target][stage] || {};
+          } else if (['feed','pet','poke','sleep','sad'].includes(key[1]) && stage) {
+            action = key[1];
+            info.quotes[target][stage][action] = key[2] === '[]' ? [] : [];
+          }
+          return;
+        }
+        if (target && stage && action && /^-\s*/.test(line)) {
+          info.quotes[target][stage][action].push(stripPetQuote(line));
+        }
+      });
+    }
+    info.mainById = {};
+    info.sideById = {};
+    info.main_story.forEach(item => { if (item && item.id) info.mainById[item.id] = item; });
+    info.side_story.forEach(item => { if (item && item.id) info.sideById[item.id] = item; });
+    if (info.main_story.length < 15) info.parseWarnings.push('主线数量少于15，当前解析到 ' + info.main_story.length);
+    if (info.side_story.length < 6) info.parseWarnings.push('支线数量少于6，当前解析到 ' + info.side_story.length);
+    return info;
+  }
+  async function loadPetTestInfo() {
+    const activeFullPet = petFullActivePet();
+    if (activeFullPet && activeFullPet.infoText) {
+      petTestInfoCache = parsePetInfoText(activeFullPet.infoText);
+      return petTestInfoCache;
+    }
+    if (petTestInfoCache) return petTestInfoCache;
+    if (petTestInfoLoading) return petTestInfoLoading;
+    const testState = petTestState();
+    const testSpecies = String(testState.testSpecies || 'rabbit').replace(/[^\w-]/g, '') || 'rabbit';
+    const testEgg = String(testState.testEgg || '').replace(/[^\w-]/g, '');
+    const url = PET_ASSET_BASE + 'text/pet_info_' + testSpecies + '.txt';
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('宠物试用版数据读取超时')), 15000));
+    petTestInfoLoading = Promise.race([fetch(url, { cache:'no-store' }), timeout])
+      .then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.text();
+      })
+      .then(text => {
+        petTestInfoCache = parsePetInfoText(text);
+        if (testEgg) petTestInfoCache.pet_card.egg = testEgg;
+        petTestInfoCache.pet_card.species = petTestInfoCache.pet_card.species || testSpecies;
+        return petTestInfoCache;
+      })
+      .catch(e => {
+        console.warn('[玩伴小屋] pet test info load failed:', e);
+        petTestInfoCache = parsePetInfoText('');
+        petTestInfoCache.parseWarnings.push('试用版文本读取失败：' + (e && e.message ? e.message : e));
+        return petTestInfoCache;
+      });
+    return petTestInfoLoading;
+  }
+  function todayKey() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function offsetDateKey(dateKey, offsetDays) {
+    const d = dateKey ? new Date(String(dateKey) + 'T12:00:00') : new Date();
+    d.setDate(d.getDate() + Number(offsetDays || 0));
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function defaultPetTestState() {
+    const now = Date.now();
+    return {
+      stage:'egg', route:'common', growth:0, fullness:80, happiness:80, location:'home',
+      completedMain:[], completedSide:[], storyRecords:[], logs:{}, days:{}, sideCounts:{}, sideTriggered:[], archives:[],
+      pendingStories:[], eggInteractions:0, feedCount:0, petCount:0, pokeCount:0, outingCount:0, lastEggPetGrowthAt:0, lastWalkRewardAt:0,
+      activeStory:null, dismissedStories:[], endingReady:false, finalConfirmed:false, ended:false, startedAt:now, firstVisitDate:todayKey(), lastVisitDate:todayKey(), lastDecayAt:now, lastInteractionAt:now
+    };
+  }
+  function petTestState() {
+    const activeFullPet = petFullActivePet();
+    if (activeFullPet) return Object.assign(defaultPetTestState(), safeObject(activeFullPet.state || {}));
+    return Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
+  }
+  function petTrialHasSavedPet() {
+    const raw = safeObject(loadJSON(STORAGE_PET_TEST, {}));
+    return !!(raw.testSpecies || raw.testEgg || raw.userName || Number(raw.growth || 0) > 0
+      || Object.keys(raw.logs || {}).length || Object.keys(raw.days || {}).length
+      || (Array.isArray(raw.storyRecords) && raw.storyRecords.length)
+      || (Array.isArray(raw.completedMain) && raw.completedMain.length)
+      || (Array.isArray(raw.completedSide) && raw.completedSide.length));
+  }
+  function savePetTestState(state) {
+    if (savePetFullActivePetState(state)) return;
+    saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), state || {}));
+  }
+  function petStageCap(stage) {
+    return PET_STAGE_CAP[stage] || 100;
+  }
+  function petGrowthPercent(state) {
+    const cap = petStageCap(state.stage);
+    return Math.max(0, Math.min(100, Math.round((Number(state.growth || 0) / cap) * 100)));
+  }
+  function petToastGrowth(reason, added) {
+    const n = Math.max(0, Number(added || 0));
+    if (n > 0) toast((reason || '成长') + '：成长值 +' + n);
+  }
+  function petDisplayStage(state) {
+    if (state.stage === 'egg') return '蛋形态';
+    if (state.stage === 'juvenile') return '幼年';
+    if (state.stage === 'adult') return '成年';
+    if (state.stage === 'spirit') return '灵息';
+    if (state.stage === 'ordinary') return '普通';
+    return '宠物';
+  }
+  function petFormForStage(state) {
+    if (state.stage === 'spirit') return 'magic';
+    if (state.stage === 'adult' || state.stage === 'ordinary') return 'adult';
+    return 'baby';
+  }
+  function applyPetVisitAndDecay(state) {
+    const next = Object.assign(defaultPetTestState(), state || {});
+    const now = Date.now();
+    const today = todayKey();
+    const todayDay = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, next.days[today] || {});
+    if (!next.firstVisitDate) next.firstVisitDate = today;
+    if (next.lastVisitDate && next.lastVisitDate !== today && next.firstVisitDate !== today && !next.ended) {
+      const beforeGrowth = Number(next.growth || 0);
+      next.growth = Math.min(petStageCap(next.stage), beforeGrowth + 5);
+      const added = Math.max(0, Number(next.growth || 0) - beforeGrowth);
+      next.days[today] = Object.assign({}, next.days[today] || {}, { visited:true, growth:Number((next.days[today] || {}).growth || 0) + added });
+      petToastGrowth('每日照看', added);
+    }
+    next.lastVisitDate = today;
+    const decayStepMs = 30 * 60 * 1000;
+    const elapsed = Math.floor((now - Number(next.lastDecayAt || now)) / decayStepMs);
+    if (elapsed > 0) {
+      next.fullness = Math.max(0, Number(next.fullness || 0) - elapsed * 10);
+      next.happiness = Math.max(0, Number(next.happiness || 0) - elapsed * 10);
+      next.lastDecayAt = Number(next.lastDecayAt || now) + elapsed * decayStepMs;
+    }
+    if (!next.lastInteractionAt) next.lastInteractionAt = now;
+    if (settings().petDesktopEnabled && next.stage !== 'egg' && !next.ended) {
+      const started = Number(next.lastWalkRewardAt || now);
+      const chunks = Math.floor((now - started) / 600000);
+      if (chunks > 0) {
+        const add = chunks * 2;
+        const beforeGrowth = Number(next.growth || 0);
+        next.growth = Math.min(petStageCap(next.stage), beforeGrowth + add);
+        const added = Math.max(0, Number(next.growth || 0) - beforeGrowth);
+        todayDay.outing = Number(todayDay.outing || 0) + chunks;
+        todayDay.growth = Number(todayDay.growth || 0) + added;
+        next.lastWalkRewardAt = started + chunks * 600000;
+        next.days = Object.assign({}, next.days || {}, { [today]:todayDay });
+        petToastGrowth('遛弯陪伴', added);
+      } else if (!next.lastWalkRewardAt) {
+        next.lastWalkRewardAt = now;
+      }
+    }
+    return next;
+  }
+  function petAutoAction(state) {
+    const pet = state || petTestState();
+    if (pet.ended || pet.stage === 'egg') return '';
+    if (Number(pet.fullness || 0) < 30 || Number(pet.happiness || 0) < 30) return 'sad';
+    const last = Number(pet.lastInteractionAt || pet.startedAt || Date.now());
+    if (Date.now() - last >= 600000) return 'sleep';
+    return '';
+  }
+  function petQuote(info, who, stage, action, fallback) {
+    const quotes = info && info.quotes && info.quotes[who] && info.quotes[who][stage] && info.quotes[who][stage][action];
+    if (Array.isArray(quotes) && quotes.length) return quotes[Math.floor(Math.random() * quotes.length)];
+    if (stage === 'ordinary') return petQuote(info, who, 'adult', action, fallback);
+    return fallback || '';
+  }
+  function getPetMainStory(info, id, route) {
+    const item = info && info.mainById && info.mainById[id];
+    if (!item) return null;
+    if (item.variants) return item.variants[route || 'spirit'] || item.variants.spirit || item.variants.ordinary || null;
+    return item;
+  }
+  function markPetStoryComplete(state, id, story, route) {
+    const next = Object.assign({}, state);
+    const listName = /^S/.test(id) ? 'completedSide' : 'completedMain';
+    next[listName] = Array.from(new Set([].concat(next[listName] || [], id)));
+    next.storyRecords = [{ id, route:route || next.route, title:story?.title || id, summary:story?.summary || '', story:story?.story || '', userName:petPlayerName(next), savedAt:Date.now(), date:todayKey(), snapshot:petSnapshotData(next) }].concat(next.storyRecords || []).slice(0, 120);
+    if (id === 'M05') { next.stage = 'juvenile'; next.growth = 0; }
+    if (id === 'M08') { next.stage = 'adult'; next.growth = 0; }
+    if (id === 'M12') { next.stage = 'spirit'; next.route = 'spirit'; next.growth = 0; }
+    if (id === 'M13') { next.stage = 'ordinary'; next.route = 'ordinary'; next.growth = 0; }
+    if (id === 'M15') next.ended = true;
+    return next;
+  }
+  function petEligibleMainIds(state) {
+    const completed = new Set(state.completedMain || []);
+    const pending = [];
+    PET_MAIN_TRIGGERS.forEach(rule => {
+      if (completed.has(rule.id)) return;
+      if (rule.final && !state.finalConfirmed) return;
+      if (rule.route && state.route !== rule.route) return;
+      const stageOk = rule.stage === 'any' || rule.stage === state.stage || (rule.stage === 'chosen' && (state.stage === 'spirit' || state.stage === 'ordinary'));
+      if (!stageOk) return;
+      if (rule.custom && !rule.custom(state)) return;
+      if (rule.at != null && Number(state.growth || 0) < rule.at) return;
+      pending.push(rule.id);
+    });
+    return pending;
+  }
+  function petSideStageAllowed(required, current) {
+    const req = String(required || '').toLowerCase();
+    const cur = String(current || '').toLowerCase();
+    if (!req || req === 'any') return true;
+    if (req === cur) return true;
+    const order = { egg:0, juvenile:1, adult:2, spirit:3, ordinary:3 };
+    if (req === 'juvenile') return (order[cur] || 0) >= 1;
+    if (req === 'adult') return (order[cur] || 0) >= 2;
+    return false;
+  }
+
+  function updatePetPendingStories(state, info) {
+    const next = Object.assign({}, state);
+    const existing = new Set(next.pendingStories || []);
+    petEligibleMainIds(next).forEach(id => existing.add(id));
+    (info?.side_story || []).forEach(side => {
+      const id = side.id;
+      if (!id || (next.completedSide || []).includes(id)) return;
+      const trigger = side.trigger || {};
+      if (!petSideStageAllowed(trigger.stage, next.stage)) return;
+      if (trigger.context_type === 'location' && trigger.context_value !== next.location) return;
+      if (trigger.context_type === 'time' && trigger.context_value !== petTimeOfDay()) return;
+      const count = Number((next.sideCounts || {})[id] || 0);
+      const triggered = new Set(next.sideTriggered || []);
+      if (trigger.behavior_trigger_type === 'count' && count >= Number(trigger.threshold || 0)) triggered.add(id);
+      next.sideTriggered = Array.from(triggered);
+      if (triggered.has(id)) existing.add(id);
+    });
+    next.pendingStories = Array.from(existing);
+    return next;
+  }
+  function petTimeOfDay() {
+    const h = new Date().getHours();
+    return h >= 6 && h < 18 ? 'day' : 'night';
+  }
+  function petSceneUrl(state) {
+    const loc = ['home','outside','garden'].includes(state.location) ? state.location : 'home';
+    return PET_ASSET_BASE + 'scene/' + loc + '-' + petTimeOfDay() + '.png';
+  }
+  function petEggUrl(state) {
+    const pct = petGrowthPercent(state);
+    const idx = pct >= 80 ? 4 : (pct >= 50 ? 3 : (pct >= 20 ? 2 : 1));
+    const egg = (petTestInfoCache?.pet_card?.egg || 'gold').replace(/[^a-z]/g, '') || 'gold';
+    return PET_ASSET_BASE + 'eggs/' + egg + '-' + idx + '.png';
+  }
+  function petAnimalSpriteUrl(state, action) {
+    const activeFullPet = petFullActivePet();
+    if (!petTestInfoCache && activeFullPet?.infoText) {
+      try { petTestInfoCache = parsePetInfoText(activeFullPet.infoText); } catch (_) {}
+    }
+    const testSpecies = petTestState().testSpecies || '';
+    const species = (petTestInfoCache?.pet_card?.species || testSpecies || 'rabbit').replace(/[^a-z]/g, '') || 'rabbit';
+    return PET_ASSET_BASE + species + '/' + petFormForStage(state) + '/' + petStateClass(action || state.petAction || 'normal') + '.png';
+  }
+  function petAssetHTML(state, action) {
+    const pet = state || petTestState();
+    if (pet.stage === 'egg') return '<img class="wb-pet-asset wb-pet-egg-img" src="' + esc(petEggUrl(pet)) + '" alt="">';
+    return '<div class="wb-pet-fox ' + esc(petFormForStage(pet)) + ' ' + esc(petStateClass(action || pet.petAction || 'normal')) + '" style="--wb-pet-sprite:url(' + esc(petAnimalSpriteUrl(pet, action)) + ')"></div>';
+  }
+  function petEggUrlForInfo(state, info) {
+    const pct = petGrowthPercent(state || {});
+    const idx = pct >= 80 ? 4 : (pct >= 50 ? 3 : (pct >= 20 ? 2 : 1));
+    const egg = (info?.pet_card?.egg || state?.testEgg || 'gold').replace(/[^a-z]/g, '') || 'gold';
+    return PET_ASSET_BASE + 'eggs/' + egg + '-' + idx + '.png';
+  }
+  function petAnimalSpriteUrlForInfo(state, action, info) {
+    const pet = state || defaultPetTestState();
+    const species = (info?.pet_card?.species || pet.testSpecies || 'rabbit').replace(/[^a-z]/g, '') || 'rabbit';
+    return PET_ASSET_BASE + species + '/' + petFormForStage(pet) + '/' + petStateClass(action || pet.petAction || 'normal') + '.png';
+  }
+  function petAssetHTMLForInfo(state, action, info) {
+    const pet = state || defaultPetTestState();
+    if (pet.stage === 'egg') return '<img class="wb-pet-asset wb-pet-egg-img" src="' + esc(petEggUrlForInfo(pet, info)) + '" alt="">';
+    return '<div class="wb-pet-fox ' + esc(petFormForStage(pet)) + ' ' + esc(petStateClass(action || pet.petAction || 'normal')) + '" style="--wb-pet-sprite:url(' + esc(petAnimalSpriteUrlForInfo(pet, action, info)) + ')"></div>';
+  }
+  function petUiIcon(name) {
+    const icons = {
+      back:'<path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/>',
+      down:'<path d="M7 9l5 6 5-6"/>',
+      help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.8 2.8 0 0 1 5 1.7c0 2-2.5 2.1-2.5 4"/><path d="M12 18h.01"/>',
+      restart:'<path d="M18.5 9.2A6.8 6.8 0 1 0 20 14"/><path d="M18.5 9.2V4.8"/><path d="M18.5 9.2h-4.4"/>',
+      walk:'<path d="M12 4l-5 7h3l-4 6h12l-4-6h3z"/><path d="M12 17v4"/><path d="M9 21h6"/>',
+      feed:'<path d="M12 7c-4 0-7 2.5-7 6 0 4.5 5.2 8 7 8s7-3.5 7-8c0-3.5-3-6-7-6z"/><path d="M12 7l-3-3"/><path d="M12 7l3-3"/><path d="M12 7c-1.2-1.5-3.4-1.8-5-1"/><path d="M12 7c1.2-1.5 3.4-1.8 5-1"/><path d="M9 12h.01"/><path d="M12 15h.01"/><path d="M15 12h.01"/>',
+      pat:'<path d="M7 12V8a1.5 1.5 0 0 1 3 0v4"/><path d="M10 11V6.5a1.5 1.5 0 0 1 3 0V11"/><path d="M13 11V7.5a1.5 1.5 0 0 1 3 0V12"/><path d="M16 12V10a1.5 1.5 0 0 1 3 0v4c0 4-2.5 6-6 6h-1c-2.6 0-4.2-1.2-5.8-3.4L4.8 14.7a1.4 1.4 0 0 1 2.2-1.7L9 15"/>',
+      log:'<path d="M5 19l4-1 9-9-3-3-9 9-1 4z"/><path d="M13 8l3 3"/>',
+      records:'<path d="M6 4h12v16H6z"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/>',
+      scene:'<path d="M4 6h16v12H4z"/><path d="M8 14l3-3 2 2 2-3 3 4"/>',
+      story:'<path d="M12 5v8"/><path d="M12 18h.01"/>',
+      ending:'<path d="M12 3l2.2 6 6 .3-4.7 3.8 1.6 5.9-5.1-3.3L6.9 19l1.6-5.9L3.8 9.3l6-.3z"/>',
+      replay:'<path d="M5 7h11v10H5z"/><path d="M16 10l4-2v8l-4-2"/><path d="M8 5l2 2"/><path d="M14 5l-2 2"/>',
+      card:'<rect x="4" y="6" width="16" height="12" rx="1"/><path d="M7 10h5"/><path d="M7 14h10"/><path d="M15 10h2"/>',
+      plus:'<path d="M12 5v14"/><path d="M5 12h14"/>',
+      interact:'<path d="M7 13c2-5 8-5 10 0"/><path d="M8 16h8"/><path d="M9 9h.01"/><path d="M15 9h.01"/>',
+      status:'<path d="M5 19V9"/><path d="M12 19V5"/><path d="M19 19v-7"/>',
+      chat:'<path d="M5 6h14v10H9l-4 3z"/>',
+      home:'<path d="M4 11l8-7 8 7"/><path d="M7 10v10h10V10"/>',
+      ball:'<circle cx="12" cy="12" r="8"/><path d="M4.8 9.5c4.8 1.8 9.6 1.8 14.4 0"/><path d="M4.8 14.5c4.8-1.8 9.6-1.8 14.4 0"/><path d="M12 4c-2.2 2.4-2.2 13.6 0 16"/><path d="M12 4c2.2 2.4 2.2 13.6 0 16"/>',
+      coin:'<circle cx="12" cy="12" r="8"/><path d="M9 9.5h6"/><path d="M9 12h6"/><path d="M9 14.5h6"/>',
+      close:'<path d="M7 7l10 10"/><path d="M17 7L7 17"/>'
+    };
+    return '<svg class="wb-pet-svg" viewBox="0 0 24 24" aria-hidden="true">' + (icons[name] || icons.help) + '</svg>';
+  }
+  function petSnapshotData(state) {
+    const src = state || petTestState();
+    return {
+      stage:src.stage || 'egg',
+      route:src.route || 'common',
+      growth:Number(src.growth || 0),
+      location:src.location || 'home',
+      petAction:src.petAction || 'normal',
+      testSpecies:src.testSpecies || '',
+      testEgg:src.testEgg || ''
+    };
+  }
+  function petSnapshotState(snapshot) {
+    return Object.assign({}, petTestState(), snapshot || {});
+  }
+  function petSnapshotHTML(snapshot, label) {
+    const snap = petSnapshotState(snapshot);
+    return '<div class="wb-pet-snapshot" style="background-image:url(' + esc(petSceneUrl(snap)) + ')">' + petAssetHTML(snap, snap.petAction || 'normal') + '</div>';
+  }
+  function petSnapshotHTMLForInfo(snapshot, info) {
+    const snap = petSnapshotState(snapshot);
+    return '<div class="wb-pet-snapshot" style="background-image:url(' + esc(petSceneUrl(snap)) + ')">' + petAssetHTMLForInfo(snap, snap.petAction || 'normal', info) + '</div>';
+  }
+  function petApplyInteraction(action) {
+    let state = applyPetVisitAndDecay(petTestState());
+    const today = todayKey();
+    const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
+    const canGrow = !state.ended;
+    const addGrowth = (amount, reason) => {
+      if (!canGrow || amount <= 0) return 0;
+      const before = Number(state.growth || 0);
+      state.growth = Math.min(petStageCap(state.stage), before + amount);
+      const added = Math.max(0, Number(state.growth || 0) - before);
+      day.growth = Number(day.growth || 0) + added;
+      petToastGrowth(reason, added);
+      return added;
+    };
+    if (action === 'feed' && state.stage !== 'egg') {
+      const beforeFullness = Number(state.fullness || 0);
+      state.fullness = Math.min(100, beforeFullness + 5);
+      if (state.fullness > beforeFullness) addGrowth(2, '喂食照顾');
+      state.feedCount = Number(state.feedCount || 0) + 1;
+      day.feed++;
+    } else if (action === 'pet') {
+      if (state.stage !== 'egg') {
+        const beforeHappiness = Number(state.happiness || 0);
+        state.happiness = Math.min(100, beforeHappiness + 5);
+        if (state.happiness > beforeHappiness) addGrowth(2, '抚摸陪伴');
+      }
+      if (state.stage === 'egg') {
+        const now = Date.now();
+        const last = Number(state.lastEggPetGrowthAt || 0);
+        if (!last || now - last >= 600000) {
+          addGrowth(2, '抚摸蛋壳');
+          state.lastEggPetGrowthAt = now;
+        }
+      }
+      state.petCount = Number(state.petCount || 0) + 1;
+      if (state.stage === 'egg') state.eggInteractions = Number(state.eggInteractions || 0) + 1;
+      day.pet++;
+    } else if (action === 'poke') {
+      state.pokeCount = Number(state.pokeCount || 0) + 1;
+      if (state.stage === 'egg') state.eggInteractions = Number(state.eggInteractions || 0) + 1;
+      day.poke++;
+    } else if (action === 'outing') {
+      state.outingCount = Number(state.outingCount || 0) + 1;
+      if (state.stage !== 'egg') state.lastWalkRewardAt = Date.now();
+      day.outing++;
+    } else if (action === 'play') {
+      if (state.stage !== 'egg') state.happiness = Math.min(100, Number(state.happiness || 0) + 5);
+      addGrowth(3, '一起玩耍');
+      day.play++;
+    }
+    state.lastInteractionAt = Date.now();
+    day.snapshot = petSnapshotData(state);
+    state.days = Object.assign({}, state.days || {}, { [today]:day });
+    const sideCounts = Object.assign({}, state.sideCounts || {});
+    const triggered = new Set(state.sideTriggered || []);
+    (petTestInfoCache?.side_story || []).forEach(side => {
+      const trigger = side.trigger || {};
+      if (trigger.behavior !== action) return;
+      sideCounts[side.id] = Number(sideCounts[side.id] || 0) + 1;
+      if ((state.completedSide || []).includes(side.id)) return;
+      if (trigger.behavior_trigger_type === 'count' && sideCounts[side.id] >= Number(trigger.threshold || 0)) triggered.add(side.id);
+      if (trigger.behavior_trigger_type === 'probability' && Math.random() < Number(trigger.probability || 0)) triggered.add(side.id);
+    });
+    state.sideCounts = sideCounts;
+    state.sideTriggered = Array.from(triggered);
+    state.lastDecayAt = Date.now();
+    const auto = petAutoAction(state);
+    if (auto) state.petAction = auto;
+    return state;
+  }
+  function petApplyGameReward(gameMeta, result, durationMs) {
+    let state = applyPetVisitAndDecay(petTestState());
+    if (state.ended) return;
+    const mode = gameMeta && gameMeta.mode;
+    const outcome = resultOutcome(result);
+    const growthAdd = mode === 'double' && outcome !== 'draw' && outcome !== 'finished'
+      ? (outcome === 'user_win' ? 5 : 3)
+      : (Number(durationMs || 0) >= 3600000 ? 5 : 3);
+    const today = todayKey();
+    const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
+    day.play = Number(day.play || 0) + 1;
+    day.snapshot = petSnapshotData(state);
+    if (state.stage !== 'egg') state.happiness = Math.min(100, Number(state.happiness || 0) + 5);
+    const beforeGrowth = Number(state.growth || 0);
+    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + growthAdd);
+    const added = Math.max(0, Number(state.growth || 0) - beforeGrowth);
+    day.growth = Number(day.growth || 0) + added;
+    petToastGrowth((gameMeta && gameMeta.name ? gameMeta.name : '小游戏') + '陪玩', added);
+    state.days = Object.assign({}, state.days || {}, { [today]:day });
+    const sideCounts = Object.assign({}, state.sideCounts || {});
+    const triggered = new Set(state.sideTriggered || []);
+    (petTestInfoCache?.side_story || []).forEach(side => {
+      const trigger = side.trigger || {};
+      if (trigger.behavior !== 'play') return;
+      sideCounts[side.id] = Number(sideCounts[side.id] || 0) + 1;
+      if ((state.completedSide || []).includes(side.id)) return;
+      if (trigger.behavior_trigger_type === 'count' && sideCounts[side.id] >= Number(trigger.threshold || 0)) triggered.add(side.id);
+      if (trigger.behavior_trigger_type === 'probability' && Math.random() < Number(trigger.probability || 0)) triggered.add(side.id);
+    });
+    state.sideCounts = sideCounts;
+    state.sideTriggered = Array.from(triggered);
+    savePetTestState(updatePetPendingStories(state, petTestInfoCache || { side_story:[] }));
+  }
+  function petApplyDesktopBallReward(amount) {
+    let state = applyPetVisitAndDecay(petTestState());
+    if (state.ended) return state;
+    const today = todayKey();
+    const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
+    day.play = Number(day.play || 0) + 1;
+    if (state.stage !== 'egg') state.happiness = Math.min(100, Number(state.happiness || 0) + 5);
+    const beforeGrowth = Number(state.growth || 0);
+    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + Math.max(1, Number(amount || 1)));
+    const added = Math.max(0, Number(state.growth || 0) - beforeGrowth);
+    day.growth = Number(day.growth || 0) + added;
+    petToastGrowth('桌宠玩球', added);
+    day.snapshot = petSnapshotData(state);
+    state.days = Object.assign({}, state.days || {}, { [today]:day });
+    state.lastDecayAt = Date.now();
+    savePetTestState(updatePetPendingStories(state, petTestInfoCache || { side_story:[] }));
+    return state;
+  }
+  function petApplyCheatGrowth(amount) {
+    let state = applyPetVisitAndDecay(petTestState());
+    if (state.ended) return state;
+    const today = todayKey();
+    const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
+    const beforeGrowth = Number(state.growth || 0);
+    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + Math.max(0, Number(amount || 0)));
+    const added = Math.max(0, Number(state.growth || 0) - beforeGrowth);
+    day.growth = Number(day.growth || 0) + added;
+    day.cheat = Number(day.cheat || 0) + added;
+    petToastGrowth('开挂模式', added);
+    day.snapshot = petSnapshotData(state);
+    state.days = Object.assign({}, state.days || {}, { [today]:day });
+    state.lastDecayAt = Date.now();
+    savePetTestState(updatePetPendingStories(state, petTestInfoCache || { side_story:[] }));
+    return state;
+  }
+  function petApplyStoryGrowth(state, amount, key, reason) {
+    const next = Object.assign(defaultPetTestState(), state || {});
+    if (next.ended) return next;
+    const today = todayKey();
+    const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, next.days[today] || {});
+    const beforeGrowth = Number(next.growth || 0);
+    next.growth = Math.min(petStageCap(next.stage), beforeGrowth + Math.max(0, Number(amount || 0)));
+    const added = Math.max(0, Number(next.growth || 0) - beforeGrowth);
+    if (added > 0) {
+      day.growth = Number(day.growth || 0) + added;
+      day[key || 'story'] = Number(day[key || 'story'] || 0) + added;
+      day.snapshot = petSnapshotData(next);
+      next.days = Object.assign({}, next.days || {}, { [today]:day });
+      petToastGrowth(reason || '剧情记录', added);
+    }
+    return next;
+  }
   function petStateClass(state) {
     return ['normal','happy','eat','sleep','sad'].indexOf(state) >= 0 ? state : 'normal';
   }
   function petFormForCount(count) {
-    const n = Math.max(0, Number(count || 0));
-    if (n >= 40) return 'magic';
-    if (n >= 20) return 'adult';
-    return 'baby';
+    return petFormForStage(petTestState());
   }
   function petCurrentForm() {
-    const cfg = settings();
-    return petFormForCount(cfg.petInteractCount || 0);
+    return petFormForStage(petTestState());
   }
   function petSpriteUrl(form, state) {
-    return FOX_ASSET_BASE + (['baby','adult','magic'].indexOf(form) >= 0 ? form : 'baby') + '/' + petStateClass(state) + '.png';
+    const pet = petTestState();
+    if (pet.stage === 'egg') return petEggUrl(pet);
+    return petAnimalSpriteUrl(Object.assign({}, pet, { stage: form === 'magic' ? 'spirit' : (form === 'adult' ? 'adult' : 'juvenile') }), state);
   }
   function petEvolutionLine(form) {
-    if (form === 'adult') return '小狐狸长大了一点，站得更稳了。';
-    if (form === 'magic') return '小狐狸身上亮起微光，变成了魔法形态。';
+    const name = petTestInfoCache?.pet_card?.pet_name || '宠物';
+    if (form === 'adult') return name + '长大了一点，站得更稳了。';
+    if (form === 'magic') return name + '身上亮起微光，变成了灵息形态。';
     return '';
   }
   function petLineFor(state) {
-    const lines = {
-      normal: '小狐狸抬头看着你，尾巴轻轻晃了一下。',
-      happy: '小狐狸眯起眼睛蹭了蹭你的手。',
-      eat: '小狐狸抱着食物吃得很认真。',
-      sleep: '小狐狸蜷成一团，安静睡着了。',
-      sad: '小狐狸低着耳朵，像是在等你回来。'
-    };
-    return lines[petStateClass(state)] || lines.normal;
+    const pet = petTestState();
+    const stage = pet.stage === 'egg' ? 'egg' : (pet.stage === 'ordinary' ? 'adult' : pet.stage);
+    const cls = petStateClass(state);
+    const action = ({ normal:'poke', happy:'pet', eat:'feed', sleep:'sleep', sad:'sad' })[cls] || 'poke';
+    const quoted = petTestInfoCache && petQuote(petTestInfoCache, 'pet', stage, action, '');
+    if (quoted) return quoted;
+    const name = petTestInfoCache?.pet_card?.pet_name || '我';
+    return ({
+      eat: name + '吃得很认真。',
+      happy: name + '开心地蹭了蹭你。',
+      sleep: name + '困困地打了个小哈欠。',
+      sad: name + '有点委屈地看着你。',
+      normal: name + '轻轻碰了碰你的手。'
+    })[cls] || '';
   }
   function petSpriteHTML(state, extraClass) {
+    const pet = petTestState();
+    if (pet.stage === 'egg') return '<img class="wb-pet-fox wb-pet-egg-img' + (extraClass ? ' ' + esc(extraClass) : '') + '" src="' + esc(petEggUrl(pet)) + '" alt="">';
     const form = petCurrentForm();
     return '<div class="wb-pet-fox ' + esc(form) + ' ' + esc(petStateClass(state)) + (extraClass ? ' ' + esc(extraClass) : '') + '" style="--wb-pet-sprite:url(' + esc(petSpriteUrl(form, state)) + ')"></div>';
   }
   function setPetSpriteState(root, state) {
     const fox = qs('.wb-pet-fox', root || getHostDocument());
     if (!fox) return;
+    const pet = petTestState();
+    if (pet.stage === 'egg' && fox.tagName === 'IMG') {
+      fox.src = petEggUrl(pet);
+      return;
+    }
     const form = petCurrentForm();
     ['baby','adult','magic'].forEach(x => fox.classList.toggle(x, x === form));
     ['normal','happy','eat','sleep','sad'].forEach(x => fox.classList.toggle(x, x === petStateClass(state)));
@@ -4419,7 +5473,7 @@ export async function initWanbanXiaowu() {
   function resetPetAnimationLoop(root, fast) {
     if (petAnimationTimer) clearTimeout(petAnimationTimer);
     const schedule = () => {
-      const delay = fast ? 3600 + Math.floor(Math.random() * 1800) : 10000 + Math.floor(Math.random() * 7000);
+      const delay = fast ? 3600 + Math.floor(Math.random() * 1800) : 10000;
       petAnimationTimer = setTimeout(() => {
         const doc = getHostDocument();
         const target = root && root.isConnected ? root : (qs('#wb-pet-room', doc) || qs('#' + PET_FLOAT_ID, doc));
@@ -4443,12 +5497,19 @@ export async function initWanbanXiaowu() {
   function resetPetIdleTimer(root) {
     if (petIdleTimer) clearTimeout(petIdleTimer);
     if (petSadTimer) clearTimeout(petSadTimer);
+    const auto = petAutoAction(applyPetVisitAndDecay(petTestState()));
+    if (auto === 'sad') {
+      petSetState('sad', '', { root, persistent:true, temporary:false, animate:true, resetIdle:false });
+      return;
+    }
+    if (auto === 'sleep') {
+      petSetState('sleep', '', { root, persistent:true, temporary:false, animate:true });
+      return;
+    }
     petIdleTimer = setTimeout(() => {
-      petSetState('sleep', petLineFor('sleep'), { root, persistent:true, temporary:false, animate:true });
-    }, 60000);
-    petSadTimer = setTimeout(() => {
-      petSetState('sad', '小狐狸醒来后没等到你，眼泪汪汪地低下头。', { root, persistent:true, temporary:false, animate:true, resetIdle:false });
-    }, 120000);
+      petSetState('sleep', '', { root, persistent:true, temporary:false, animate:true });
+    }, 600000);
+    petSadTimer = null;
   }
   function petSetState(state, line, options) {
     const opts = options || {};
@@ -4459,27 +5520,188 @@ export async function initWanbanXiaowu() {
     if (root) {
       setPetSpriteState(root, nextState);
       const speech = qs('.wb-pet-speech, .wb-pet-desk-speech', root);
-      if (speech) speech.textContent = line || petLineFor(nextState);
+      if (speech) {
+        const text = opts.suppressSpeech ? '' : (line || petLineFor(nextState) || '');
+        speech.textContent = text;
+        speech.style.display = text ? '' : 'none';
+        if (root.id === PET_FLOAT_ID) {
+          const rect = root.getBoundingClientRect ? root.getBoundingClientRect() : null;
+          root.classList.toggle('speech-right', !!(text && rect && rect.left < 150));
+          root.classList.toggle('speech-on', !!text);
+          if (text) setTimeout(() => { const latest = qs('#' + PET_FLOAT_ID, doc); if (latest) latest.classList.remove('speech-on'); }, 4200);
+        }
+      }
       if (opts.animate !== false) triggerPetAnimation(root);
       resetPetAnimationLoop(root, nextState === 'eat' || nextState === 'happy');
     }
     if (opts.temporary) {
       if (petStateReturnTimer) clearTimeout(petStateReturnTimer);
       petStateReturnTimer = setTimeout(() => {
-        petSetState('normal', petLineFor('normal'), { root, persistent:true, temporary:false, animate:false });
+        petSetState('normal', petLineFor('normal') || '', { root, persistent:true, temporary:false, animate:false });
       }, 10000);
     }
     if (nextState !== 'sleep' && opts.resetIdle !== false) resetPetIdleTimer(root);
   }
   function petInteract(root, state) {
-    const cfg = settings();
-    const beforeCount = Math.max(0, Number(cfg.petInteractCount || 0));
-    const afterCount = beforeCount + 1;
-    const beforeForm = petFormForCount(beforeCount);
-    const afterForm = petFormForCount(afterCount);
-    const growthLine = beforeForm !== afterForm ? petEvolutionLine(afterForm) : '';
-    setSettings({ petInteractCount: afterCount, petForm: afterForm });
-    petSetState(state, growthLine || petLineFor(state), { root, persistent:true, temporary:true, animate:true });
+    const pet = petApplyInteraction(state === 'eat' ? 'feed' : (state === 'happy' ? 'pet' : 'poke'));
+    savePetTestState(updatePetPendingStories(pet, petTestInfoCache));
+    const auto = petAutoAction(pet);
+    const nextState = auto || state;
+    petSetState(nextState, petLineFor(nextState), { root, persistent:true, temporary:!auto, animate:true });
+  }
+  function petDesktopStatusHTML() {
+    const pet = applyPetVisitAndDecay(petTestState());
+    const pct = petGrowthPercent(pet);
+    const rows = [
+      ['成长值', pct + '%', pct],
+      ['饱食度', pet.stage === 'egg' ? '???' : Math.round(pet.fullness || 0), pet.stage === 'egg' ? 0 : Math.round(pet.fullness || 0)],
+      ['开心值', pet.stage === 'egg' ? '???' : Math.round(pet.happiness || 0), pet.stage === 'egg' ? 0 : Math.round(pet.happiness || 0)]
+    ];
+    return '<div class="wb-pet-desk-panel-head"><span>灵息状态 · ' + esc(petTestInfoCache?.pet_card?.pet_name || '宠物') + ' · ' + esc(petDisplayStage(pet)) + '</span><button class="wb-pet-desk-close" data-pet-close="status" type="button">▲</button></div><div class="wb-pet-desk-stats">' + rows.map(r => '<div class="wb-pet-desk-stat-row"><b>' + esc(r[0]) + '</b><div class="wb-pet-desk-bar" style="--v:' + Math.max(0, Math.min(100, Number(r[2] || 0))) + '%"><span></span></div></div>').join('') + '</div>';
+  }
+  function petCardPromptText(info, state) {
+    const hidden = v => v ? String(v) : '???';
+    return [
+      '宠物名称：' + (info?.pet_card?.pet_name || '宠物'),
+      '当前阶段：' + petDisplayStage(state),
+      '成长值：' + petGrowthPercent(state) + '%',
+      '饱食度：' + (state.stage === 'egg' ? '???' : Math.round(state.fullness || 0)),
+      '开心值：' + (state.stage === 'egg' ? '???' : Math.round(state.happiness || 0)),
+      '品种：' + hidden(state.stage === 'egg' ? '' : info?.pet_card?.species),
+      '性别：' + hidden(info?.pet_card?.gender),
+      '性格：' + hidden(state.stage === 'egg' ? '' : info?.pet_card?.personality),
+      '灵息：' + hidden(state.stage === 'spirit' ? info?.pet_card?.spirit : ''),
+      '收养人：' + petPlayerName(state) + ' & ' + petCharName()
+    ].join('\n');
+  }
+  async function petDesktopChatPromptText() {
+    try {
+      const res = await fetch(PET_ASSET_BASE + 'text/desktop_chat.txt', { cache:'no-store' });
+      if (res.ok) return await res.text();
+    } catch(e) {}
+    return '你需要扮演当前灵息宠物，作为可爱的桌面宠物、旁观者和读者，只输出宠物回复正文。';
+  }
+  function recentChatText(limit) {
+    const ctx = getHostContext();
+    const chat = ctx && Array.isArray(ctx.chat) ? ctx.chat : [];
+    return chat.slice(-(limit || 6)).map(m => {
+      const name = m?.name || (m?.is_user ? petPlayerName(petTestState()) : petCharName());
+      return name + '：' + String(m?.mes || m?.message || m?.text || '').replace(/<[^>]+>/g, '').trim();
+    }).filter(Boolean).join('\n\n');
+  }
+  async function generatePetDesktopChat(kind, userText) {
+    const cfg = petCaretakerPromptConfig();
+    const state = applyPetVisitAndDecay(petTestState());
+    const info = petTestInfoCache || {};
+    const fallback = kind === 'comment' ? '我刚刚像趴在窗台上一样看完啦，这段剧情里有一点亮晶晶的地方。' : '我听见啦。今天也要慢慢照顾我，不许偷偷忘记。';
+    if (!cfg.apiUrl || !cfg.apiModel) return fallback;
+    const basePrompt = await petDesktopChatPromptText();
+    const prompt = [
+      (cfg.breakLimitPrompt || '').trim(),
+      '语言要求：宠物聊天只使用自然、普通的中文输出，不要套用当前角色的日语/古风/外语等特殊语言风格。',
+      basePrompt,
+      '【当前共同养宠角色】\n' + currentCharDescription(cfg),
+      '【当前用户设定】\n' + currentUserDescription(cfg),
+      '【宠物名片】\n' + petCardPromptText(info, state),
+      '【上面8层剧情内容】\n' + (recentChatText(8) || '无'),
+      kind === 'comment' ? '任务：评论最近几层楼的故事剧情，像读者一样说出你的感受。' : '用户对你说：' + (userText || '')
+    ].filter(Boolean).join('\n\n');
+    return (await callApiText(cfg, prompt, '你是可爱的桌面宠物，只输出宠物回复正文。', 900)).trim();
+  }
+  function updatePetDesktopPanels(el) {
+    if (!el) return;
+    const status = qs('.wb-pet-desk-status', el);
+    if (status) status.innerHTML = petDesktopStatusHTML();
+    qsa('[data-pet-close]', el).forEach(btn => {
+      btn.onclick = e => {
+        stopFloatEvent(e);
+        el.classList.remove(btn.dataset.petClose === 'status' ? 'status-on' : 'chat-on');
+      };
+    });
+  }
+  function petDesktopSetChat(el, text) {
+    const box = qs('.wb-pet-desk-chat-text', el);
+    if (box) box.textContent = text || '';
+  }
+  function openPetDesktopChatInput(el) {
+    injectPetArcadeStyle();
+    const doc = getHostDocument();
+    const old = qs('#wb-pet-desktop-chat-mask', doc); if (old) old.remove();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-desktop-chat-mask';
+    mask.innerHTML = '<div class="wb-modal wb-mini-modal wb-pet-modal"><div class="wb-pet-modal-head"><div class="wb-pet-modal-title">和宠物聊天</div></div><div class="wb-field" style="margin:14px;"><textarea class="wb-textarea" id="wb-pet-desktop-chat-input" style="min-height:92px;" placeholder="想对宠物说什么？"></textarea></div><div class="wb-actions" style="padding:0 14px 14px;"><button class="wb-btn primary" id="wb-pet-desktop-chat-ok" style="flex:1;">确定</button><button class="wb-btn" id="wb-pet-desktop-chat-cancel" style="flex:1;">返回</button></div></div>';
+    applySelectedFont();
+    applyTavernThemeVars(mask);
+    doc.body.appendChild(mask);
+    qs('#wb-pet-desktop-chat-cancel', mask).onclick = () => mask.remove();
+    qs('#wb-pet-desktop-chat-ok', mask).onclick = async () => {
+      const text = (qs('#wb-pet-desktop-chat-input', mask)?.value || '').trim();
+      if (!text) { toast('请先输入聊天内容'); return; }
+      mask.remove();
+      el.classList.add('chat-on');
+      petDesktopSetChat(el, '生成中...');
+      try { petDesktopSetChat(el, await generatePetDesktopChat('chat', text)); }
+      catch(e) { petDesktopSetChat(el, '我刚刚有点走神了，但我听见你说的话啦。'); }
+    };
+  }
+  function startPetBallGame(el) {
+    const doc = getHostDocument();
+    const win = getHostWindow();
+    let score = 0, raf = 0, running = true;
+    const ball = doc.createElement('div');
+    const card = doc.createElement('div');
+    const record = Math.max(0, Number(settings().petBallRecord || 0));
+    const scoreText = () => '玩球 ' + score + '｜记录 ' + Math.max(record, score);
+    ball.className = 'wb-pet-ball';
+    card.className = 'wb-pet-ball-score';
+    card.textContent = scoreText();
+    doc.body.appendChild(ball);
+    doc.body.appendChild(card);
+    el.classList.remove('menu-open', 'interact-open', 'status-on', 'chat-on');
+    const vw = () => win.innerWidth || doc.documentElement.clientWidth || 800;
+    const vh = () => win.innerHeight || doc.documentElement.clientHeight || 700;
+    let x = Math.random() * Math.max(80, vw() - 80) + 30;
+    let y = -20;
+    let vx = 0;
+    let vy = 1.2;
+    const end = () => {
+      if (!running) return;
+      running = false;
+      cancelAnimationFrame(raf);
+      ball.remove();
+      card.remove();
+      if (score > record) setSettings({ petBallRecord:score });
+      if (score > 3) {
+        petApplyDesktopBallReward(1);
+      }
+      petSetState(score <= 3 ? 'sad' : 'happy', '', { root:el, persistent:true, temporary:true, animate:true, suppressSpeech:true });
+    };
+    const tick = () => {
+      if (!running) return;
+      const rect = el.getBoundingClientRect();
+      const petSize = Math.min(rect.width, rect.height) * .5;
+      const pcx = rect.left + rect.width / 2;
+      const pcy = rect.top + rect.height / 2;
+      if (rect.top < vh() * .63) placePetDesktop(el, rect.left, vh() * .68);
+      vy += .22;
+      x += vx;
+      y += vy;
+      const bx = x + 14, by = y + 14;
+      const dx = bx - pcx, dy = by - pcy;
+      if (dy > -petSize && dy < petSize && Math.abs(dx) < petSize && vy > 0) {
+        score++;
+        card.textContent = scoreText();
+        vy = -(7.8 + Math.random() * 3.8);
+        vx = Math.max(-4.4, Math.min(4.4, vx * .55 + (dx / petSize) * 1.8 + (Math.random() - .5) * .55));
+        if (score % 3 === 0) petSetState(score <= 3 ? 'sad' : 'happy', '', { root:el, persistent:false, temporary:true, animate:true, suppressSpeech:true });
+      }
+      ball.style.left = x + 'px';
+      ball.style.top = y + 'px';
+      if (y > vh() - 18 || y < -80 || x < -28 || x > vw()) { end(); return; }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
   }
   function clampPetDesktopPosition(x, y) {
     const win = getHostWindow();
@@ -4605,12 +5827,12 @@ export async function initWanbanXiaowu() {
     let originY = 0;
     const foxBtn = qs('.wb-pet-desk-fox', el);
     const stopPetShellEvent = e => {
-      if (e && e.target && e.target.closest && e.target.closest('.wb-pet-round')) return;
+      if (e && e.target && e.target.closest && e.target.closest('.wb-pet-round, .wb-pet-desk-panel')) return;
       stopFloatEvent(e);
     };
     el.addEventListener('pointerdown', e => {
       if (e.button != null && e.button !== 0) return;
-      if (e.target && e.target.closest && e.target.closest('.wb-pet-round')) return;
+      if (e.target && e.target.closest && e.target.closest('.wb-pet-round, .wb-pet-desk-panel')) return;
       const rect = el.getBoundingClientRect();
       dragging = true;
       moved = false;
@@ -4639,7 +5861,15 @@ export async function initWanbanXiaowu() {
       const pos = clampPetDesktopPosition(rect.left, rect.top);
       setSettings({ petDesktopX: pos.x, petDesktopY: pos.y });
       placePetDesktop(el, pos.x, pos.y);
-      if (!moved) el.classList.toggle('menu-open');
+      if (!moved) {
+        const now = Date.now();
+        if (now >= petDesktopPokeLockedUntil) {
+          petDesktopPokeLockedUntil = now + 3000;
+          petSetState(Math.random() < .5 ? 'normal' : 'happy', '', { root:el, persistent:true, temporary:true, animate:true, suppressSpeech:true });
+        }
+        if (el.classList.contains('menu-open')) el.classList.remove('menu-open', 'interact-open');
+        else { el.classList.remove('speech-on'); el.classList.add('menu-open'); }
+      }
       stopFloatEvent(e);
     };
     el.addEventListener('pointerup', finish);
@@ -4654,10 +5884,14 @@ export async function initWanbanXiaowu() {
     qsa('.wb-pet-round', el).forEach(btn => {
       btn.onclick = e => {
         stopFloatEvent(e);
-        el.classList.remove('menu-open');
         const action = btn.dataset.petAction;
-        if (action === 'feed') petInteract(el, 'eat');
-        if (action === 'pet') petInteract(el, 'happy');
+        if (action !== 'interact') el.classList.remove('menu-open', 'interact-open');
+        if (action === 'interact') { el.classList.toggle('interact-open'); return; }
+        if (action === 'feed') { petInteract(el, 'eat'); updatePetDesktopPanels(el); }
+        if (action === 'pet') { petInteract(el, 'happy'); updatePetDesktopPanels(el); }
+        if (action === 'ball') startPetBallGame(el);
+        if (action === 'status') { el.classList.toggle('status-on'); updatePetDesktopPanels(el); }
+        if (action === 'talk') { el.classList.toggle('chat-on'); updatePetDesktopPanels(el); }
         if (action === 'home') {
           setSettings({ petDesktopEnabled:false, petDesktopState:'normal', petForm:petCurrentForm() });
           petReturnHouseOnRender = true;
@@ -4669,6 +5903,20 @@ export async function initWanbanXiaowu() {
         }
       };
     });
+    qsa('.wb-pet-desk-chat-actions button', el).forEach(btn => {
+      btn.onclick = async e => {
+        stopFloatEvent(e);
+        const action = btn.dataset.petChat;
+        if (action === 'close') { el.classList.remove('chat-on'); return; }
+        if (action === 'chat') { openPetDesktopChatInput(el); return; }
+        if (action === 'comment') {
+          petDesktopSetChat(el, '生成中...');
+          try { petDesktopSetChat(el, await generatePetDesktopChat('comment', '')); }
+          catch(err) { petDesktopSetChat(el, '我刚刚认真看了一会儿，感觉这段剧情像一颗小糖，藏着一点点亮光。'); }
+        }
+      };
+    });
+    updatePetDesktopPanels(el);
     el.addEventListener('click', stopPetShellEvent, true);
     el.addEventListener('touchstart', stopPetShellEvent, { capture:true, passive:false });
     el.addEventListener('touchend', stopPetShellEvent, { capture:true, passive:false });
@@ -4684,21 +5932,28 @@ export async function initWanbanXiaowu() {
     }
     injectStyle();
     const state = petStateClass(cfg.petDesktopState || 'normal');
+    if (el && !qs('.wb-pet-desk-submenu', el)) { el.remove(); el = null; }
     if (!el) {
       el = doc.createElement('div');
       el.id = PET_FLOAT_ID;
       el.className = 'wb-pet-float';
-      el.innerHTML = '<button class="wb-pet-desk-fox" type="button" title="小狐狸" aria-label="小狐狸">'
+      el.innerHTML = '<button class="wb-pet-desk-fox" type="button" aria-label="桌宠">'
         + petSpriteHTML(state)
         + '</button><div class="wb-pet-desk-menu">'
-        + '<button class="wb-pet-round" type="button" data-pet-action="feed" title="喂食" aria-label="喂食">🍖</button>'
-        + '<button class="wb-pet-round" type="button" data-pet-action="pet" title="抚摸" aria-label="抚摸">✋</button>'
-        + '<button class="wb-pet-round" type="button" data-pet-action="home" title="进入小屋" aria-label="进入小屋">⌂</button>'
-        + '</div><div class="wb-pet-desk-speech">' + esc(petLineFor(state)) + '</div>';
+        + '<button class="wb-pet-round" type="button" data-pet-action="interact" title="互动" aria-label="互动">互动</button>'
+        + '<button class="wb-pet-round" type="button" data-pet-action="status" title="查看状态" aria-label="查看状态">状态</button>'
+        + '<button class="wb-pet-round" type="button" data-pet-action="talk" title="聊天" aria-label="聊天">聊天</button>'
+        + '<button class="wb-pet-round" type="button" data-pet-action="home" title="回家" aria-label="回家">回家</button>'
+        + '</div><div class="wb-pet-desk-submenu">'
+        + '<button class="wb-pet-round" type="button" data-pet-action="feed" title="喂食" aria-label="喂食">喂食</button>'
+        + '<button class="wb-pet-round" type="button" data-pet-action="pet" title="抚摸" aria-label="抚摸">抚摸</button>'
+        + '<button class="wb-pet-round" type="button" data-pet-action="ball" title="玩球" aria-label="玩球">玩球</button>'
+        + '</div><div class="wb-pet-desk-panel wb-pet-desk-chat"><div class="wb-pet-desk-chat-actions"><span class="wb-pet-desk-chat-title">宠物聊天</span><button type="button" data-pet-chat="chat">聊天</button><button type="button" data-pet-chat="comment">评论</button><button type="button" data-pet-chat="close">▲</button></div><div class="wb-pet-desk-chat-text">（陪我聊天吧！）</div></div><div class="wb-pet-desk-panel wb-pet-desk-status"></div><div class="wb-pet-desk-speech">' + esc(petLineFor(state)) + '</div>';
       doc.body.appendChild(el);
       bindPetDesktop(el);
     } else {
       setPetSpriteState(el, state);
+      updatePetDesktopPanels(el);
     }
     placePetDesktop(el, cfg.petDesktopX, cfg.petDesktopY);
     resetPetIdleTimer(el);
@@ -4802,6 +6057,7 @@ export async function initWanbanXiaowu() {
     qs('#wb-close', p).onclick = () => { flushSettingsProgress(); saveWindowState(currentTab, currentGame); stopGame(); closePopupShell(); };
     try {
       if (currentGame) renderGame(currentGame); else if (currentTab === 'settings') renderSettings(); else if (currentTab === 'intimacy') renderIntimacy(); else renderSelect(currentTab);
+      if (settings().petDesktopEnabled) syncFloatingBall();
       applyMainSwipeAnimation();
       bindMainSwipe();
     } catch(e) {
@@ -4865,45 +6121,2035 @@ export async function initWanbanXiaowu() {
       + '<button class="wb-intimacy-button" data-soon="1" type="button"><img src="' + esc(FARM_BUTTON_URL) + '" alt=""><span>种下心动</span></button>'
       + '</div>';
     const trial = qs('#wb-pet-trial', body);
-    if (trial) trial.onclick = renderPetHouse;
+    if (trial) trial.onclick = openPetFullEntry;
     qsa('[data-soon="1"]', body).forEach(btn => { btn.onclick = () => toast('敬请期待'); });
+  }
+
+  function openPetFullEntry() {
+    petRuntimeMode = 'full';
+    const data = petFullData();
+    const activeCaretaker = petFullActiveCaretaker(data);
+    const active = petFullActivePet(data, activeCaretaker);
+    if (active && activeCaretaker) { withPetFullActive(activeCaretaker.id); renderPetHouse(); return; }
+    openPetCaretakerSelect(null, { forceFull:true });
+  }
+
+  function renderPetEntry() {
+    openPetFullEntry();
+  }
+  function openPetTestSelect() {
+    injectPetArcadeStyle();
+    petRuntimeMode = 'test';
+    petFullActiveCaretakerId = '';
+    petTestInfoCache = null;
+    petTestInfoLoading = null;
+    syncPopupModeClass();
+    const body = qs('#wb-body');
+    body.className = 'wb-body wb-intimacy-mode';
+    clearPetTimers();
+    const st = petTestState();
+    const eggs = [['blue','蓝色蛋'], ['purple','紫色蛋'], ['pink','粉色蛋'], ['green','绿色蛋'], ['gold','金色蛋'], ['white','白色蛋']];
+    const species = [['rabbit','兔子'], ['dog','小狗'], ['cat','猫咪'], ['bird','飞鸟'], ['bala','水豚'], ['fox','狐狸']];
+    const egg = st.testEgg || 'green';
+    const sp = st.testSpecies || 'rabbit';
+    body.innerHTML = '<div class="wb-panel wb-pet-test-select" style="max-width:760px;margin:0 auto;display:grid;gap:12px;">'
+      + '<div class="wb-section-title">试用版</div>'
+      + '<label class="wb-field"><span>{{user}} 名字</span><input class="wb-input" id="wb-pet-test-user" value="' + esc(st.userName || settings().userName || '') + '" placeholder="输入你的名字"></label>'
+      + '<div class="wb-field"><span>选择蛋</span><div class="wb-pet-egg-grid">' + eggs.map(e => '<button class="wb-btn wb-pet-egg-choice ' + (egg === e[0] ? 'selected' : '') + '" type="button" data-egg="' + e[0] + '"><img src="' + esc(PET_ASSET_BASE + 'eggs/' + e[0] + '-1.png') + '" alt=""><span>' + e[1] + '</span></button>').join('') + '</div></div>'
+      + '<div class="wb-field"><span>选择宠物种类</span><div class="wb-pet-species-grid">' + species.map(x => '<button class="wb-btn wb-pet-species-choice ' + (sp === x[0] ? 'selected' : '') + '" type="button" data-species="' + x[0] + '">' + esc(x[1]) + '</button>').join('') + '</div></div>'
+      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-pet-test-enter" style="flex:1;">直接进入</button><button class="wb-btn" id="wb-pet-test-back">返回</button></div>'
+      + '</div>';
+    let selectedEgg = egg, selectedSpecies = sp;
+    qsa('.wb-pet-egg-choice', body).forEach(btn => btn.onclick = () => { selectedEgg = btn.dataset.egg; qsa('.wb-pet-egg-choice', body).forEach(x => x.classList.toggle('selected', x === btn)); });
+    qsa('.wb-pet-species-choice', body).forEach(btn => btn.onclick = () => { selectedSpecies = btn.dataset.species; qsa('.wb-pet-species-choice', body).forEach(x => x.classList.toggle('selected', x === btn)); });
+    qs('#wb-pet-test-enter', body).onclick = () => {
+      const userName = (qs('#wb-pet-test-user', body)?.value || '').trim() || settings().userName || '你';
+      setSettings({ userName });
+      saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { userName, testEgg:selectedEgg, testSpecies:selectedSpecies }));
+      petTestInfoCache = null;
+      petTestInfoLoading = null;
+      renderPetHouse();
+    };
+    qs('#wb-pet-test-back', body).onclick = openPetFullEntry;
+  }
+  function renderPetNameGate() {
+    syncPopupModeClass();
+    const body = qs('#wb-body');
+    body.className = 'wb-body wb-intimacy-mode';
+    clearPetTimers();
+    const state = petTestState();
+    const current = state.userName || settings().userName || '';
+    body.innerHTML = '<div class="wb-panel" style="max-width:560px;margin:0 auto;display:grid;gap:12px;">'
+      + '<div class="wb-section-title">进入试用版</div>'
+      + '<label class="wb-field"><span>{{user}} 名字</span><input class="wb-input" id="wb-pet-user-name" value="' + esc(current) + '" placeholder="输入你的名字"></label>'
+      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-pet-name-start" style="flex:1;">进入</button><button class="wb-btn" id="wb-pet-name-back">返回</button></div>'
+      + '</div>';
+    const input = qs('#wb-pet-user-name', body);
+    const start = qs('#wb-pet-name-start', body);
+    const go = () => {
+      const name = (input && input.value ? input.value.trim() : '') || '你';
+      const next = Object.assign({}, petTestState(), { userName:name });
+      savePetTestState(next);
+      setSettings({ userName:name });
+      renderPetHouse();
+    };
+    if (start) start.onclick = go;
+    if (input) input.onkeydown = e => { if (e.key === 'Enter') go(); };
+    const back = qs('#wb-pet-name-back', body);
+    if (back) back.onclick = openPetFullEntry;
+  }
+
+  function petBarHTML(label, value, color) {
+    const v = Math.max(0, Math.min(100, Math.round(Number(value || 0))));
+    return '<div class="wb-pet-bar"><span><b>' + esc(label) + '</b><em>' + v + '%</em></span><div class="wb-pet-bar-track"><div class="wb-pet-bar-fill" style="--v:' + v + '%;--c:' + esc(color) + ';"></div></div></div>';
+  }
+  function petSpeakerClass(speaker) {
+    const sp = String(speaker || '').toLowerCase();
+    if (speaker === 'U' || sp === 'user' || speaker === '{{user}}') return 'speaker-u';
+    if (speaker === 'C' || sp === 'char' || speaker === '{{char}}') return 'speaker-c';
+    if (speaker === 'P' || sp === 'pet' || speaker === '宠物') return 'speaker-p';
+    if (speaker === '沈栖白' || speaker === '沈') return 'speaker-shen';
+    return 'speaker-narrator';
+  }
+  function petPlayerName(state) {
+    return (state && state.userName) || petTestState().userName || settings().userName || '{{user}}';
+  }
+  function petCharName() {
+    if (petRuntimeMode === 'test') return '江维';
+    const c = petFullActiveCaretaker();
+    return (c && c.name) || companionName() || '{{char}}';
+  }
+  function petCharAvatarHTML() {
+    const c = petRuntimeMode === 'test' ? null : petFullActiveCaretaker();
+    const url = (c && c.avatarUrl) || settings().avatarUrl || findCurrentCardAvatar() || '';
+    const name = petCharName();
+    return '<span class="wb-pet-title-avatar">' + (url ? '<img src="' + esc(url) + '" alt="">' : esc(String(name || '?').slice(0, 1))) + '</span>';
+  }
+  function injectPetArcadeStyle() {
+    const doc = getHostDocument();
+    if (qs('#' + SCRIPT_ID + '-pet-arcade-css', doc)) return;
+    const style = doc.createElement('style');
+    style.id = SCRIPT_ID + '-pet-arcade-css';
+    style.textContent = `
+      #${POPUP_ID} .wb-body.wb-pet-mode{padding:10px;overflow:hidden;background:radial-gradient(circle at 18% 8%,var(--wb-glow),transparent 28%),linear-gradient(135deg,var(--wb-bg) 0%,var(--wb-board) 54%,var(--wb-soft) 100%)}
+      #${POPUP_ID} .wb-pet-room{height:100%;min-height:0;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:6px;color:var(--wb-text);font-family:'Trebuchet MS','Microsoft YaHei',sans-serif;justify-items:stretch}
+      #${POPUP_ID} .wb-pet-room button,.wb-modal-mask .wb-pet-modal button{image-rendering:pixelated;border-radius:0!important;border:2px solid color-mix(in srgb,var(--wb-accent) 48%,var(--wb-border) 52%)!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;box-shadow:3px 3px 0 color-mix(in srgb,var(--wb-text) 55%,#000 45%)!important;font-weight:1000;display:inline-grid;place-items:center;text-align:center;line-height:1!important;transition:transform .08s steps(1,end),filter .08s steps(1,end),box-shadow .08s steps(1,end)}#${POPUP_ID} .wb-pet-room button:hover,.wb-modal-mask .wb-pet-modal button:hover{transform:translate(-1px,-1px);filter:none;box-shadow:4px 4px 0 color-mix(in srgb,var(--wb-text) 55%,#000 45%)!important}#${POPUP_ID} .wb-pet-room button:active,.wb-modal-mask .wb-pet-modal button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 color-mix(in srgb,var(--wb-text) 55%,#000 45%)!important}
+      #${POPUP_ID} .wb-pet-topbar{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:8px;border:2px solid color-mix(in srgb,var(--wb-text) 60%,#000 40%);background:linear-gradient(180deg,color-mix(in srgb,var(--wb-accent) 82%,#fff 18%),var(--wb-accent2));box-shadow:none!important;color:var(--wb-on-accent)}
+      #${POPUP_ID} .wb-pet-titlebox{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;max-width:calc(100% - 176px);font-weight:1000;letter-spacing:1px;text-shadow:1px 1px 0 rgba(255,255,255,.5);z-index:2}
+      #${POPUP_ID} .wb-pet-title-avatar{width:30px;height:30px;min-width:30px;border-radius:999px;overflow:hidden;display:grid;place-items:center;background:color-mix(in srgb,var(--wb-panel) 82%,var(--wb-accent) 18%);color:var(--wb-text);border:2px solid color-mix(in srgb,var(--wb-on-accent) 70%,transparent);font-size:14px;font-weight:1000;line-height:1;text-shadow:none}
+      #${POPUP_ID} .wb-pet-title-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+      #${POPUP_ID} .wb-pet-house-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #${POPUP_ID} .wb-pet-top-actions{display:flex;gap:6px;align-items:center;justify-self:end;margin-left:auto;position:relative;z-index:4;grid-column:3}
+      #${POPUP_ID} .wb-pet-iconbtn{width:38px;min-width:38px;height:36px;padding:0!important;display:grid!important;place-items:center!important;align-items:center!important;justify-items:center!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;font-size:18px;font-family:'Trebuchet MS','Microsoft YaHei',sans-serif}#${POPUP_ID} .wb-pet-topbar .wb-pet-iconbtn{background:var(--wb-soft)!important;color:var(--wb-text)!important;box-shadow:3px 3px 0 color-mix(in srgb,var(--wb-text) 54%,#000 46%)!important}#${POPUP_ID} .wb-pet-svg{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:2.8;stroke-linecap:square;stroke-linejoin:miter}#${POPUP_ID} #wb-pet-back .wb-pet-svg{width:24px;height:24px}#${POPUP_ID} #wb-pet-caretakers .wb-pet-svg{width:18px;height:18px}#${POPUP_ID} #wb-pet-help .wb-pet-svg,#${POPUP_ID} #wb-pet-restart .wb-pet-svg{width:21px;height:21px;stroke-width:2.6}#${POPUP_ID} #wb-pet-back,#${POPUP_ID} #wb-pet-caretakers,#${POPUP_ID} #wb-pet-help,#${POPUP_ID} #wb-pet-restart{background:transparent!important;border-color:transparent!important;color:var(--wb-on-accent)!important}.wb-modal-mask .wb-pet-modal-head .wb-pet-iconbtn{background:transparent!important;border-color:transparent!important;color:var(--wb-on-accent)!important}#${POPUP_ID} #wb-pet-caretakers .wb-pet-svg{stroke-width:3.2}#${POPUP_ID} #wb-pet-restart .wb-pet-svg{width:23px;height:23px;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+      #${POPUP_ID} .wb-pet-status-card{display:grid;gap:6px;padding:8px;border:2px solid color-mix(in srgb,var(--wb-text) 65%,#000 35%);background:linear-gradient(180deg,var(--wb-panel),var(--wb-soft));box-shadow:none!important}
+      #${POPUP_ID} .wb-pet-status-head{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--wb-accent);font-weight:900}
+      #${POPUP_ID} .wb-pet-status-identity{display:flex;align-items:center;gap:6px;min-width:0}
+      #${POPUP_ID} .wb-pet-status-name,#${POPUP_ID} .wb-pet-status-stage{display:inline-flex;align-items:center;min-height:25px;padding:3px 8px;border:2px solid color-mix(in srgb,var(--wb-text) 62%,#000 38%);background:var(--wb-input);color:var(--wb-text);font-size:15px;line-height:1;box-sizing:border-box}
+      #${POPUP_ID} .wb-pet-status-name{max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:color-mix(in srgb,var(--wb-accent) 16%,var(--wb-input) 84%)}
+      #${POPUP_ID} .wb-pet-status-stage{font-size:14px;background:color-mix(in srgb,var(--wb-soft) 82%,#fff 18%)}
+      #${POPUP_ID} .wb-pet-status-place{display:flex;align-items:center;gap:5px;flex-shrink:0}
+      #${POPUP_ID} .wb-pet-status-place i{display:inline-flex;align-items:center;min-height:19px;padding:2px 6px;border:1px solid color-mix(in srgb,var(--wb-accent) 55%,var(--wb-border) 45%);background:color-mix(in srgb,var(--wb-panel) 74%,transparent);color:var(--wb-sub);font-style:normal;font-size:10px;line-height:1}
+      #${POPUP_ID} .wb-pet-bars{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}#${POPUP_ID} .wb-pet-bars.egg{grid-template-columns:1fr}
+      #${POPUP_ID} .wb-pet-bar{border:2px solid color-mix(in srgb,var(--wb-text) 65%,#000 35%);background:var(--wb-input);color:var(--wb-text);padding:5px;box-shadow:none!important;font-size:11px;font-weight:900}
+      #${POPUP_ID} .wb-pet-bar span{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+      #${POPUP_ID} .wb-pet-bar b{font-size:12px;letter-spacing:.5px}
+      #${POPUP_ID} .wb-pet-bar em{font-style:normal;color:var(--wb-accent);font-size:10px}
+      #${POPUP_ID} .wb-pet-bar-track{height:10px;background:#2b2137;border:1px solid #2b2137;overflow:hidden}
+      #${POPUP_ID} .wb-pet-bar-fill{height:100%;width:var(--v);background:linear-gradient(90deg,var(--c),#fff39d)}
+      #${POPUP_ID} .wb-pet-stage{position:relative;min-height:0;display:grid;place-items:center;justify-self:center;width:100%;max-width:100%;overflow:visible;grid-template-columns:1fr;margin-top:-4px}
+      #${POPUP_ID} .wb-pet-scene{width:min(100%,54dvh,520px);height:auto;aspect-ratio:1/1;min-height:0;border:3px solid color-mix(in srgb,var(--wb-text) 65%,#000 35%);box-shadow:none!important;background-size:cover;background-position:center;image-rendering:pixelated}
+      #${POPUP_ID} .wb-pet-scene-title{position:absolute;right:8px;bottom:8px;z-index:3;padding:4px 10px;border:2px solid color-mix(in srgb,var(--wb-text) 65%,#000 35%);background:var(--wb-panel);color:var(--wb-text);box-shadow:none!important;font-size:12px;font-weight:900}
+      #${POPUP_ID} .wb-pet-scene-drawer{position:absolute;left:0;bottom:12px;z-index:7;display:grid;justify-items:start;gap:5px}#${POPUP_ID} .wb-pet-scene-toggle{width:16px;height:58px;padding:1px!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;border-color:transparent!important;font-size:9px;letter-spacing:0}#${POPUP_ID} .wb-pet-scene-toggle .wb-pet-svg{display:none}#${POPUP_ID} .wb-pet-scene-toggle-text{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;line-height:1}#${POPUP_ID} .wb-pet-scene-menu{display:none;position:absolute;left:20px;bottom:0;grid-template-columns:repeat(3,42px);gap:5px;padding:5px;border:2px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background:var(--wb-panel);box-shadow:none!important}#${POPUP_ID} .wb-pet-scene-drawer.open .wb-pet-scene-menu{display:grid}#${POPUP_ID} .wb-pet-scene-choice{width:42px;height:42px;padding:2px!important;display:grid;gap:1px;place-items:center;font-size:8px;background:var(--wb-soft)!important;color:var(--wb-text)!important}#${POPUP_ID} .wb-pet-scene-thumb{width:33px;height:19px;border:1px solid var(--wb-border);background-size:cover;background-position:center;image-rendering:pixelated}#${POPUP_ID} .wb-pet-scene-choice.locked{position:relative;overflow:hidden}#${POPUP_ID} .wb-pet-scene-choice.locked::before{content:'';position:absolute;inset:0;background:rgba(255,255,255,.62);z-index:2;pointer-events:none}#${POPUP_ID} .wb-pet-scene-choice.locked::after{content:'🔒';position:absolute;inset:0;display:grid;place-items:center;z-index:3;font-size:16px;color:#2b2137;pointer-events:none}
+      #${POPUP_ID} .wb-pet-room-fox{top:43%;width:clamp(124px,20dvh,158px);min-width:124px;filter:drop-shadow(0 12px 0 rgba(0,0,0,.2));image-rendering:pixelated;border:0!important;box-shadow:none!important;outline:0!important;background:transparent!important}#${POPUP_ID} #wb-pet-poke{border:0!important;box-shadow:none!important;outline:0!important;background:transparent!important}#${POPUP_ID} #wb-pet-poke .wb-pet-egg-img{width:100%;height:100%;object-fit:contain;transform-origin:50% 78%;}#${POPUP_ID} #wb-pet-poke.egg-shake .wb-pet-egg-img{animation:wbPetEggShake .34s steps(2,end)}@keyframes wbPetEggShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-.7px)}50%{transform:translateX(.7px)}75%{transform:translateX(-.4px)}}#${POPUP_ID} #wb-pet-poke,#${POPUP_ID} #wb-pet-poke:hover,#${POPUP_ID} #wb-pet-poke:active{transform:translate(-50%,-50%)!important;filter:none!important;box-shadow:none!important}
+      #${POPUP_ID} .wb-pet-fox,.wb-pet-asset{image-rendering:pixelated}#${POPUP_ID} .wb-pet-fox,.wb-modal-mask .wb-pet-snapshot .wb-pet-fox{background-size:400% 100%!important;background-position:0 0}.wb-pet-fox.animating,#${POPUP_ID} .wb-pet-fox.animating{animation:wbPetFoxFrames 2s steps(1,end) 1}
+      #${POPUP_ID} .wb-pet-speech{left:12px;top:14px;transform:none;max-width:min(64%,420px);padding:5px 8px;border:3px solid #f7f7f7;border-radius:12px;background:#fff;color:#2b2137;box-shadow:0 0 0 2px #2b2137,0 4px 0 rgba(0,0,0,.18);text-align:left;font-size:11px;font-weight:900;line-height:1.22;image-rendering:pixelated}
+      #${POPUP_ID} .wb-pet-speech:before{content:'';position:absolute;right:20px;bottom:-19px;border-width:16px 9px 0 9px;border-style:solid;border-color:#2b2137 transparent transparent transparent}#${POPUP_ID} .wb-pet-speech:after{content:'';position:absolute;right:22px;bottom:-13px;border-width:12px 7px 0 7px;border-style:solid;border-color:#fff transparent transparent transparent}
+      #${POPUP_ID} .wb-pet-scene-actions{position:absolute;right:18px;top:12px;z-index:5;display:grid;gap:5px}
+      #${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn{width:34px;height:34px;min-width:34px;padding:0!important;border-radius:999px!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;border-color:var(--wb-text)!important;font-size:16px;display:grid!important;place-items:center!important;box-shadow:2px 2px 0 color-mix(in srgb,var(--wb-text) 55%,#000 45%)!important}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn:hover{transform:translate(-1px,-1px);filter:none}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-svg{width:18px;height:18px;stroke-width:1.8}
+      #${POPUP_ID} .wb-pet-dialogue{height:68px;min-height:68px;max-height:68px;border:3px solid color-mix(in srgb,var(--wb-accent) 46%,var(--wb-border) 54%);background:var(--wb-soft);color:var(--wb-text);box-shadow:0 5px 0 #120b18;padding:16px 12px 8px;position:relative;overflow:visible;display:grid;grid-template-rows:1fr}
+      #${POPUP_ID} .wb-pet-dialogue-name,.wb-pet-rpg-speaker{display:inline-flex;align-items:center;padding:4px 9px;border-radius:4px;border:2px solid #2b2137;background:#ff7d7d;color:#fff;box-shadow:0 2px 0 #211629;font-weight:900}
+      #${POPUP_ID} .wb-pet-dialogue-name{position:absolute;left:12px;top:-18px;line-height:1.15;z-index:4;min-height:24px}
+      #${POPUP_ID} .wb-pet-dialogue-text{margin-top:2px;font-size:13px;line-height:1.45;font-weight:800;max-height:38px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+      #${POPUP_ID} .wb-pet-dialogue-text em,.wb-modal-mask .wb-pet-rpg-text em,.wb-modal-mask .wb-pet-story-body .narrator em{font-style:italic;font-weight:inherit;opacity:.92}
+      #${POPUP_ID} .wb-pet-dialogue-actions{display:none}
+      #${POPUP_ID} .wb-pet-story-status{min-height:30px;display:grid;place-items:center;font-size:15px;font-weight:1000;letter-spacing:2px;color:var(--wb-accent)}
+      #${POPUP_ID} .wb-pet-room.story-mode{cursor:pointer}#${POPUP_ID} .wb-pet-story-exit{position:absolute;right:12px;top:12px;z-index:8;width:auto!important;min-width:0!important;height:30px!important;padding:0 9px!important;border-radius:999px!important;border-color:color-mix(in srgb,var(--wb-text) 65%,#000 35%)!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;font-size:11px!important}#${POPUP_ID} .wb-pet-room.story-mode .wb-pet-dialogue{cursor:pointer}#${POPUP_ID} .wb-pet-room.story-mode .wb-pet-dialogue-text{display:block;-webkit-line-clamp:unset;-webkit-box-orient:initial;overflow:hidden;word-break:break-all;overflow-wrap:anywhere}
+      #${POPUP_ID} .wb-pet-story-done{font-size:11px!important;text-align:center;color:var(--wb-sub)!important;align-self:center}
+      #${POPUP_ID} .wb-pet-npc-portrait{animation:wbPetNpcFade .28s steps(4,end) both}@keyframes wbPetNpcFade{from{opacity:0;transform:translate(-50%,-50%) translateY(6px)}to{opacity:1;transform:translate(-50%,-50%) translateY(0)}}
+
+      #${POPUP_ID} .wb-pet-card-btn{width:24px!important;min-width:24px!important;height:22px!important;margin-left:4px;padding:0!important;background:transparent!important;border-color:transparent!important;color:var(--wb-accent)!important;vertical-align:middle}.wb-modal-mask#wb-pet-profile-mask .wb-pet-modal{width:min(94vw,540px)!important;max-width:540px!important;overflow:visible!important}.wb-modal-mask .wb-pet-profile-card{box-sizing:border-box;position:relative;width:100%;max-width:100%;padding:18px 18px 16px;border:3px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background:linear-gradient(135deg,#fffdf7,#f4fbff 58%,#fff4e8);color:#2f3b46;box-shadow:0 0 0 4px rgba(255,255,255,.55) inset;overflow:hidden}.wb-modal-mask .wb-pet-profile-card::before{content:'';position:absolute;left:-20%;right:-20%;top:0;height:9px;background:repeating-linear-gradient(90deg,#ffd7e2 0 28px,#dff3ff 28px 56px,#e4f5d8 56px 84px,#fff0bd 84px 112px)}.wb-modal-mask .wb-pet-profile-top{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;margin-bottom:12px}.wb-modal-mask .wb-pet-profile-photo{position:relative;width:96px;height:72px;border:2px solid #2f3b46;background:#fffdf7;overflow:hidden;display:grid;place-items:center}.wb-modal-mask .wb-pet-profile-photo .wb-pet-asset,.wb-modal-mask .wb-pet-profile-photo .wb-pet-egg-img{width:58px;height:58px;object-fit:contain}.wb-modal-mask .wb-pet-profile-photo .wb-pet-fox{width:62px;height:62px;background-image:var(--wb-pet-sprite);background-size:400% 100%;background-repeat:no-repeat;background-position:0 0;animation:none!important}.wb-modal-mask .wb-pet-profile-seal{width:58px;height:58px;border:2px solid #2f3b46;border-radius:14px;background:#fff7d8;display:grid;place-items:center;font-size:26px;font-weight:1000;color:#c28a2d}.wb-modal-mask .wb-pet-profile-title{display:grid;gap:2px}.wb-modal-mask .wb-pet-profile-title b{font-size:22px;color:#be6a55;letter-spacing:1px}.wb-modal-mask .wb-pet-profile-title span{font-size:12px;color:#657489;font-weight:900}.wb-modal-mask .wb-pet-profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.wb-modal-mask .wb-pet-profile-item{padding:8px 10px;border:1px solid rgba(80,98,112,.22);background:rgba(255,255,255,.62);border-radius:12px;min-width:0}.wb-modal-mask .wb-pet-profile-item.wide{grid-column:1/-1}.wb-modal-mask .wb-pet-profile-item em{display:block;font-style:normal;font-size:11px;font-weight:1000;color:#7d8da0;margin-bottom:2px}.wb-modal-mask .wb-pet-profile-item strong{display:block;font-size:15px;color:#30404b;line-height:1.35;overflow-wrap:anywhere}.wb-modal-mask .wb-pet-profile-num{font-size:20px;color:#d56a52;font-weight:1000}.wb-modal-mask .wb-pet-profile-lock{letter-spacing:2px;color:#a8a2a0!important}.wb-modal-mask .wb-pet-profile-actions{display:flex;justify-content:flex-end;margin-top:14px}
+      .wb-modal-mask .wb-pet-story-choice{width:min(90vw,440px)!important;max-width:440px!important}.wb-modal-mask .wb-pet-story-choice-title{font-size:14px;color:var(--wb-sub);font-weight:900;text-align:center}.wb-modal-mask .wb-pet-story-choice-name{margin:8px 0 10px;text-align:center;font-size:24px;line-height:1.25;color:var(--wb-accent);font-weight:1000}.wb-modal-mask .wb-pet-story-choice-summary{padding:10px 12px;border:2px solid color-mix(in srgb,var(--wb-accent) 34%,var(--wb-border) 66%);background:var(--wb-soft);color:var(--wb-text);line-height:1.55;font-weight:800}
+      .wb-modal-mask .wb-pet-modal:not(.wb-mini-modal){width:min(96vw,980px)!important;max-width:980px!important;height:min(92dvh,760px);max-height:92dvh;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box}.wb-modal-mask#wb-pet-log-mask,.wb-modal-mask#wb-pet-records-mask,.wb-modal-mask#wb-pet-caretaker-mask,.wb-modal-mask#wb-pet-char-picker-mask,.wb-modal-mask#wb-pet-adoption-mask{overflow:hidden!important;padding:0!important}.wb-modal-mask#wb-pet-log-mask .wb-pet-modal,.wb-modal-mask#wb-pet-records-mask .wb-pet-modal,.wb-modal-mask#wb-pet-caretaker-mask .wb-pet-modal,.wb-modal-mask#wb-pet-char-picker-mask .wb-pet-modal,.wb-modal-mask#wb-pet-adoption-mask .wb-pet-modal{width:calc(100vw - 12px)!important;max-width:calc(100vw - 12px)!important;height:calc(100dvh - 12px)!important;max-height:calc(100dvh - 12px)!important;border:3px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%)!important;box-sizing:border-box}
+      .wb-modal-mask .wb-mini-modal{width:min(92vw,420px)!important;max-width:420px!important;height:auto;max-height:72dvh}
+      .wb-modal-mask .wb-pet-modal{border:3px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%)!important;background:linear-gradient(180deg,var(--wb-panel),var(--wb-bg))!important;color:var(--wb-text)!important;box-shadow:0 8px 0 rgba(0,0,0,.5),0 0 0 4px var(--wb-glow)!important;padding:0!important}.wb-modal-mask.wb-arcade .wb-pet-modal{padding-top:0!important;overflow:hidden!important}
+      .wb-modal-mask .wb-pet-modal-head{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 14px;border-bottom:3px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background:linear-gradient(180deg,var(--wb-accent),var(--wb-accent2));color:var(--wb-on-accent)}
+      .wb-modal-mask .wb-pet-modal-title{flex:1;text-align:center;font-weight:1000;letter-spacing:1px}
+      .wb-modal-mask .wb-pet-scroll{min-height:0;overflow:auto;padding:4px}
+      .wb-modal-mask .wb-pet-card-list{display:grid;gap:16px}
+      .wb-modal-mask .wb-pet-caretaker-card,.wb-modal-mask .wb-pet-record-entry{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:16px;padding:12px;border:2px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background:var(--wb-panel);box-shadow:3px 3px 0 color-mix(in srgb,var(--wb-text) 54%,#000 46%);color:var(--wb-text)}
+      .wb-modal-mask .wb-pet-avatar{width:48px;height:48px;border:2px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background:var(--wb-input);display:grid;place-items:center;font-weight:1000;color:var(--wb-text)}
+      .wb-modal-mask .wb-pet-help-mark{width:38px;min-width:38px;height:36px;display:grid;place-items:center;background:transparent!important;border:0!important;box-shadow:none!important;color:var(--wb-on-accent)!important;font-weight:1000}
+      .wb-modal-mask .wb-pet-stage-tip{margin:8px 0 16px;color:var(--wb-text)}
+      .wb-modal-mask .wb-pet-stage-tip-title{margin:0 0 7px;text-align:center;color:#be6a55;font-size:16px;font-weight:1000;letter-spacing:1px}
+      .wb-modal-mask .wb-pet-stage-tip-box{position:relative;padding:13px 16px;border:1px solid rgba(190,106,85,.38);border-radius:14px;background:linear-gradient(135deg,rgba(255,244,226,.96),rgba(255,253,247,.78));color:#8a6046;font-size:14px;line-height:1.65;font-weight:900;text-align:center;box-shadow:0 4px 14px rgba(120,82,45,.08)}
+      .wb-modal-mask .wb-pet-stage-tip-box:before,.wb-modal-mask .wb-pet-stage-tip-box:after{content:'';position:absolute;left:18px;right:18px;height:1px;background:linear-gradient(90deg,transparent,rgba(190,106,85,.42),transparent)}
+      .wb-modal-mask .wb-pet-stage-tip-box:before{top:6px}.wb-modal-mask .wb-pet-stage-tip-box:after{bottom:6px}
+      .wb-modal-mask .wb-pet-adopt-success-modal{width:min(92vw,520px)!important;max-width:520px!important}.wb-modal-mask .wb-pet-adopt-success-modal .wb-pet-scroll{padding:12px 14px}.wb-modal-mask .wb-pet-adopt-success-card{box-shadow:none!important}
+      .wb-modal-mask .wb-pet-avatar img{width:100%;height:100%;object-fit:cover;display:block}.wb-modal-mask .wb-pet-full-caretaker{grid-template-columns:48px 72px minmax(0,1fr)!important;text-align:left}.wb-modal-mask .wb-pet-char-pick{grid-template-columns:48px minmax(0,1fr)!important;text-align:left}.wb-modal-mask .wb-pet-full-caretaker .wb-pet-snapshot{width:72px;height:52px}.wb-modal-mask .wb-pet-full-caretaker > div:last-child{min-width:0;overflow:hidden}.wb-modal-mask .wb-pet-adopt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}.wb-modal-mask .wb-pet-adopt-wide{grid-column:1/-1}.wb-modal-mask .wb-pet-egg-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:6px}.wb-modal-mask .wb-pet-egg-choice{min-height:66px;padding:5px!important;display:grid!important;place-items:center;gap:3px}.wb-modal-mask .wb-pet-egg-choice img{width:32px;height:32px;object-fit:contain;image-rendering:pixelated}.wb-modal-mask .wb-pet-egg-choice span{font-size:10px}.wb-modal-mask .wb-pet-egg-choice.selected{outline:3px solid var(--wb-accent);outline-offset:2px}.wb-modal-mask .wb-pet-empty-stage{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 14px;border:2px dashed color-mix(in srgb,var(--wb-text) 55%,transparent);background:color-mix(in srgb,var(--wb-panel) 78%,transparent);font-size:12px;font-weight:900;color:var(--wb-text)}#${POPUP_ID} .wb-pet-new-adoption{min-height:42px;width:100%;font-size:15px}#${POPUP_ID} .wb-pet-test-select .wb-pet-egg-grid,#${POPUP_ID} .wb-pet-test-select .wb-pet-species-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}#${POPUP_ID} .wb-pet-test-select .wb-pet-egg-choice{min-height:74px;padding:6px;display:grid;place-items:center;gap:4px}#${POPUP_ID} .wb-pet-test-select .wb-pet-egg-choice img{width:38px;height:38px;object-fit:contain;image-rendering:pixelated}#${POPUP_ID} .wb-pet-test-select .selected{outline:3px solid var(--wb-accent);outline-offset:2px}
+      @font-face{font-family:'WanbanPetHandwrite';src:url('https://s3plus.meituan.net/opapisdk/op_ticket_1_885190757_1760703781087_qdqqd_135pzt.ttf') format('truetype');font-display:swap;}
+      .wb-modal-mask .wb-pet-note-page{position:relative;background:radial-gradient(circle at 18px 18px,rgba(112,151,170,.10) 0 2px,transparent 3px),repeating-linear-gradient(to bottom,#fffdf5 0,#fffdf5 31px,rgba(139,177,190,.26) 32px),#fffdf5;color:#31404a;border:2px solid #d7bd83;box-shadow:0 8px 0 #947247,0 18px 42px rgba(68,43,18,.18);padding:20px 24px 24px;line-height:1.8;overflow:hidden}.wb-modal-mask .wb-pet-note-page::before{content:none}.wb-modal-mask .wb-pet-note-page::after{content:'';position:absolute;left:0;right:0;top:0;height:8px;background:repeating-linear-gradient(90deg,rgba(155,199,239,.72) 0 14px,rgba(246,223,159,.72) 14px 28px,rgba(152,214,197,.72) 28px 42px);opacity:.55}
+      .wb-modal-mask .wb-pet-diary-cover{position:relative;margin:4px 0 14px 42px;padding:14px 16px 12px;border:1px solid rgba(183,147,88,.5);border-radius:16px;background:linear-gradient(135deg,rgba(255,247,217,.92),rgba(255,255,255,.58));box-shadow:0 6px 18px rgba(122,88,35,.12)}.wb-modal-mask .wb-pet-diary-kicker{font-size:11px;letter-spacing:2px;color:#b17b54;font-weight:900;text-align:center}.wb-modal-mask .wb-pet-diary-meta{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}.wb-modal-mask .wb-pet-diary-meta span{display:inline-flex;align-items:baseline;gap:5px;padding:2px 4px;color:#8d7252;font-size:12px;white-space:nowrap}.wb-modal-mask .wb-pet-diary-meta b{min-width:54px;padding:0 8px 1px;border-bottom:2px solid #c8b17f;font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive;font-size:16px;font-weight:500;color:#30404b;text-align:center}.wb-modal-mask .wb-pet-note-tags{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin:0 0 12px 42px}.wb-modal-mask .wb-pet-note-tag{padding:3px 8px;border:1.5px solid #9bc7ef;background:rgba(236,247,255,.72);color:#3f7fb5;border-radius:4px;font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive;font-size:15px;line-height:1.15;transform:rotate(-.5deg)}.wb-modal-mask .wb-pet-diary-two{display:grid;gap:8px;margin:0 0 14px 42px}.wb-modal-mask .wb-pet-diary-two div{display:grid;grid-template-columns:96px 1fr;gap:8px;align-items:start;padding:7px 9px;border-radius:12px;background:rgba(255,250,230,.64);border:1px dashed #d8bf87}.wb-modal-mask .wb-pet-diary-two em{font-style:normal;color:#d56a52;font-weight:900}.wb-modal-mask .wb-pet-diary-two span{font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive;font-size:16px;color:#30404b;white-space:normal;overflow-wrap:anywhere;word-break:break-all;line-break:anywhere}.wb-modal-mask .wb-pet-diary-title{margin:8px 0 12px 42px;text-align:center;font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive;font-size:31px;line-height:1.25;color:#cf604e;text-shadow:0 2px 0 rgba(255,255,255,.8)}.wb-modal-mask .wb-pet-diary-body{margin-left:42px;background:transparent;padding-top:1px}.wb-modal-mask .wb-pet-diary-body p{min-height:33px;margin:0 0 7px;font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive;font-size:18px;line-height:33px;letter-spacing:.3px;text-indent:2em}.wb-modal-mask .wb-pet-note-title{font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive;font-size:26px;text-align:center;color:#d56a52;font-weight:900}
+      .wb-modal-mask .wb-pet-note-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0 14px 42px}.wb-modal-mask .wb-pet-note-line{border-bottom:1px solid #b7d7dc;min-height:24px;font-family:'Comic Sans MS','KaiTi',cursive}.wb-modal-mask#wb-pet-log-mask .wb-pet-scroll{display:grid;gap:10px}.wb-modal-mask#wb-pet-log-mask .wb-field{margin:0;padding:10px;border:1px solid rgba(214,189,134,.65);border-radius:14px;background:rgba(255,253,245,.78);box-shadow:0 4px 14px rgba(122,88,35,.08)}.wb-modal-mask#wb-pet-log-mask .wb-field span{font-weight:900;color:#9f724c}.wb-modal-mask#wb-pet-log-mask .wb-select,.wb-modal-mask#wb-pet-log-mask .wb-textarea{border-radius:12px;background:#fffdf7}.wb-modal-mask#wb-pet-log-mask #wb-pet-log-generate{min-height:40px;border-radius:0!important;background:var(--wb-accent)!important;color:var(--wb-on-accent,#fff)!important}.wb-modal-mask#wb-pet-log-mask #wb-pet-log-preview:empty{display:none}
+
+      .wb-modal-mask .wb-pet-diary-page{padding:18px 20px 22px}.wb-modal-mask .wb-pet-diary-cover{overflow:hidden;border:1px solid rgba(201,154,87,.58);background:linear-gradient(135deg,rgba(255,246,212,.96),rgba(255,255,255,.72));}.wb-modal-mask .wb-pet-diary-cover::before{content:'';position:absolute;left:-12%;right:-12%;top:0;height:7px;background:repeating-linear-gradient(90deg,#f0a66e 0 28px,#f7d889 28px 56px,#9bd9c8 56px 84px,#a9bfea 84px 112px)}.wb-modal-mask .wb-pet-diary-kicker{display:none}.wb-modal-mask .wb-pet-diary-meta{display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:nowrap;margin-top:8px}.wb-modal-mask .wb-pet-diary-meta span{white-space:nowrap}.wb-modal-mask .wb-pet-rpg-speaker{border-radius:999px;border:1px solid rgba(60,48,40,.22);box-shadow:0 2px 0 rgba(70,50,35,.14);color:#4a3b37}.wb-modal-mask .speaker-u .wb-pet-rpg-speaker{background:#dce9ff;color:#385783}.wb-modal-mask .speaker-c .wb-pet-rpg-speaker{background:#ffe1e8;color:#8b4258}.wb-modal-mask .speaker-p .wb-pet-rpg-speaker{background:#dcf4e7;color:#3f765b}.wb-modal-mask .speaker-shen .wb-pet-rpg-speaker{background:#eee3ff;color:#654f93}.wb-modal-mask .wb-pet-rpg-line.speaker-narrator{font-style:italic;color:#68798b;background:rgba(255,255,255,.38);border-color:rgba(150,170,190,.28)}#${POPUP_ID} .wb-pet-dialogue-text.narrator{font-style:italic;color:color-mix(in srgb,var(--wb-text) 76%,var(--wb-sub) 24%)}#${POPUP_ID} .wb-pet-dialogue-name.speaker-u{background:#dce9ff;color:#385783}#${POPUP_ID} .wb-pet-dialogue-name.speaker-c{background:#ffe1e8;color:#8b4258}#${POPUP_ID} .wb-pet-dialogue-name.speaker-p{background:#dcf4e7;color:#3f765b}#${POPUP_ID} .wb-pet-dialogue-name.speaker-shen{background:#eee3ff;color:#654f93}
+      .wb-modal-mask .wb-pet-modal .wb-actions{gap:14px;margin:14px 0}.wb-modal-mask .wb-pet-record-home{min-height:52px}.wb-modal-mask .wb-pet-snapshot{position:relative;width:72px;height:58px;overflow:hidden;border:2px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background-size:cover;background-position:center;box-shadow:none!important;image-rendering:pixelated}.wb-modal-mask .wb-pet-snapshot .wb-pet-asset,.wb-modal-mask .wb-pet-snapshot .wb-pet-egg-img{position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%);object-fit:contain}.wb-modal-mask .wb-pet-snapshot .wb-pet-fox{position:absolute;left:50%;top:50%;width:46px;height:46px;transform:translate(-50%,-50%);background-image:var(--wb-pet-sprite);background-size:400% 100%;background-repeat:no-repeat;animation:none!important;background-position:0 0!important}.wb-modal-mask .wb-pet-snapshot-label{position:absolute;left:2px;bottom:2px;min-width:16px;padding:1px 4px;background:rgba(255,253,240,.9);border:1px solid rgba(43,33,55,.72);color:#2b2137;font-size:10px;font-weight:1000;line-height:1}
+      .wb-modal-mask .wb-pet-modal button{box-shadow:1px 1px 0 color-mix(in srgb,var(--wb-text) 50%,#000 50%)!important}.wb-modal-mask .wb-pet-modal button:hover{box-shadow:2px 2px 0 color-mix(in srgb,var(--wb-text) 50%,#000 50%)!important}.wb-modal-mask .wb-pet-diary-page{box-sizing:border-box;background:radial-gradient(circle at 18px 18px,rgba(112,151,170,.10) 0 2px,transparent 3px),repeating-linear-gradient(to bottom,#fffdf5 0,#fffdf5 31px,rgba(139,177,190,.26) 32px),#fffdf5!important}.wb-modal-mask .wb-pet-diary-body p{text-decoration:none!important;border-bottom:0!important}.wb-modal-mask .wb-pet-story-page{position:relative;padding:22px 26px 26px;border:2px solid #b7c7d8;background:linear-gradient(180deg,#fbfdff,#f5f9ff 46%,#fffdf7);color:#2f3b46;box-shadow:0 8px 0 #7d91aa,0 18px 42px rgba(38,54,75,.16);font-family:'Microsoft YaHei','PingFang SC',system-ui,sans-serif;line-height:1.82}.wb-modal-mask .wb-pet-story-page *{font-family:inherit}.wb-modal-mask .wb-pet-story-head{display:grid;grid-template-columns:1fr;align-items:center;justify-items:center;gap:12px;margin-bottom:14px;padding:12px 14px;border:1px solid rgba(125,145,170,.36);border-radius:16px;background:linear-gradient(135deg,rgba(229,242,255,.96),rgba(255,255,255,.82))}.wb-modal-mask .wb-pet-story-type{display:inline-grid;grid-auto-flow:column;align-items:center;justify-content:center;place-items:center;gap:7px;min-height:34px;padding:0 14px;border-radius:999px;background:#dbeafe;color:#41658f;font-size:15px;font-weight:1000;letter-spacing:1px}.wb-modal-mask .wb-pet-story-replay{width:28px!important;min-width:28px!important;height:28px!important;padding:0!important;border-color:transparent!important;background:transparent!important;color:#41658f!important}.wb-modal-mask .wb-pet-story-replay .wb-pet-svg{width:18px;height:18px;stroke-width:1.6!important}.wb-modal-mask .wb-pet-story-meta{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;color:#657489;font-size:13px;font-weight:900}.wb-modal-mask .wb-pet-story-meta b{color:#31465d;font-weight:900}.wb-modal-mask .wb-pet-story-title{margin:6px 0 10px;text-align:center;color:#be6a55;font-size:28px;line-height:1.3;font-weight:1000}.wb-modal-mask .wb-pet-story-summary{margin:0 auto 18px;padding:10px 14px;max-width:680px;border:1px solid rgba(190,106,85,.24);border-radius:14px;background:linear-gradient(135deg,rgba(255,244,226,.95),rgba(255,250,242,.72));color:#9b6a49;text-align:center;font-weight:850;box-shadow:0 4px 14px rgba(120,82,45,.08)}.wb-modal-mask .wb-pet-story-lines{display:grid;gap:8px}.wb-modal-mask .wb-pet-story-body .narrator{color:#6b7c93;font-style:italic;margin:0 0 8px 42px}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line{margin:0 0 8px 42px;padding:8px 10px;border:1px solid rgba(132,148,168,.24);border-radius:12px;background:rgba(255,255,255,.58);line-height:1.85}.wb-modal-mask .wb-pet-rpg-line .wb-pet-rpg-text{display:inline}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-speaker{margin:0 7px 0 0;vertical-align:baseline;color:#4a3b37!important;font-weight:1000}.wb-modal-mask .speaker-u .wb-pet-rpg-speaker,.wb-modal-mask .speaker-c .wb-pet-rpg-speaker,.wb-modal-mask .speaker-p .wb-pet-rpg-speaker,.wb-modal-mask .speaker-shen .wb-pet-rpg-speaker{color:#4a3b37!important}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-line{background:#fffdf7!important;color:#2f3b46!important;border-color:#d7c7a8!important}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-text,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-text{color:#2f3b46!important}.wb-modal-mask .wb-pet-story-body .narrator,.wb-modal-mask#wb-pet-story-player .wb-text-segments .speaker-narrator{background:#f7fbff!important;color:#607086!important;border-color:#cfdcea!important}
+
+      .wb-modal-mask .wb-pet-record-entry{min-height:0}.wb-modal-mask#wb-pet-records-mask :is(#wb-pet-log-home,#wb-pet-log-list,#wb-pet-story-home,#wb-pet-story-list,#wb-pet-cal-home){width:max-content!important;min-width:96px!important;justify-self:center;align-self:center;margin:0 auto 8px!important;padding:7px 13px!important}.wb-modal-mask .wb-pet-record-entry.compact{grid-template-columns:auto 1fr;padding:8px 10px;gap:10px}.wb-modal-mask .wb-pet-record-main{display:grid;gap:3px;min-width:0}.wb-modal-mask .wb-pet-record-date{font-size:11px;color:var(--wb-sub);font-weight:500;line-height:1.2}.wb-modal-mask .wb-pet-record-title{font-size:12px;color:var(--wb-text);font-weight:500;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wb-modal-mask .wb-pet-record-story-tag{display:inline-flex;align-items:center;justify-content:center;margin-right:5px;padding:1px 5px;border:1px solid currentColor;border-radius:4px;background:#eef6ff;color:#41658f;font-size:10px;line-height:1.2;font-weight:800;vertical-align:1px}.wb-modal-mask .wb-pet-record-story-tag[data-type="支线"]{background:#fff4e8;color:#9b6a49}.wb-modal-mask .wb-pet-record-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}.wb-modal-mask .wb-pet-record-tag{display:inline-flex;align-items:center;min-height:18px;padding:1px 5px;border:1px solid color-mix(in srgb,var(--wb-accent) 36%,var(--wb-border) 64%);background:var(--wb-soft);color:var(--wb-text);font-size:10px;line-height:1;white-space:nowrap}.wb-modal-mask .wb-pet-cal-fixed{flex:0 0 auto;padding:0 12px 8px}.wb-modal-mask .wb-pet-cal-fixed .wb-actions{margin:8px 0}.wb-modal-mask .wb-pet-cal-scroll{min-height:0;overflow:auto}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-text,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-text{word-break:break-all!important;overflow-wrap:anywhere!important}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-line{word-break:break-all!important;overflow-wrap:anywhere!important}
+      .wb-pet-hatch-flash{position:fixed;inset:0;z-index:1000005;background:#fff;animation:wbPetHatchFlash .7s ease both;pointer-events:none}@keyframes wbPetHatchFlash{0%{opacity:0}28%{opacity:1}100%{opacity:0}}.wb-modal-mask .wb-pet-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.wb-modal-mask .wb-pet-day{min-height:42px;background:#fffdf0!important}.wb-modal-mask .wb-pet-day.hot1{background:#effcf4!important}.wb-modal-mask .wb-pet-day.hot2{background:#d8f7e3!important}.wb-modal-mask .wb-pet-day.hot3{background:#b6efcb!important}.wb-modal-mask .wb-pet-day.hot4{background:#78dc9c!important}.wb-modal-mask .wb-pet-day.hot5{background:#30bd69!important;color:#fff!important}
+      @media (max-width:768px){.wb-modal-mask#wb-pet-profile-mask{overflow:hidden!important;padding:0!important}.wb-modal-mask#wb-pet-profile-mask .wb-pet-modal{width:calc(100vw - 18px)!important;max-width:calc(100vw - 18px)!important;height:auto!important;max-height:calc(100dvh - 18px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;overflow:hidden!important}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-card{padding:12px 10px 10px;max-height:calc(100dvh - 28px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow:hidden}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-card::before{height:6px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-top{grid-template-columns:1fr 76px;gap:7px;margin-bottom:8px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-title b{font-size:17px;line-height:1.1}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-title span{font-size:10px;line-height:1.2}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo{width:74px;height:54px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-asset,.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-egg-img{width:44px;height:44px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-fox{width:48px;height:48px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-grid{grid-template-columns:1fr 1fr;gap:5px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item{padding:5px 7px;border-radius:9px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item em{font-size:9px;margin-bottom:1px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item strong{font-size:12px;line-height:1.22}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-num{font-size:16px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-actions{margin-top:8px}.wb-modal-mask#wb-pet-profile-mask #wb-pet-profile-close{min-height:30px!important;padding:5px 12px!important;font-size:12px}.wb-modal-mask .wb-pet-note-page{box-sizing:border-box;width:100%;padding:12px 4px 14px;background:repeating-linear-gradient(to bottom,#fffdf5 0,#fffdf5 30px,rgba(139,177,190,.24) 31px),#fffdf5}.wb-modal-mask .wb-pet-note-page::before{content:none}.wb-modal-mask .wb-pet-diary-cover{margin-left:2px;margin-right:0;padding:8px 6px}.wb-modal-mask .wb-pet-diary-meta{display:grid;grid-template-columns:1fr;justify-content:stretch;gap:2px;flex-wrap:nowrap}.wb-modal-mask .wb-pet-diary-meta span{display:grid;grid-template-columns:58px minmax(0,1fr);align-items:end;gap:4px;font-size:10px;padding:0 2px;white-space:nowrap}.wb-modal-mask .wb-pet-diary-meta b{min-width:0;font-size:14px;padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wb-modal-mask .wb-pet-note-tags,.wb-modal-mask .wb-pet-diary-two,.wb-modal-mask .wb-pet-diary-title,.wb-modal-mask .wb-pet-diary-body,.wb-modal-mask .wb-pet-note-meta{margin-left:2px}.wb-modal-mask .wb-pet-note-tags{gap:4px;margin-bottom:8px}.wb-modal-mask .wb-pet-note-tag{font-size:13px;padding:2px 6px}.wb-modal-mask .wb-pet-diary-two{gap:5px;margin-right:0;margin-bottom:9px;width:calc(100% - 2px);box-sizing:border-box}.wb-modal-mask .wb-pet-diary-two div{grid-template-columns:1fr;gap:2px;padding:5px 6px;box-sizing:border-box;min-width:0;overflow:hidden}.wb-modal-mask .wb-pet-diary-two em{font-size:13px;min-width:0}.wb-modal-mask .wb-pet-diary-two span{font-size:14px;line-height:1.45;min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-all;line-break:anywhere}.wb-modal-mask .wb-pet-diary-title{font-size:23px;margin-top:5px;margin-bottom:8px}.wb-modal-mask .wb-pet-diary-body{background:transparent}.wb-modal-mask .wb-pet-diary-body p{font-size:16px;line-height:31px;min-height:31px;text-indent:2em;text-decoration:none!important;border:0!important}.wb-modal-mask .wb-pet-story-page{box-sizing:border-box;width:100%;max-width:100%;padding:14px 8px 16px;overflow:hidden}.wb-modal-mask .wb-pet-story-head{grid-template-columns:1fr;justify-items:center;gap:7px;padding:9px;box-sizing:border-box}.wb-modal-mask .wb-pet-story-meta{justify-content:center}.wb-modal-mask .wb-pet-story-title{font-size:23px}.wb-modal-mask .wb-pet-story-summary{padding:8px 9px;margin-bottom:12px;box-sizing:border-box;max-width:100%;overflow-wrap:anywhere}.wb-modal-mask .wb-pet-story-lines{min-width:0}.wb-modal-mask .wb-pet-story-body .narrator,.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line{margin-left:0;margin-right:0;box-sizing:border-box;max-width:100%;min-width:0;overflow-wrap:anywhere;word-break:break-word}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line{padding:7px 8px}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-text{overflow-wrap:anywhere;word-break:break-word}.wb-modal-mask#wb-pet-records-mask :is(#wb-pet-log-home,#wb-pet-log-list,#wb-pet-story-home,#wb-pet-story-list,#wb-pet-cal-home){min-width:82px!important;padding:6px 10px!important;font-size:12px}.wb-modal-mask#wb-pet-records-mask .wb-pet-cal-fixed .wb-actions{gap:6px}.wb-modal-mask#wb-pet-log-mask .wb-pet-scroll{padding:6px 7px 10px!important;gap:7px}.wb-modal-mask#wb-pet-log-mask .wb-field{padding:8px}.wb-modal-mask#wb-pet-log-mask .wb-textarea{min-height:64px!important}#${POPUP_ID} .wb-pet-bars{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}#${POPUP_ID} .wb-pet-bars.egg{grid-template-columns:1fr}#${POPUP_ID} .wb-pet-bar{font-size:9px;padding:4px}#${POPUP_ID} .wb-pet-stage{place-items:center}#${POPUP_ID} .wb-pet-stage{justify-self:center;width:100%;grid-template-columns:1fr;margin-top:-5px}#${POPUP_ID} .wb-pet-scene{width:min(82vw,49dvh,440px);height:auto;aspect-ratio:1/1;min-height:0;justify-self:center}#${POPUP_ID} .wb-pet-room-fox{top:43%;width:clamp(124px,20dvh,158px);min-width:124px}#${POPUP_ID} .wb-pet-scene-actions{right:14px;top:12px;gap:4px}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn{width:30px;min-width:30px;height:30px;border-radius:999px!important}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-svg{width:16px;height:16px;stroke-width:1.8}#${POPUP_ID} .wb-pet-iconbtn{width:32px;min-width:32px;height:32px;padding:0!important;display:grid!important;place-items:center!important}.wb-modal-mask .wb-pet-modal:not(.wb-mini-modal){width:100%!important;height:auto;max-height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));}.wb-modal-mask .wb-pet-modal{padding:0!important}.wb-modal-mask .wb-pet-scroll{padding:4px 12px 12px}.wb-modal-mask .wb-pet-modal>.wb-actions{padding:0 12px 12px}.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-api-status,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-title,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-name,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-summary{margin-left:14px!important;margin-right:14px!important}.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-actions{padding:0 14px 14px!important}}
+
+      #${POPUP_ID} .wb-body.wb-pet-mode button,
+      #${POPUP_ID} .wb-pet-room button,
+      #${POPUP_ID} .wb-pet-room button:hover,
+      #${POPUP_ID} .wb-pet-room button:active,
+      .wb-modal-mask .wb-pet-modal button,
+      .wb-modal-mask .wb-pet-modal button:hover,
+      .wb-modal-mask .wb-pet-modal button:active,
+      .wb-modal-mask .wb-pet-modal .wb-btn,
+      .wb-modal-mask .wb-pet-modal .wb-iconbtn,
+      #${POPUP_ID} .wb-pet-iconbtn,
+      #${POPUP_ID} .wb-pet-topbar .wb-pet-iconbtn,
+      #${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn,
+      #${POPUP_ID} .wb-pet-scene-toggle,
+      #${POPUP_ID} .wb-pet-scene-choice,
+      #${POPUP_ID} .wb-pet-record-home {
+        box-shadow:none!important;
+        text-shadow:none!important;
+      }
+      #${POPUP_ID} .wb-pet-room button:hover,
+      .wb-modal-mask .wb-pet-modal button:hover,
+      #${POPUP_ID} .wb-pet-room button:active,
+      .wb-modal-mask .wb-pet-modal button:active {
+        transform:none!important;
+        filter:none!important;
+      }
+
+      #${POPUP_ID} .wb-body.wb-pet-mode button:not(.primary),
+      #${POPUP_ID} .wb-pet-room button:not(.primary),
+      .wb-modal-mask .wb-pet-modal button:not(.primary) {
+        background:var(--wb-soft)!important;
+        color:var(--wb-text)!important;
+        border-color:color-mix(in srgb,var(--wb-accent) 48%,var(--wb-border) 52%)!important;
+      }
+      #${POPUP_ID} #wb-pet-back,
+      #${POPUP_ID} #wb-pet-caretakers,
+      #${POPUP_ID} #wb-pet-help,
+      #${POPUP_ID} #wb-pet-restart,
+      .wb-modal-mask #wb-pet-adopt-close,
+      .wb-modal-mask #wb-pet-char-picker-close,
+      .wb-modal-mask .wb-pet-modal-head .wb-pet-iconbtn,
+      .wb-modal-mask .wb-pet-modal-head button.wb-pet-iconbtn {
+        background:transparent!important;
+        border-color:transparent!important;
+        color:var(--wb-on-accent)!important;
+      }
+      #${POPUP_ID} .wb-pet-scene-toggle,
+      #${POPUP_ID} .wb-pet-scene-toggle:not(.primary) {
+        border-color:transparent!important;
+      }
+      .wb-modal-mask .wb-pet-story-type .wb-pet-story-replay,
+      .wb-modal-mask .wb-pet-story-type .wb-pet-story-replay:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-story-type button.wb-pet-story-replay:not(.primary) {
+        background:transparent!important;
+        background-color:transparent!important;
+        background-image:none!important;
+        color:inherit!important;
+        border:1px solid currentColor!important;
+        box-shadow:none!important;
+        border-radius:999px!important;
+      }
+      #${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn {
+        border-color:#111!important;
+      }
+      #${POPUP_ID}.wb-night .wb-pet-scene-actions .wb-pet-iconbtn,
+      #${POPUP_ID}.wb-cyber .wb-pet-scene-actions .wb-pet-iconbtn,
+      #${POPUP_ID}.wb-tavern .wb-pet-scene-actions .wb-pet-iconbtn {
+        border-color:color-mix(in srgb,var(--wb-text) 88%,#fff 12%)!important;
+      }
+      #${POPUP_ID}.wb-spring .wb-pet-scene-actions .wb-pet-iconbtn,
+      #${POPUP_ID}.wb-mono .wb-pet-scene-actions .wb-pet-iconbtn {
+        border-color:#111!important;
+      }
+      .wb-modal-mask .wb-mini-modal.wb-pet-modal {
+        padding:0!important;
+      }
+      .wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-api-status,
+      .wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-title,
+      .wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-name,
+      .wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-summary {
+        margin-left:16px!important;
+        margin-right:16px!important;
+      }
+      .wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-title {
+        margin-top:16px!important;
+      }
+      .wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-actions {
+        padding:0 16px 16px!important;
+        box-sizing:border-box;
+      }
+      #${POPUP_ID} .wb-body.wb-pet-mode button.primary,
+      #${POPUP_ID} .wb-pet-room button.primary,
+      .wb-modal-mask .wb-pet-modal button.primary {
+        background:var(--wb-accent)!important;
+        color:var(--wb-on-accent,#fff)!important;
+        border-color:var(--wb-accent)!important;
+      }
+      #${POPUP_ID} .wb-pet-dialogue {
+        background:var(--wb-soft)!important;
+      }
+      #${POPUP_ID} .wb-body.wb-pet-mode button.wb-pet-card-btn,
+      #${POPUP_ID} .wb-body.wb-pet-mode button.wb-pet-card-btn:not(.primary),
+      #${POPUP_ID} .wb-pet-topbar button.wb-pet-iconbtn,
+      .wb-modal-mask .wb-pet-modal-head button,
+      .wb-modal-mask .wb-pet-modal-head button.wb-pet-iconbtn,
+      .wb-modal-mask .wb-pet-modal-head .wb-pet-iconbtn {
+        background:transparent!important;
+        border:2px solid transparent!important;
+        box-shadow:none!important;
+      }
+      #${POPUP_ID} .wb-pet-scene-toggle,
+      #${POPUP_ID} .wb-pet-scene-toggle:not(.primary),
+      #${POPUP_ID} .wb-body.wb-pet-mode button.wb-pet-scene-toggle:not(.primary) {
+        border:2px solid transparent!important;
+        box-shadow:none!important;
+      }
+      /* Final high-specificity pet overrides: keep these after generic button rules. */
+      #${POPUP_ID}.wb-day .wb-body.wb-pet-mode .wb-pet-room .wb-pet-scene .wb-pet-scene-actions button.wb-btn.wb-pet-iconbtn:not(.primary),
+      #${POPUP_ID}.wb-arcade .wb-body.wb-pet-mode .wb-pet-room .wb-pet-scene .wb-pet-scene-actions button.wb-btn.wb-pet-iconbtn:not(.primary),
+      #${POPUP_ID}.wb-spring .wb-body.wb-pet-mode .wb-pet-room .wb-pet-scene .wb-pet-scene-actions button.wb-btn.wb-pet-iconbtn:not(.primary),
+      #${POPUP_ID}.wb-mono .wb-body.wb-pet-mode .wb-pet-room .wb-pet-scene .wb-pet-scene-actions button.wb-btn.wb-pet-iconbtn:not(.primary) {
+        border-color:#111!important;
+      }
+      #${POPUP_ID}.wb-night .wb-body.wb-pet-mode .wb-pet-room .wb-pet-scene .wb-pet-scene-actions button.wb-btn.wb-pet-iconbtn:not(.primary),
+      #${POPUP_ID}.wb-cyber .wb-body.wb-pet-mode .wb-pet-room .wb-pet-scene .wb-pet-scene-actions button.wb-btn.wb-pet-iconbtn:not(.primary),
+      #${POPUP_ID}.wb-tavern .wb-body.wb-pet-mode .wb-pet-room .wb-pet-scene .wb-pet-scene-actions button.wb-btn.wb-pet-iconbtn:not(.primary) {
+        border-color:#f5eafa!important;
+      }
+      .wb-modal-mask .wb-pet-modal button.wb-btn.wb-pet-day.hot1:not(.primary){background:#effcf4!important;color:#28435a!important}
+      .wb-modal-mask .wb-pet-modal button.wb-btn.wb-pet-day.hot2:not(.primary){background:#d8f7e3!important;color:#28435a!important}
+      .wb-modal-mask .wb-pet-modal button.wb-btn.wb-pet-day.hot3:not(.primary){background:#b6efcb!important;color:#28435a!important}
+      .wb-modal-mask .wb-pet-modal button.wb-btn.wb-pet-day.hot4:not(.primary){background:#78dc9c!important;color:#18364d!important}
+      .wb-modal-mask .wb-pet-modal button.wb-btn.wb-pet-day.hot5:not(.primary){background:#30bd69!important;color:#fff!important}
+
+      /* Hard reset pet modal/topbar arrow buttons after every generic button rule. */
+      #${POPUP_ID} .wb-pet-topbar > button.wb-btn.wb-pet-iconbtn,
+      #${POPUP_ID} .wb-pet-topbar > button.wb-btn.wb-pet-iconbtn:not(.primary),
+      #${POPUP_ID} .wb-pet-titlebox > button.wb-btn.wb-pet-iconbtn,
+      #${POPUP_ID} .wb-pet-titlebox > button.wb-btn.wb-pet-iconbtn:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > button.wb-btn.wb-pet-iconbtn,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > button.wb-btn.wb-pet-iconbtn:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-log-close,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-records-close,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-caretaker-close,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-tutorial-close,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-adopt-close,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-char-picker-close,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-log-close:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-records-close:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-caretaker-close:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-tutorial-close:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-adopt-close:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > #wb-pet-char-picker-close:not(.primary){
+        background:transparent!important;
+        background-color:transparent!important;
+        background-image:none!important;
+        border-color:transparent!important;
+        box-shadow:none!important;
+        outline:0!important;
+        filter:none!important;
+      }
+      #${POPUP_ID} .wb-pet-topbar > button.wb-btn.wb-pet-iconbtn:hover,
+      #${POPUP_ID} .wb-pet-topbar > button.wb-btn.wb-pet-iconbtn:active,
+      #${POPUP_ID} .wb-pet-titlebox > button.wb-btn.wb-pet-iconbtn:hover,
+      #${POPUP_ID} .wb-pet-titlebox > button.wb-btn.wb-pet-iconbtn:active,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > button.wb-btn.wb-pet-iconbtn:hover,
+      .wb-modal-mask .wb-pet-modal .wb-pet-modal-head > button.wb-btn.wb-pet-iconbtn:active{
+        background:transparent!important;
+        background-color:transparent!important;
+        background-image:none!important;
+        border-color:transparent!important;
+        box-shadow:none!important;
+        transform:none!important;
+      }
+
+      /* Final story replay button override: placed last because earlier generic pet button rules reset background/border. */
+      .wb-modal-mask .wb-pet-modal .wb-pet-story-head .wb-pet-story-type > button.wb-btn.wb-pet-story-replay,
+      .wb-modal-mask .wb-pet-modal .wb-pet-story-head .wb-pet-story-type > button.wb-btn.wb-pet-story-replay:not(.primary),
+      .wb-modal-mask .wb-pet-modal .wb-pet-story-head .wb-pet-story-type > button.wb-btn.wb-pet-story-replay:hover,
+      .wb-modal-mask .wb-pet-modal .wb-pet-story-head .wb-pet-story-type > button.wb-btn.wb-pet-story-replay:active {
+        width:30px!important;
+        min-width:30px!important;
+        height:24px!important;
+        min-height:24px!important;
+        margin-left:2px!important;
+        padding:0!important;
+        display:inline-grid!important;
+        place-items:center!important;
+        background:transparent!important;
+        background-color:transparent!important;
+        background-image:none!important;
+        color:inherit!important;
+        border:1px solid currentColor!important;
+        border-color:currentColor!important;
+        border-radius:999px!important;
+        box-shadow:none!important;
+        text-shadow:none!important;
+        transform:none!important;
+        filter:none!important;
+        opacity:.92;
+      }
+      .wb-modal-mask .wb-pet-modal .wb-pet-story-head .wb-pet-story-type > button.wb-pet-story-replay .wb-pet-svg {
+        width:16px!important;
+        height:16px!important;
+        stroke:currentColor!important;
+        stroke-width:1.55!important;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-caretaker-card,
+      .wb-modal-mask#wb-pet-char-picker-mask .wb-pet-caretaker-card {
+        width:100%!important;
+        min-width:0!important;
+        overflow:hidden!important;
+        justify-items:start!important;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-full-caretaker {
+        position:relative;
+        align-items:center!important;
+        min-height:78px;
+        padding:10px 12px!important;
+        gap:12px!important;
+        border:0!important;
+        box-shadow:none!important;
+        background:
+          linear-gradient(135deg,color-mix(in srgb,var(--wb-panel) 96%,#fff 4%),color-mix(in srgb,var(--wb-soft) 78%,var(--wb-accent) 22%))!important;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-full-caretaker::before {
+        content:'';
+        position:absolute;
+        left:0;
+        top:0;
+        bottom:0;
+        width:5px;
+        background:linear-gradient(180deg,var(--wb-accent),var(--wb-accent2));
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-caretaker-info {
+        min-width:0;
+        display:grid;
+        align-content:center;
+        gap:4px;
+        line-height:1.2;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-caretaker-title {
+        min-width:0;
+        display:flex;
+        align-items:center;
+        gap:6px;
+        overflow:hidden;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-nameplate {
+        display:inline-flex;
+        align-items:center;
+        max-width:100%;
+        min-height:24px;
+        padding:3px 10px 4px;
+        border:0!important;
+        background:linear-gradient(135deg,#fff7d8,color-mix(in srgb,var(--wb-accent) 22%,#fff 78%));
+        color:color-mix(in srgb,var(--wb-text) 84%,var(--wb-accent) 16%);
+        box-shadow:none!important;
+        font-size:14px;
+        font-weight:1000;
+        letter-spacing:.5px;
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-caretaker-tag {
+        flex:0 0 auto;
+        max-width:none;
+        padding:2px 6px!important;
+        border-radius:999px!important;
+        font-size:10px!important;
+        line-height:1.15!important;
+        white-space:nowrap;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-caretaker-line {
+        font-size:10.5px!important;
+        line-height:1.32!important;
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-avatar,
+      .wb-modal-mask#wb-pet-char-picker-mask .wb-pet-avatar {
+        width:48px!important;
+        min-width:48px!important;
+        max-width:48px!important;
+        height:48px!important;
+        min-height:48px!important;
+        max-height:48px!important;
+        padding:0!important;
+        overflow:hidden!important;
+        box-sizing:border-box!important;
+        position:relative!important;
+        display:grid!important;
+        place-items:center!important;
+        align-self:center!important;
+        justify-self:center!important;
+        line-height:1!important;
+        font-size:18px!important;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-avatar img,
+      .wb-modal-mask#wb-pet-char-picker-mask .wb-pet-avatar img {
+        position:absolute!important;
+        inset:0!important;
+        width:100%!important;
+        height:100%!important;
+        max-width:100%!important;
+        max-height:100%!important;
+        object-fit:cover!important;
+        object-position:center!important;
+        display:block!important;
+        margin:0!important;
+        padding:0!important;
+        border:0!important;
+        transform:none!important;
+      }
+      .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-trial-avatar {
+        background:var(--wb-accent)!important;
+        color:var(--wb-on-accent)!important;
+        font-weight:1000!important;
+      }
+      .wb-modal-mask .wb-pet-info-stream {
+        box-sizing:border-box;
+        width:100%;
+        max-height:220px;
+        margin:8px 0 0;
+        padding:8px;
+        overflow:auto;
+        border:2px solid color-mix(in srgb,var(--wb-text) 62%,#000 38%);
+        background:var(--wb-input);
+        color:var(--wb-text);
+        font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;
+        white-space:pre-wrap;
+        word-break:break-all;
+      }
+      .wb-modal-mask .wb-pet-info-raw {
+        margin-top:8px;
+        color:var(--wb-text);
+      }
+      .wb-modal-mask .wb-pet-info-raw summary {
+        cursor:pointer;
+        font-weight:900;
+        color:var(--wb-accent);
+      }
+      .wb-modal-mask .wb-pet-manual {
+        font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive!important;
+        color:#31404a;
+        line-height:1.75;
+        letter-spacing:.2px;
+      }
+      .wb-modal-mask .wb-pet-manual,
+      .wb-modal-mask .wb-pet-manual * {
+        font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive!important;
+      }
+      .wb-modal-mask .wb-pet-manual h2 {
+        margin:4px 0 10px;
+        text-align:center;
+        color:#d56a52;
+        font-size:28px;
+        line-height:1.25;
+      }
+      .wb-modal-mask .wb-pet-manual h3 {
+        margin:16px 0 6px;
+        padding:3px 8px;
+        border:1px solid #9bc7ef;
+        background:rgba(236,247,255,.72);
+        color:#3f7fb5;
+        font-size:19px;
+        line-height:1.3;
+      }
+      .wb-modal-mask .wb-pet-manual p {
+        margin:5px 0;
+        font-size:16px;
+      }
+      .wb-modal-mask .wb-pet-manual ul {
+        margin:4px 0 8px 1.2em;
+        padding:0;
+      }
+      .wb-modal-mask .wb-pet-manual li {
+        margin:4px 0;
+        font-size:16px;
+      }
+      .wb-modal-mask .wb-pet-manual strong {
+        color:#be6a55;
+        font-weight:900;
+      }
+      .wb-modal-mask .wb-pet-manual code {
+        padding:1px 5px;
+        border:1px solid #d8bf87;
+        background:rgba(255,250,230,.75);
+        color:#7a5834;
+        font-family:'WanbanPetHandwrite','Comic Sans MS','KaiTi',cursive;
+      }
+      .wb-modal-mask .wb-pet-tutorial-modal,
+      .wb-modal-mask .wb-pet-tutorial-modal *,
+      .wb-modal-mask .wb-pet-note-page.wb-pet-manual,
+      .wb-modal-mask .wb-pet-note-page.wb-pet-manual * {
+        font-family:'WanbanPetHandwrite','STKaiti','KaiTi','KaiTi_GB2312','DFKai-SB','Comic Sans MS',cursive!important;
+      }
+      .wb-modal-mask .wb-pet-tutorial-modal .wb-pet-modal-title {
+        color:#fff8df!important;
+        font-size:24px;
+        text-shadow:1px 1px 0 rgba(86,64,39,.55),0 0 8px rgba(255,244,196,.35);
+      }
+      .wb-modal-mask .wb-pet-manual h2 {
+        font-size:31px;
+        transform:rotate(-.6deg);
+      }
+      .wb-modal-mask .wb-pet-manual h3 {
+        width:max-content;
+        max-width:100%;
+        border:0;
+        border-radius:8px 13px 7px 12px;
+        background:linear-gradient(104deg,rgba(130,205,255,.36),rgba(130,205,255,.66) 58%,rgba(130,205,255,.24));
+        box-shadow:0 2px 0 rgba(63,127,181,.16);
+        transform:rotate(-.35deg);
+      }
+      .wb-modal-mask .wb-pet-manual h3:nth-of-type(2n) {
+        background:linear-gradient(104deg,rgba(255,210,115,.28),rgba(255,210,115,.62) 58%,rgba(255,210,115,.22));
+        color:#a8692c;
+      }
+      .wb-modal-mask .wb-pet-manual h3:nth-of-type(3n) {
+        background:linear-gradient(104deg,rgba(255,151,164,.24),rgba(255,151,164,.56) 58%,rgba(255,151,164,.2));
+        color:#bd5f70;
+      }
+      .wb-modal-mask .wb-pet-manual strong {
+        position:relative;
+        z-index:0;
+        display:inline;
+        padding:0 4px 1px;
+        color:#68472d!important;
+        font-weight:1000;
+      }
+      .wb-modal-mask .wb-pet-manual strong:before {
+        content:'';
+        position:absolute;
+        z-index:-1;
+        left:0;
+        right:0;
+        bottom:.05em;
+        height:.72em;
+        border-radius:9px 12px 8px 10px;
+        background:rgba(255,221,94,.55);
+        transform:rotate(-1deg);
+      }
+      .wb-modal-mask .wb-pet-manual li:nth-child(3n+1) strong:before,
+      .wb-modal-mask .wb-pet-manual p:nth-of-type(3n+1) strong:before {
+        background:rgba(141,210,255,.5);
+      }
+      .wb-modal-mask .wb-pet-manual li:nth-child(3n+2) strong:before,
+      .wb-modal-mask .wb-pet-manual p:nth-of-type(3n+2) strong:before {
+        background:rgba(255,163,178,.45);
+      }
+      .wb-modal-mask .wb-pet-manual .wb-pet-mark {
+        display:inline;
+        padding:0 5px 1px;
+        border-radius:9px 12px 8px 10px;
+        background:linear-gradient(transparent 36%, rgba(255,221,94,.62) 37%);
+        color:#5f4328;
+        font-weight:1000;
+        box-decoration-break:clone;
+        -webkit-box-decoration-break:clone;
+      }
+      .wb-modal-mask .wb-pet-manual .wb-pet-mark.blue {
+        background:linear-gradient(transparent 36%, rgba(141,210,255,.58) 37%);
+        color:#2f638d;
+      }
+      .wb-modal-mask .wb-pet-manual .wb-pet-mark.pink {
+        background:linear-gradient(transparent 36%, rgba(255,163,178,.52) 37%);
+        color:#9a4d5b;
+      }
+      .wb-modal-mask .wb-pet-manual .wb-pet-mark.green {
+        background:linear-gradient(transparent 36%, rgba(152,214,197,.58) 37%);
+        color:#3d7766;
+      }
+      .wb-modal-mask .wb-pet-stage-tip-title,
+      .wb-modal-mask .wb-pet-stage-tip-box {
+        font-family:'WanbanPetHandwrite','STKaiti','KaiTi','KaiTi_GB2312','DFKai-SB','Comic Sans MS',cursive!important;
+      }
+      .wb-modal-mask .wb-pet-stage-tip-box {
+        background:linear-gradient(135deg,rgba(255,246,218,.98),rgba(255,255,255,.82)),repeating-linear-gradient(0deg,transparent 0 25px,rgba(190,106,85,.12) 26px);
+      }
+
+      @media (max-width:768px){
+        .wb-modal-mask#wb-pet-log-mask .wb-pet-modal,
+        .wb-modal-mask#wb-pet-records-mask .wb-pet-modal,
+        .wb-modal-mask#wb-pet-caretaker-mask .wb-pet-modal,
+        .wb-modal-mask#wb-pet-char-picker-mask .wb-pet-modal,
+        .wb-modal-mask#wb-pet-adoption-mask .wb-pet-modal{
+          width:calc(100vw - 12px)!important;
+          max-width:calc(100vw - 12px)!important;
+          height:calc(100dvh - 18px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;
+          max-height:calc(100dvh - 18px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;
+          border:3px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%)!important;
+          box-sizing:border-box;
+        }
+        .wb-modal-mask .wb-pet-adopt-grid{grid-template-columns:1fr;gap:8px}.wb-modal-mask .wb-pet-egg-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.wb-modal-mask .wb-pet-egg-choice{min-height:68px}.wb-modal-mask .wb-pet-egg-choice img{width:34px;height:34px}
+      }
+    `;
+    doc.head.appendChild(style);
+  }
+  function petRenderText(text, info, state) {
+    return String(text || '')
+      .replace(/\{\{user\}\}/g, petPlayerName(state))
+      .replace(/\{\{char\}\}/g, petCharName())
+      .replace(/江维/g, petCharName())
+      .replace(/小黑/g, info?.pet_card?.pet_name || '宠物');
+  }
+  function petInlineHTML(text) {
+    return esc(text).replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  }
+  function petRpgLineHTML(line, info, state) {
+    const speaker = line.speaker || '旁白';
+    const isNarrator = speaker === '旁白' || petSpeakerClass(speaker) === 'speaker-narrator';
+    const name = petSpeakerName(speaker, info, state);
+    return '<div class="wb-pet-rpg-line ' + petSpeakerClass(speaker) + '">' + (isNarrator ? '' : '<span class="wb-pet-rpg-speaker">' + esc(name) + '</span>') + '<span class="wb-pet-rpg-text">' + petInlineHTML(petRenderText(line.text || '', info)) + '</span></div>';
+  }
+  function petStoryForPending(info, state, id) {
+    if (/^S/.test(id)) return info.sideById[id] || null;
+    return getPetMainStory(info, id, state.route);
+  }
+  function petNextPendingStoryId(info, state) {
+    const dismissed = new Set((state && state.dismissedStories) || []);
+    return ((state && state.pendingStories) || []).filter(id => !dismissed.has(id) && petStoryForPending(info, state, id))[0] || '';
+  }
+  function petAllowedLocations(state) {
+    const stage = state && state.stage;
+    if (stage === 'egg') return ['home'];
+    if (stage === 'juvenile') return ['home', 'outside'];
+    return ['home', 'outside', 'garden'];
+  }
+  function petLocationUnlocked(state, loc) {
+    return petAllowedLocations(state).includes(loc);
+  }
+  function petNormalizeLocation(state) {
+    if (!petLocationUnlocked(state, state.location)) return Object.assign({}, state, { location:'home' });
+    return state;
+  }
+  function petSpeakerName(speaker, info, state) {
+    const sp = String(speaker || '').toLowerCase();
+    if (speaker === 'U' || sp === 'user' || speaker === '{{user}}') return petPlayerName();
+    if (speaker === 'C' || sp === 'char' || speaker === '{{char}}') return petCharName();
+    if (speaker === 'P' || sp === 'pet' || speaker === '宠物') return (state && state.stage === 'egg') ? '???' : (info?.pet_card?.pet_name || '宠物');
+    if (speaker === '沈') return '沈栖白';
+    return speaker || '旁白';
+  }
+
+  function petStoryMeasureWidth(doc) {
+    const dialogue = qs('#wb-pet-dialogue', doc);
+    const dialogueRect = dialogue && dialogue.getBoundingClientRect ? dialogue.getBoundingClientRect() : null;
+    if (dialogueRect && dialogueRect.width > 40) return Math.max(120, dialogueRect.width - 24);
+    const room = qs('#wb-pet-room', doc) || qs('#' + POPUP_ID, doc);
+    const roomRect = room && room.getBoundingClientRect ? room.getBoundingClientRect() : null;
+    return Math.max(180, Math.min(760, (roomRect && roomRect.width ? roomRect.width : 360) - 32));
+  }
+  function petMeasuredStoryLinePages(text, className) {
+    const raw = String(text || '');
+    if (!raw) return [''];
+    const doc = getHostDocument();
+    if (!doc || !doc.body) return [raw];
+    const source = qs('#wb-pet-dialogue .wb-pet-dialogue-text', doc);
+    const probe = doc.createElement('div');
+    probe.className = 'wb-pet-dialogue-text ' + (className || '');
+    probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;z-index:-1;visibility:hidden;pointer-events:none;box-sizing:border-box;display:block!important;max-height:none!important;height:auto!important;-webkit-line-clamp:unset!important;-webkit-box-orient:initial!important;white-space:normal!important;word-break:break-all!important;overflow-wrap:anywhere!important;overflow:visible!important;padding:0!important;border:0!important;margin:0!important;';
+    probe.style.width = petStoryMeasureWidth(doc) + 'px';
+    if (source && doc.defaultView) {
+      const cs = doc.defaultView.getComputedStyle(source);
+      ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','lineHeight','textTransform'].forEach(prop => { probe.style[prop] = cs[prop]; });
+    } else {
+      probe.style.fontSize = '13px';
+      probe.style.fontWeight = '800';
+      probe.style.lineHeight = '1.45';
+    }
+    doc.body.appendChild(probe);
+    const cs = doc.defaultView ? doc.defaultView.getComputedStyle(probe) : null;
+    const fontSize = cs ? parseFloat(cs.fontSize) || 13 : 13;
+    const lineHeight = cs ? parseFloat(cs.lineHeight) || fontSize * 1.45 : fontSize * 1.45;
+    const maxHeight = lineHeight * 2 + 4;
+    const fits = chunk => {
+      probe.textContent = chunk || '';
+      const h = probe.getBoundingClientRect ? probe.getBoundingClientRect().height : probe.scrollHeight;
+      return h <= maxHeight;
+    };
+    const pages = [];
+    let start = 0;
+    while (start < raw.length) {
+      let lo = 1, hi = raw.length - start, best = 1;
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (fits(raw.slice(start, start + mid))) { best = mid; lo = mid + 1; }
+        else hi = mid - 1;
+      }
+      let end = start + best;
+      if (end < raw.length && best > 14) end = start + Math.max(1, best - 2);
+      while (end < raw.length && /[，。！？、；：,.!?;:）】』」》]/.test(raw[end]) && fits(raw.slice(start, end + 1))) end++;
+      pages.push(raw.slice(start, end));
+      start = end;
+      while (start < raw.length && /\s/.test(raw[start])) start++;
+    }
+    probe.remove();
+    return pages.length ? pages : [''];
+  }
+  function petStoryLineAt(info, state, active) {
+    const story = active && active.id ? petStoryForPending(info, state, active.id) : null;
+    const lines = story?.lines?.length ? story.lines : parsePetStoryLines(story?.story || '');
+    const index = Math.max(0, Math.min(Math.max(0, lines.length - 1), Number(active?.index || 0)));
+    const line = lines[index] || { speaker:'旁白', text:story?.summary || '' };
+    const speaker = line.speaker || '旁白';
+    const pages = petMeasuredStoryLinePages(petRenderText(line.text || '', info, state), (speaker === '旁白' || petSpeakerClass(speaker) === 'speaker-narrator') ? 'narrator' : '');
+    const page = Math.max(0, Math.min(pages.length - 1, Number(active?.page || 0)));
+    return { story, lines, index, line:Object.assign({}, line, { text:pages[page] }), page, pages };
+  }
+  function petStoryPreviewState(state) {
+    const active = state && state.activeStory;
+    if (!active || !active.id || active.prompt) return state;
+    const next = Object.assign({}, state);
+    if (active.id === 'M05' && next.stage === 'egg') next.stage = 'juvenile';
+    if (active.id === 'M08' && next.stage === 'juvenile') next.stage = 'adult';
+    if (active.id === 'M12') next.stage = 'spirit';
+    if (active.id === 'M13') next.stage = 'ordinary';
+    return next;
+  }
+  function petDialogueHTML(info, state, charLine) {
+    const active = state.activeStory || null;
+    if (active && active.id) {
+      const story = petStoryForPending(info, state, active.id);
+      if (story) {
+        if (active.prompt) {
+          return '<div class="wb-pet-dialogue-name">触发' + (/^S/.test(active.id) ? '支线剧情' : '主线剧情') + ' · ' + esc(petRenderText(story.title || active.id, info, state)) + '</div>'
+            + '<div class="wb-pet-dialogue-text">' + petInlineHTML(petRenderText(story.summary || '有新的剧情可以体验。', info, state)) + '</div>'
+            + '<div class="wb-pet-dialogue-actions"></div>';
+        }
+        if (active.done) return '<div class="wb-pet-dialogue-text narrator wb-pet-story-done">当前剧情已完成，点击回到小屋</div><div class="wb-pet-dialogue-actions"></div>';
+        const view = petStoryLineAt(info, state, active);
+        const line = view.line;
+        const speaker = line.speaker || '旁白';
+        return (speaker === '旁白' || petSpeakerClass(speaker) === 'speaker-narrator' ? '' : '<div class="wb-pet-dialogue-name ' + petSpeakerClass(speaker) + '">' + esc(petSpeakerName(speaker, info, state)) + '</div>')
+          + '<div class="wb-pet-dialogue-text ' + (speaker === '旁白' || petSpeakerClass(speaker) === 'speaker-narrator' ? 'narrator' : '') + '" data-raw="' + esc(line.text || '') + '">' + petInlineHTML(line.text || '') + '</div>'
+          + '<div class="wb-pet-dialogue-actions"></div>';
+      }
+    }
+    return '<div class="wb-pet-dialogue-name">' + esc(petCharName()) + '</div><div class="wb-pet-dialogue-text">' + petInlineHTML(petRenderText(charLine || '', info, state)) + '</div><div class="wb-pet-dialogue-actions"></div>';
+  }
+  function petActiveStoryLine(info, state) {
+    const active = state && state.activeStory;
+    if (!active || !active.id || active.prompt) return null;
+    if (active.done) return null;
+    return petStoryLineAt(info, state, active).line || null;
+  }
+  function petLocationName(loc) {
+    return ({ home:'小屋', outside:'小院', garden:'花园' })[loc] || '小屋';
+  }
+  function petBehaviorName(behavior) {
+    return ({ feed:'喂食', pet:'抚摸', poke:'戳戳', outing:'遛弯', play:'玩游戏', sleep:'睡觉' })[behavior] || behavior || '互动';
+  }
+  function petStoryTriggerText(item, info) {
+    const id = item && item.id;
+    const side = id && info && info.sideById ? info.sideById[id] : null;
+    const trigger = side && side.trigger ? side.trigger : null;
+    if (!trigger) return '';
+    const context = trigger.context_type === 'time'
+      ? (trigger.context_value === 'night' ? '夜间' : (trigger.context_value === 'day' ? '日间' : trigger.context_value))
+      : (trigger.context_type === 'location' ? petLocationName(trigger.context_value) : (trigger.stage ? petDisplayStage({ stage:trigger.stage }) : '任意'));
+    return [context, petBehaviorName(trigger.behavior)].filter(Boolean).join(' / ');
+  }
+  function petNextLocation(state) {
+    const arr = petAllowedLocations(state);
+    const idx = Math.max(0, arr.indexOf(state.location || 'home'));
+    return arr[(idx + 1) % arr.length] || 'home';
+  }
+  function petTimeHM(ts) {
+    const n = Number(ts || 0);
+    if (!n) return '';
+    const d = new Date(n);
+    if (Number.isNaN(d.getTime())) return '';
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function petDateCN(dateKey) {
+    const d = String(dateKey || todayKey()).split('-');
+    return d.length >= 3 ? d[0] + '.' + d[1] + '.' + d[2] : String(dateKey || '');
+  }
+  function petMiniConfirm(title, message, onConfirm, onCancel) {
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.innerHTML = '<div class="wb-modal wb-mini-modal wb-pet-modal"><div class="wb-pet-modal-head"><div class="wb-pet-modal-title">' + esc(title) + '</div></div><div class="wb-api-status">' + esc(message) + '</div><div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-mini-ok" style="flex:1;">是</button><button class="wb-btn" id="wb-pet-mini-cancel" style="flex:1;">返回</button></div></div>';
+    appendModalMask(mask);
+    qs('#wb-pet-mini-ok', mask).onclick = () => { mask.remove(); if (onConfirm) onConfirm(); };
+    qs('#wb-pet-mini-cancel', mask).onclick = () => { mask.remove(); if (onCancel) onCancel(); };
+  }
+  function openPetHatchPrompt(info) {
+    const state = petTestState();
+    if (state.stage !== 'egg' || Number(state.growth || 0) < petStageCap('egg') || state.hatchingDone || state.hatchingOpen) return;
+    const next = Object.assign({}, state, { hatchingOpen:true });
+    savePetTestState(next);
+    petMiniConfirm('破壳啦', '蛋壳里传来了很轻的敲击声。点击确定，迎接当前的动物。', () => {
+      const doc = getHostDocument();
+      const flash = doc.createElement('div');
+      flash.className = 'wb-pet-hatch-flash';
+      doc.body.appendChild(flash);
+      setTimeout(() => {
+        const latest = petTestState();
+        const eggStoryIds = ['M02','M03','M04'];
+        const hatched = Object.assign({}, latest, {
+          hatchingOpen:false,
+          hatchingDone:true,
+          activeStory:{ id:'M05', prompt:false, index:0, page:0, done:false },
+          pendingStories:Array.from(new Set([].concat((latest.pendingStories || []).filter(x => !eggStoryIds.includes(x)), 'M05'))),
+          completedMain:Array.from(new Set([].concat(latest.completedMain || [], eggStoryIds)))
+        });
+        savePetTestState(updatePetPendingStories(hatched, info));
+        renderPetHouse();
+        setTimeout(() => flash.remove(), 420);
+      }, 260);
+    }, () => {
+      const latest = petTestState();
+      savePetTestState(Object.assign({}, latest, { hatchingOpen:false }));
+    });
+  }
+  function petLogPageHTML(log, state, info) {
+    if (!log) return '';
+    const currentState = log?.snapshot ? petSnapshotState(log.snapshot) : (state || petTestState());
+    const displayDate = log?.date || todayKey();
+    const displayStage = log?.pet_stage || petDisplayStage(currentState);
+    const displayName = log?.pet_name || info?.pet_card?.pet_name || '宠物';
+    const title = log?.title || (petDateCN(displayDate) + ' 灵息日志');
+    const body = String(log?.body || log?.diary || '').trim();
+    const lines = body ? body.split(/\n+/).map(x => x.trim()).filter(Boolean) : [];
+    const tags = Array.isArray(log?.tags) ? log.tags : String(log?.tags || '').split(/[,，、\s]+/).filter(Boolean);
+    const tagHtml = (tags.length ? tags : ['日常', displayStage, '灵息小窝']).slice(0, 6).map(x => '<span class="wb-pet-note-tag"># ' + esc(x) + '</span>').join('');
+    return '<article class="wb-pet-note-page wb-pet-diary-page">'
+      + '<div class="wb-pet-diary-cover"><div class="wb-pet-diary-meta"><span>日期 <b>' + esc(petDateCN(displayDate)) + '</b></span><span>宠物名称 <b>' + esc(displayName) + '</b></span><span>宠物形态 <b>' + esc(displayStage) + '</b></span></div></div>'
+      + '<div class="wb-pet-note-tags">' + tagHtml + '</div>'
+      + '<div class="wb-pet-diary-two"><div><em>我们的关系</em><span>' + esc(log?.relationship_delta || '今天的陪伴让你们和宠物更靠近了一点。') + '</span></div><div><em>特别记忆存档</em><span>' + esc(log?.memory_anchor || '小屋里留下了一件值得以后想起的小事。') + '</span></div></div>'
+      + '<h2 class="wb-pet-diary-title">' + esc(title) + '</h2>'
+      + '<div class="wb-pet-diary-body">' + (lines.length ? lines.map(x => '<p>' + esc(x) + '</p>').join('') : '<p></p><p></p><p></p>') + '</div>'
+      + '</article>';
+  }
+  function petDailyInteractionText(state, today) {
+    const day = (state.days || {})[today] || {};
+    return [
+      '日期：' + petDateCN(today),
+      '喂食次数：' + (day.feed || 0),
+      '抚摸次数：' + (day.pet || 0),
+      '戳戳次数：' + (day.poke || 0),
+      '遛弯/桌宠计时段：' + (day.outing || 0),
+      '玩游戏次数：' + (day.play || 0),
+      '成长值：' + petGrowthPercent(state) + '%',
+      state.stage === 'egg' ? '蛋形态：无饱食度和开心值。' : ('饱食度：' + Math.round(state.fullness || 0) + '；开心值：' + Math.round(state.happiness || 0))
+    ].join('\n');
+  }
+  function petTodayStoryText(state, info, today) {
+    const arr = (state.storyRecords || []).filter(x => (x.date || '') === today);
+    if (!arr.length) return '今天没有保存的新剧情。';
+    return arr.map(x => '《' + petRenderText(x.title || x.id, info, state) + '》\n类型：' + (/^S/.test(x.id || '') ? '支线剧情' : '主线剧情') + '\n摘要：' + petRenderText(x.summary || '', info, state) + '\n正文：\n' + petRenderText(x.story || '', info, state)).join('\n\n---\n\n');
+  }
+  function normalizePetLogData(raw, today) {
+    if (!raw) return parsePetGeneratedLog('', today);
+    try {
+      const obj = parseGeneratedJson(raw);
+      if (obj && typeof obj === 'object') return {
+        date:today,
+        pet_name:String(obj.pet_name || '').trim(),
+        pet_stage:String(obj.pet_stage || '').trim(),
+        title:String(obj.title || '').trim() || (petDateCN(today) + ' 灵息日志'),
+        tags:Array.isArray(obj.tags) ? obj.tags.map(String).filter(Boolean) : String(obj.tags || '').split(/[,，、\s]+/).filter(Boolean),
+        relationship_delta:String(obj.relationship_delta || '').trim(),
+        memory_anchor:String(obj.memory_anchor || '').trim(),
+        body:String(obj.diary || obj.body || '').trim()
+      };
+    } catch(e) {}
+    return parsePetGeneratedLog(raw, today);
+  }
+  async function petAssetText(path, fallback) {
+    try {
+      const res = await fetch(PET_ASSET_BASE + 'text/' + path, { cache:'no-store' });
+      if (res.ok) return await res.text();
+    } catch(e) {}
+    return fallback || '';
+  }
+  async function generatePetFullInfo(caretaker, form, onDelta) {
+    const api = apiFieldsFromPresetIndex(form.api_preset_index);
+    const cfg = Object.assign({}, petCaretakerPromptConfig(caretaker), api);
+    if (!cfg.apiUrl || !cfg.apiModel) throw new Error('请先在设置中配置API和模型');
+    const world = await petAssetText('world.txt', '');
+    const infoPrompt = await petAssetText('info.txt', '');
+    const cycle = Number(form.adoption_cycle || petFullAdoptionCycle(caretaker));
+    const input = [
+      'pet_name_candidates:',
+      '  male: ' + (form.male_name || '小星'),
+      '  female: ' + (form.female_name || '小月'),
+      'egg_options: [blue, purple, pink, green, gold, white]',
+      'selected_egg: ' + (form.selected_egg || 'green'),
+      'wish_mode: ' + (!!form.wish_mode),
+      'wish_species: ' + (form.wish_species || 'random'),
+      'wish_sex: ' + (form.wish_sex || 'random'),
+      'wish_tendency: ' + (form.wish_tendency || 'random'),
+      'narrative_person: second',
+      'adoption_cycle: ' + cycle,
+      'user_name: ' + (form.user_name || petPlayerName(petTestState())),
+      'char_name: ' + (caretaker?.name || petCharName()),
+      'previous_pet_memories: |-',
+      String(cycle > 1 ? petFullAllLogsText(caretaker) : '无').split('\n').map(x => '  ' + x).join('\n')
+    ].join('\n');
+    const prompt = [
+      (cfg.breakLimitPrompt || '').trim(),
+      specialLanguageRequirement('petInfo', cfg),
+      '【module0-module1 世界规则】\n' + world,
+      '【当前{{char}}世界观全部信息】\n' + (caretaker?.worldText || selectedWorldText(cfg) || '无'),
+      '【当前角色描述】\n' + currentCharDescription(cfg),
+      '【当前{{user}}设定】\n' + currentUserDescription(cfg),
+      '【当前语言/风格要求】\n' + (cfg.specialLanguageEnabled ? (cfg.specialLanguage || '已开启') : '无'),
+      '【界面输入内容】\n' + input,
+      '【info生成规范】\n' + infoPrompt
+    ].filter(Boolean).join('\n\n');
+    const raw = onDelta
+      ? await callApiTextStream(cfg, prompt, '你是灵息宠物系统素材生成器。只输出合法的<pet_info> YAML，不要解释。', 16000, onDelta)
+      : await callApiText(cfg, prompt, '你是灵息宠物系统素材生成器。只输出合法的<pet_info> YAML，不要解释。', 16000);
+    const parsed = parsePetInfoText(raw);
+    if ((parsed.parseWarnings || []).length || !parsed.pet_card?.pet_name || parsed.main_story.length < 15 || parsed.side_story.length < 6) {
+      const err = new Error('info解析失败：' + ((parsed.parseWarnings || []).join('；') || '字段数量不足'));
+      err.raw = raw;
+      err.parsed = parsed;
+      throw err;
+    }
+    return { raw, parsed };
+  }
+
+  async function petLogPromptText() {
+    try {
+      const res = await fetch(PET_ASSET_BASE + 'text/log.txt', { cache:'no-store' });
+      if (res.ok) return await res.text();
+    } catch(e) {}
+    return '你需要根据输入内容，生成一篇由 {{char}} 亲自记录的每日宠物日志。只输出JSON。';
+  }
+  async function generatePetDailyLog(info, state, note, cfgOverride, dateKeyOverride) {
+    const cfg = cfgOverride || settings();
+    const today = dateKeyOverride || todayKey();
+    const fallback = parsePetGeneratedLog('<daily_pet_log>\npet_name: "' + (info?.pet_card?.pet_name || '宠物') + '"\npet_stage: "' + petDisplayStage(state) + '"\ntitle: "' + petDateCN(today) + ' 的小屋微光"\nrelationship_delta: "今天的照顾让彼此更熟悉了一点"\nmemory_anchor: "' + (note || '小动物在小屋里留下了很轻的脚步声') + '"\ndiary: |-\n  ' + petDailyInteractionText(state, today).replace(/\n/g, '。') + (note ? '。额外记录：' + note : '') + '\n</daily_pet_log>', today);
+    if (!cfg.apiUrl || !cfg.apiModel) return fallback;
+    const basePrompt = await petLogPromptText();
+    const prompt = [
+      (cfg.breakLimitPrompt || '').trim(),
+      specialLanguageRequirement('petLog', cfg),
+      basePrompt,
+      '请只输出JSON，不要Markdown，不要解释。JSON结构：{"pet_name":"","pet_stage":"","title":"8-14字标题","tags":["标签1","标签2","标签3"],"relationship_delta":"一句话说明今天{{user}}、{{char}}与宠物的关系变化","memory_anchor":"一句话记录今天最值得以后回忆的小细节","diary":"450-650字正文"}',
+      '当前日期：' + petDateCN(today),
+      '饲养员/角色：' + (cfg.charName || petCharName()),
+      '用户：' + petPlayerName(state),
+      '用户设定：\n' + currentUserDescription(cfg),
+      '语言/风格要求：\n' + (cfg.specialLanguageEnabled ? (cfg.specialLanguage || '已开启') : '无'),
+      '宠物名称：' + (info?.pet_card?.pet_name || '宠物'),
+      '宠物阶段：' + petDisplayStage(state),
+      '宠物名片：\n' + petCardPromptText(info, state),
+      '当前世界观：\n' + (selectedWorldText(cfg) || '无'),
+      '角色描述：\n' + currentCharDescription(cfg),
+      '大总结：\n' + (selectedSummaryText(cfg) || '无'),
+      '今天全部互动：\n' + petDailyInteractionText(state, today),
+      '今天全部剧情内容：\n' + petTodayStoryText(state, info, today),
+      '用户补充做了什么：\n' + (note || '无')
+    ].filter(Boolean).join('\n\n');
+    const raw = await callApiText(cfg, prompt, '你是宠物陪伴游戏的日志写作助手。必须只输出可解析JSON。', 4096);
+    const data = normalizePetLogData(raw, today);
+    return data.body ? data : fallback;
+  }
+  function petDayHasAutoLogRecord(day) {
+    if (!day || day.adopted) return false;
+    return ['feed','pet','poke','outing','play','growth','cheat'].some(k => Number(day[k] || 0) > 0)
+      || !!day.visited
+      || !!day.snapshot;
+  }
+  function maybeAutoGeneratePreviousPetLog(info, state) {
+    const cfg = petCaretakerPromptConfig();
+    if (!settings().petAutoDailyLog || !cfg.apiUrl || !cfg.apiModel) return;
+    const date = offsetDateKey(todayKey(), -1);
+    const day = (state.days || {})[date];
+    if (!petDayHasAutoLogRecord(day) || (state.logs || {})[date]) return;
+    const key = (petFullActivePet()?.id || 'trial') + ':' + date;
+    if (petAutoDailyLogRunning[key]) return;
+    petAutoDailyLogRunning[key] = true;
+    generatePetDailyLog(info, state, '每日自动记录日志。', cfg, date).then(log => {
+      const latest = petTestState();
+      if ((latest.logs || {})[date]) return;
+      latest.logs = Object.assign({}, latest.logs || {}, { [date]:Object.assign({}, log, {
+        savedAt:Date.now(),
+        auto:true,
+        date,
+        pet_name:info?.pet_card?.pet_name || log?.pet_name || '宠物',
+        pet_stage:petDisplayStage(latest),
+        snapshot:day.snapshot || petSnapshotData(latest)
+      }) });
+      savePetTestState(latest);
+      toast('已自动记录昨日宠物日志');
+    }).catch(e => {
+      console.warn('[玩伴小屋] auto pet log failed:', e);
+    }).finally(() => {
+      delete petAutoDailyLogRunning[key];
+    });
+  }
+  function petStoryPageHTML(item, info, state) {
+    const lines = parsePetStoryLines(item?.story || '').map(line => {
+      const speaker = line.speaker || '旁白';
+      if (speaker === '旁白') return '<p class="narrator">' + petInlineHTML(petRenderText(line.text, info, state)) + '</p>';
+      return '<div class="wb-pet-rpg-line ' + petSpeakerClass(speaker) + '"><span class="wb-pet-rpg-speaker">' + esc(petSpeakerName(speaker, info, state)) + '</span><span class="wb-pet-rpg-text">' + petInlineHTML(petRenderText(line.text, info, state)) + '</span></div>';
+    }).join('');
+    const isSide = /^S/.test(item?.id || '');
+    const type = isSide ? '支线剧情' : '主线剧情';
+    const triggerText = isSide ? petStoryTriggerText(item, info) : '';
+    const meta = '<span>时间：<b>' + esc(petDateCN(item?.date || todayKey())) + '</b></span>' + (triggerText ? '<span>触发条件：<b>' + esc(triggerText) + '</b></span>' : '');
+    return '<div class="wb-pet-story-page wb-pet-story-body"><div class="wb-pet-story-head"><div class="wb-pet-story-type">' + type + '<button class="wb-btn wb-pet-story-replay" type="button" title="回放剧情" aria-label="回放剧情" data-story-id="' + esc(item?.id || '') + '">' + petUiIcon('replay') + '</button></div><div class="wb-pet-story-meta">' + meta + '</div></div><h2 class="wb-pet-story-title">' + esc(petRenderText(item?.title || '剧情', info, state)) + '</h2><div class="wb-pet-story-summary">' + esc(petRenderText(item?.summary || '', info, state)) + '</div><div class="wb-pet-story-lines">' + lines + '</div></div>';
+  }
+
+  function petEggDisplayName(egg) {
+    const map = { gold:'金色蛋', white:'白色蛋', black:'黑色蛋', blue:'蓝色蛋', pink:'粉色蛋' };
+    return map[String(egg || '').toLowerCase()] || (egg ? String(egg) + '蛋' : '???');
+  }
+  function petSpeciesName(species) {
+    return ({ rabbit:'兔子', cat:'猫', dog:'小狗', bird:'鸟', fox:'狐狸', bala:'巴拉' })[String(species || '').toLowerCase()] || species || '???';
+  }
+  function petSexName(sex) {
+    return ({ male:'男孩子', female:'女孩子', unknown:'未知' })[String(sex || '').toLowerCase()] || sex || '???';
+  }
+  function petProfileValue(value, unlocked) {
+    return unlocked && value ? esc(value) : '<span class="wb-pet-profile-lock">???</span>';
+  }
+  function openPetProfileCard(info) {
+    injectPetArcadeStyle();
+    const state = petTestState();
+    const card = info?.pet_card || {};
+    const isEgg = state.stage === 'egg';
+    const hasSpirit = state.stage === 'spirit';
+    const n = Number(state.adoptionCycle || card.adoption_cycle || 0) || ((state.archives || []).length + 1);
+    const name = isEgg ? ('蛋（' + petEggDisplayName(card.egg) + '）') : (card.pet_name || '宠物');
+    const shape = isEgg ? '' : petDisplayStage(state);
+    const spirit = String(card.spirit_tendency_skill || '').split('|').filter(Boolean).join(' / ');
+    const doc = getHostDocument();
+    const old = qs('#wb-pet-profile-mask', doc); if (old) old.remove();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-profile-mask';
+    const item = (label, value, wide) => '<div class="wb-pet-profile-item' + (wide ? ' wide' : '') + '"><em>' + esc(label) + '</em><strong>' + value + '</strong></div>';
+    mask.innerHTML = '<div class="wb-modal wb-pet-modal wb-mini-modal"><div class="wb-pet-profile-card">'
+      + '<div class="wb-pet-profile-top"><div class="wb-pet-profile-title"><b>灵息宠物名片</b><span>' + esc(petCharName()) + '的小屋收藏档案</span></div><div class="wb-pet-profile-photo">' + petAssetHTML(state, state.petAction || 'normal') + '</div></div>'
+      + '<div class="wb-pet-profile-grid">'
+      + item('宠物品种', petProfileValue(petSpeciesName(card.species), !isEgg), false)
+      + item('姓名', esc(name), false)
+      + item('形态', petProfileValue(shape, !isEgg), false)
+      + item('性别', petProfileValue(petSexName(card.sex), !isEgg), false)
+      + item('性格', petProfileValue(String(card.personality || '').split('|').join(' / '), !isEgg), true)
+      + item('灵息', petProfileValue(spirit, hasSpirit), true)
+      + item('收养人', esc(petPlayerName(state)) + ' & ' + esc(petCharName()), true)
+      + '<div class="wb-pet-profile-item wide"><em>小屋编号</em><strong>这是我们的第 <span class="wb-pet-profile-num">' + esc(n) + '</span> 个宠物</strong></div>'
+      + '</div><div class="wb-pet-profile-actions"><button class="wb-btn primary" id="wb-pet-profile-close">收好名片</button></div>'
+      + '</div></div>';
+    appendModalMask(mask);
+    qs('#wb-pet-profile-close', mask).onclick = () => mask.remove();
   }
 
   function renderPetHouse() {
     syncPopupModeClass();
+    injectPetArcadeStyle();
+    if (settings().petDesktopEnabled) {
+      savePetTestState(applyPetVisitAndDecay(petTestState()));
+      setSettings({ petDesktopEnabled:false, petDesktopState:'normal', petForm:petCurrentForm() });
+      syncFloatingBall();
+    }
     const body = qs('#wb-body');
-    const state = 'normal';
-    setSettings({ petDesktopState: state, petForm:petCurrentForm() });
-    body.className = 'wb-body wb-intimacy-mode';
-    body.innerHTML = '<div class="wb-pet-room" id="wb-pet-room"><div class="wb-pet-trial-note">当前为测试界面，正式版还在施工中</div>'
-      + '<div class="wb-pet-room-top"><div class="wb-pet-room-title">小狐狸的小屋</div><button class="wb-btn primary" id="wb-pet-walk">出来溜溜</button></div>'
-      + '<div class="wb-pet-scene" style="background-image:url(' + esc(FOX_HOUSE_DAY_URL) + ')">'
-      + '<div class="wb-pet-speech">' + esc(petLineFor(state)) + '</div>'
-      + '<div class="wb-pet-room-fox">' + petSpriteHTML(state) + '</div>'
+    body.className = 'wb-body wb-intimacy-mode wb-pet-mode';
+    body.innerHTML = '<div class="wb-panel" style="display:grid;place-items:center;min-height:240px;">读取宠物试用版数据...</div>';
+    loadPetTestInfo().then(info => {
+      let state = petNormalizeLocation(applyPetVisitAndDecay(petTestState()));
+      state = updatePetPendingStories(state, info);
+      savePetTestState(state);
+      maybeAutoGeneratePreviousPetLog(info, state);
+      renderPetHouseLoaded(info, state);
+      setTimeout(() => {
+        if (petTestState().stage === 'egg' && Number(petTestState().growth || 0) >= petStageCap('egg')) openPetHatchPrompt(info);
+        else openNextPetStoryPrompt(info);
+      }, 80);
+    }).catch(e => {
+      console.error('[玩伴小屋] render pet house failed:', e);
+      const fallback = parsePetInfoText('');
+      fallback.parseWarnings.push('宠物界面加载失败，已进入本地预览：' + (e && e.message ? e.message : e));
+      try {
+        const state = petNormalizeLocation(applyPetVisitAndDecay(petTestState()));
+        renderPetHouseLoaded(fallback, state);
+      } catch (inner) {
+        console.error('[玩伴小屋] fallback render failed:', inner);
+        const body = qs('#wb-body');
+        if (body) body.innerHTML = '<div class="wb-panel" style="display:grid;gap:10px;place-items:center;min-height:240px;"><b>宠物界面读取失败</b><div class="wb-muted">' + esc(inner && inner.message ? inner.message : inner) + '</div><button class="wb-btn" id="wb-pet-retry">重试</button></div>';
+        const retry = qs('#wb-pet-retry'); if (retry) retry.onclick = renderPetHouse;
+      }
+    });
+  }
+  function renderPetHouseLoaded(info, state) {
+    const body = qs('#wb-body');
+    const renderState = petStoryPreviewState(state);
+    const storyMode = !!(state.activeStory && state.activeStory.id && !state.activeStory.prompt);
+    const petName = info?.pet_card?.pet_name || '宠物';
+    const activeLine = petActiveStoryLine(info, state);
+    const storyTalkAction = storyMode && activeLine && ['U','C','user','char','{{user}}','{{char}}'].includes(String(activeLine.speaker || '')) && Math.random() < .45 ? (Math.random() < .5 ? 'happy' : 'normal') : '';
+    const autoAction = storyMode ? '' : petAutoAction(renderState);
+    const action = storyTalkAction || autoAction || renderState.petAction || 'normal';
+    setSettings({ petDesktopState: action, petForm:petFormForStage(renderState) });
+    const pendingCount = (state.pendingStories || []).length;
+    const isEgg = renderState.stage === 'egg';
+    const isEnded = !!renderState.ended;
+    const canFeed = !isEgg && !renderState.ended;
+    const charLine = state.lastCharLine || (petCharName() + '看着' + petName + '，又看了看你，像是已经把照顾计划在心里排好了。');
+    const petLine = state.lastPetLine || '';
+    const showShen = activeLine && petSpeakerName(activeLine.speaker, info, state) === '沈栖白';
+    const warnings = (info.parseWarnings || []).length ? '<div class="wb-api-status">' + esc(info.parseWarnings.join('；')) + '</div>' : '';
+    const locName = petLocationName(state.location);
+    const cheatActionHTML = petRuntimeMode === 'test' ? '<button class="wb-btn wb-pet-iconbtn wb-pet-cheat-btn" id="wb-pet-cheat" title="开挂模式" aria-label="开挂模式">' + petUiIcon('coin') + '</button>' : '';
+    body.innerHTML = '<div class="wb-pet-room' + (storyMode ? ' story-mode' : '') + '" id="wb-pet-room">'
+      + '<div class="wb-pet-topbar"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-back" title="返回" aria-label="返回">' + petUiIcon('back') + '</button><div class="wb-pet-titlebox">' + petCharAvatarHTML() + '<span class="wb-pet-house-name">' + esc(petCharName()) + '的小屋</span><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretakers" title="选择饲养员" aria-label="选择饲养员">' + petUiIcon('down') + '</button></div><div class="wb-pet-top-actions"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-help" title="教程" aria-label="教程">' + petUiIcon('help') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-restart" title="重开" aria-label="重开">' + petUiIcon('restart') + '</button></div></div>'
+      + warnings
+      + '<div class="wb-pet-status-card">' + (storyMode ? '<div class="wb-pet-story-status">剧情模式中</div>' : (isEnded ? '<button class="wb-btn primary wb-pet-new-adoption" id="wb-pet-new-adoption" type="button">领养新的宠物</button>' : '<div class="wb-pet-status-head"><span class="wb-pet-status-identity"><b class="wb-pet-status-name">' + esc(petName) + '</b><b class="wb-pet-status-stage">' + esc(petDisplayStage(renderState)) + '</b><button class="wb-btn wb-pet-card-btn" id="wb-pet-card" title="宠物名片" aria-label="宠物名片">' + petUiIcon('card') + '</button></span><span class="wb-pet-status-place"><i>' + esc(locName) + '</i><i>' + esc(petTimeOfDay() === 'day' ? '白天' : '夜晚') + '</i></span></div><div class="wb-pet-bars' + (isEgg ? ' egg' : '') + '">' + petBarHTML('成长值', petGrowthPercent(renderState), '#43c96f') + (isEgg ? '' : petBarHTML('饱食度', renderState.fullness, '#ff9f43') + petBarHTML('开心值', renderState.happiness, '#ff6f91')) + '</div>')) + '</div>'
+      + '<div class="wb-pet-stage">'
+      + '<div class="wb-pet-scene" id="wb-pet-scene" style="background-image:url(' + esc(petSceneUrl(state)) + ')">'
+      + (!storyMode && !isEnded ? '<div class="wb-pet-scene-title">' + esc(locName) + '</div>' : '')
+      + (!storyMode && !isEnded && petLine ? '<div class="wb-pet-speech">' + esc(petLine) + '</div>' : '')
+      + (!storyMode && !isEnded ? '<div class="wb-pet-scene-drawer" id="wb-pet-scene-drawer"><div class="wb-pet-scene-menu"><button class="wb-btn wb-pet-scene-choice" data-loc="home"><span class="wb-pet-scene-thumb" style="background-image:url(' + esc(PET_ASSET_BASE + 'scene/home-' + petTimeOfDay() + '.png') + ')"></span>小屋</button><button class="wb-btn wb-pet-scene-choice ' + (petLocationUnlocked(state, 'outside') ? '' : 'locked') + '" data-loc="outside" data-locked="' + (petLocationUnlocked(state, 'outside') ? '0' : '1') + '"><span class="wb-pet-scene-thumb" style="background-image:url(' + esc(PET_ASSET_BASE + 'scene/outside-' + petTimeOfDay() + '.png') + ')"></span>小院</button><button class="wb-btn wb-pet-scene-choice ' + (petLocationUnlocked(state, 'garden') ? '' : 'locked') + '" data-loc="garden" data-locked="' + (petLocationUnlocked(state, 'garden') ? '0' : '1') + '"><span class="wb-pet-scene-thumb" style="background-image:url(' + esc(PET_ASSET_BASE + 'scene/garden-' + petTimeOfDay() + '.png') + ')"></span>花园</button></div><button class="wb-btn wb-pet-scene-toggle" id="wb-pet-scene-toggle" title="切换场景" aria-label="切换场景"><span class="wb-pet-scene-toggle-text"><i>切</i><i>换</i><i>场</i><i>景</i></span>' + petUiIcon('scene') + '</button></div>' : '')
+      + (!storyMode && !isEnded ? '<div class="wb-pet-scene-actions">' + (isEgg ? '<button class="wb-btn wb-pet-iconbtn" id="wb-pet-pat" title="抚摸" aria-label="抚摸">' + petUiIcon('pat') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-log" title="写日志" aria-label="写日志">' + petUiIcon('log') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-records" title="记录" aria-label="记录">' + petUiIcon('records') + '</button>' + cheatActionHTML + '' : '<button class="wb-btn wb-pet-iconbtn" id="wb-pet-walk" title="遛弯" aria-label="遛弯">' + petUiIcon('walk') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-feed" title="喂食" aria-label="喂食" ' + (canFeed ? '' : 'disabled') + '>' + petUiIcon('feed') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-pat" title="抚摸" aria-label="抚摸">' + petUiIcon('pat') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-log" title="写日志" aria-label="写日志">' + petUiIcon('log') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-records" title="记录" aria-label="记录">' + petUiIcon('records') + '</button>' + cheatActionHTML + '') + (state.endingReady && Number(state.growth || 0) >= petStageCap(state.stage) && !state.ended && !isEgg ? '<button class="wb-btn wb-pet-iconbtn primary" id="wb-pet-ending" title="进入结局" aria-label="进入结局">' + petUiIcon('ending') + '</button>' : '') + '</div>' : '')
+      + (!isEnded ? '<button class="wb-pet-room-fox' + (isEgg && state.lastPetLine ? ' egg-shake' : '') + '" id="wb-pet-poke" type="button" title="戳一戳" style="border:0;background:transparent;padding:0;box-shadow:none!important;">' + petAssetHTML(renderState, action) + '</button>' : '<div class="wb-pet-empty-stage">这段灵息旅程已经完成。</div>')
+      + (storyMode ? '<button class="wb-btn wb-pet-story-exit" id="wb-pet-story-exit" type="button">退出剧情</button>' : '')
+      + (showShen ? '<img class="wb-pet-npc-portrait" src="' + esc(PET_ASSET_BASE + 'scene/shenqibai.png') + '" alt="">' : '')
       + '</div>'
-      + '<div class="wb-pet-room-actions"><button class="wb-btn" id="wb-pet-feed">喂食</button><button class="wb-btn" id="wb-pet-pat">抚摸</button><button class="wb-btn" id="wb-pet-reset">重置</button><button class="wb-btn" id="wb-pet-back">返回</button></div>'
+      + '</div>'
+      + '<div class="wb-pet-dialogue" id="wb-pet-dialogue">' + petDialogueHTML(info, state, charLine) + '</div>'
       + '</div>';
     const room = qs('#wb-pet-room', body);
+    if (storyMode && !(state.activeStory && state.activeStory.done)) {
+      const textEl = qs('.wb-pet-dialogue-text', room);
+      if (textEl) {
+        const full = textEl.dataset.raw || textEl.textContent || '';
+        textEl.textContent = '';
+        let i = 0;
+        const timer = setInterval(() => {
+          i = Math.min(full.length, i + 3);
+          textEl.textContent = full.slice(0, i);
+          if (i >= full.length) { clearInterval(timer); textEl.innerHTML = petInlineHTML(full); }
+        }, 18);
+      }
+    }
     resetPetIdleTimer(room);
-    resetPetAnimationLoop(room, state === 'eat' || state === 'happy');
+    resetPetAnimationLoop(room, action === 'eat' || action === 'happy');
     const feed = qs('#wb-pet-feed', room);
     const pat = qs('#wb-pet-pat', room);
     const reset = qs('#wb-pet-reset', room);
     const back = qs('#wb-pet-back', room);
     const walk = qs('#wb-pet-walk', room);
-    if (feed) feed.onclick = () => petInteract(room, 'eat');
-    if (pat) pat.onclick = () => petInteract(room, 'happy');
-    if (reset) reset.onclick = () => showConfirm('重置小狐狸', '确定要把小狐狸重置回幼年形态吗？互动次数和成长形态会重新开始。', () => {
+    const runAction = (kind, spriteState) => {
+      let next = petApplyInteraction(kind);
+      const stage = next.stage === 'ordinary' ? 'adult' : next.stage;
+      const auto = petAutoAction(next);
+      const shownState = auto || spriteState;
+      next.petAction = shownState;
+      next.lastPetLine = next.stage === 'egg' && (kind === 'pet' || kind === 'poke') ? '......' : petQuote(info, 'pet', stage, kind === 'feed' ? 'feed' : (kind === 'pet' ? 'pet' : 'poke'), petLineFor(shownState));
+      next.lastCharLine = petQuote(info, 'char', stage === 'egg' ? 'egg' : stage, kind === 'feed' ? 'feed' : (kind === 'pet' ? 'pet' : 'poke'), '');
+      next = updatePetPendingStories(next, info);
+      savePetTestState(next);
+      renderPetHouseLoaded(info, next);
+      setTimeout(() => {
+        if (petTestState().stage === 'egg' && Number(petTestState().growth || 0) >= petStageCap('egg')) openPetHatchPrompt(info);
+        else openNextPetStoryPrompt(info);
+      }, 80);
+    };
+    if (feed) feed.onclick = () => runAction('feed', 'eat');
+    if (pat) pat.onclick = () => runAction('pet', 'happy');
+    const poke = qs('#wb-pet-poke', room); if (poke && !isEgg && !storyMode) poke.onclick = () => runAction('poke', 'normal');
+    qsa('[data-loc]', room).forEach(btn => btn.onclick = () => {
+      if (btn.dataset.locked === '1' || btn.classList.contains('locked')) { toast('当前未解锁，继续养宠物解锁场景吧！'); return; }
+      const next = Object.assign({}, petTestState(), { location:btn.dataset.loc });
+      savePetTestState(updatePetPendingStories(next, info));
+      renderPetHouse();
+    });
+    const recordsBtn = qs('#wb-pet-records', room); if (recordsBtn) recordsBtn.onclick = () => openPetRecords(info);
+    const cheatBtn = qs('#wb-pet-cheat', room); if (cheatBtn) cheatBtn.onclick = () => {
+      const next = petApplyCheatGrowth(5);
+      renderPetHouseLoaded(info, next);
+      setTimeout(() => {
+        if (petTestState().stage === 'egg' && Number(petTestState().growth || 0) >= petStageCap('egg')) openPetHatchPrompt(info);
+        else openNextPetStoryPrompt(info);
+      }, 80);
+    };
+    const profileBtn = qs('#wb-pet-card', room); if (profileBtn) profileBtn.onclick = e => { e.stopPropagation(); openPetProfileCard(info); };
+    const newAdopt = qs('#wb-pet-new-adoption', room); if (newAdopt) newAdopt.onclick = () => {
+      if (petRuntimeMode === 'test') { openPetTestSelect(); return; }
+      const c = petFullActiveCaretaker();
+      if (c) openPetAdoptionForm(c);
+      else openPetTestSelect();
+    };
+    const logBtn = qs('#wb-pet-log', room); if (logBtn) logBtn.onclick = () => openPetLogModal(info);
+    const caretakersBtn = qs('#wb-pet-caretakers', room); if (caretakersBtn) caretakersBtn.onclick = () => openPetCaretakerSelect(null, { forceFull:true, stay:true });
+    const helpBtn = qs('#wb-pet-help', room); if (helpBtn) helpBtn.onclick = openPetTutorial;
+    const sceneToggle = qs('#wb-pet-scene-toggle', room); if (sceneToggle) sceneToggle.onclick = e => {
+      e.stopPropagation();
+      const drawer = qs('#wb-pet-scene-drawer', room);
+      if (drawer) drawer.classList.toggle('open');
+    };
+    const nextScene = qs('#wb-pet-next-scene', room); if (nextScene) nextScene.onclick = () => {
+      const next = Object.assign({}, petTestState(), { location:petNextLocation(state) });
+      savePetTestState(updatePetPendingStories(next, info));
+      renderPetHouse();
+    };
+    const endingBtn = qs('#wb-pet-ending', room); if (endingBtn) endingBtn.onclick = () => {
+      const next = Object.assign({}, petTestState(), { endingReady:true, finalConfirmed:true, pendingStories:Array.from(new Set([].concat(petTestState().pendingStories || [], 'M15'))) });
+      savePetTestState(updatePetPendingStories(next, info));
+      openNextPetStoryPrompt(info);
+    };
+    if (reset) reset.onclick = () => petMiniConfirm('重置宠物试用版', '确定重置宠物试用版进度吗？这会清空试用版下的数值、剧情记录和日志。', () => {
+      savePetTestState(defaultPetTestState());
       setSettings({ petInteractCount:0, petForm:'baby', petDesktopState:'normal' });
       renderPetHouse();
     });
-    if (back) back.onclick = renderIntimacy;
-    if (walk) walk.onclick = () => {
-      setSettings({ petDesktopEnabled:true, petDesktopState:'normal', petForm:petCurrentForm() });
+    const restart = qs('#wb-pet-restart', room);
+    if (restart) restart.onclick = () => petMiniConfirm('是否确定重新开始？', petFullActiveCaretaker() ? '确定后会删除当前这一轮宠物及本轮全部记录，然后重新进入领养登记表；之前轮次会保留。' : '确定后会回到最初的测试入口（选择角色页面），当前宠物试用版进度会清空。', () => {
+      const fullCaretaker = petFullActiveCaretaker();
+      if (fullCaretaker) {
+        petFullRemoveActivePet(fullCaretaker.id);
+        openPetAdoptionForm(petFullCaretakerById(fullCaretaker.id) || fullCaretaker);
+        return;
+      }
+      savePetTestState(defaultPetTestState());
+      setSettings({ petDesktopEnabled:false, petInteractCount:0, petForm:'baby', petDesktopState:'normal' });
       syncFloatingBall();
-      closePopupShell();
+      openPetTestSelect();
+    });
+    if (back) back.onclick = () => {
+      if (petTestState().activeStory && petTestState().activeStory.id) petMiniConfirm('是否返回？', '当前正在剧情模式中，是否返回小屋？', () => { const next = petTestState(); next.activeStory = null; savePetTestState(next); renderPetHouse(); });
+      else openPetFullEntry();
+    };
+    if (walk) walk.onclick = () => {
+      toast('带' + petName + '去遛一遛。');
+      petMiniConfirm('开启桌宠模式？', '带' + petName + '去遛一遛。', () => {
+        let next = petApplyInteraction('outing');
+        next = updatePetPendingStories(Object.assign(next, { petAction:'normal' }), info);
+        savePetTestState(next);
+        setSettings({ petDesktopEnabled:true, petDesktopState:'normal', petForm:petCurrentForm() });
+        syncFloatingBall();
+        currentTab = 'intimacy';
+        currentGame = null;
+        buildPopup();
+      });
+    };
+    const storyExit = qs('#wb-pet-story-exit', room);
+    if (storyExit) storyExit.onclick = e => {
+      e.stopPropagation();
+      const active = petTestState().activeStory || {};
+      petMiniConfirm('退出剧情？', '退出后会保存当前剧情并回到小屋，是否确定？', () => {
+        const latest = petTestState();
+        if (active.replay) { latest.activeStory = null; savePetTestState(latest); toast('剧情回放已结束'); renderPetHouse(); }
+        else if (active.id) completePetStory(info, active.id, false);
+      });
+    };
+    bindPetStoryInlineControls(info, room);
+  }
+
+  function openPetCaretakerSelect(info, options) {
+    injectPetArcadeStyle();
+    const fullMode = !!(options && options.forceFull) || petFullIsActive() || !info;
+    if (fullMode) petRuntimeMode = 'full';
+    if (!fullMode) {
+      const state = petTestState();
+      const saved = Array.isArray(state.caretakers) ? state.caretakers : [];
+      const doc = getHostDocument();
+      const mask = doc.createElement('div');
+      mask.className = modalMaskClass();
+      mask.id = 'wb-pet-caretaker-mask';
+      const rows = [{ name:petCharName(), pet:info?.pet_card?.pet_name || '宠物', test:true }].concat(saved);
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">选择饲养员</div><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-add">' + petUiIcon('plus') + '</button></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + rows.map((r, i) => '<div class="wb-pet-caretaker-card" data-i="' + i + '"><div class="wb-pet-avatar">' + esc((r.name || '?').slice(0, 1)) + '</div><div><b>' + esc(r.name || '未命名') + '</b>' + (r.test ? ' <span class="wb-pill">试用版</span>' : '') + '<div class="wb-muted">当前动物：' + esc(r.pet || '暂无') + '</div></div>' + (r.test ? '<span class="wb-muted">可进入</span>' : '<button class="wb-btn wb-pet-caretaker-del" data-i="' + i + '">删除</button>') + '</div>').join('') + '</div></div></div>';
+      appendModalMask(mask);
+      qs('#wb-pet-caretaker-close', mask).onclick = () => mask.remove();
+      qs('#wb-pet-caretaker-add', mask).onclick = () => toast('请从灵息小窝入口添加角色');
+      return;
+    }
+    const data = petFullData();
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-caretaker-mask';
+    const rows = data.caretakers || [];
+    const trialState = Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
+    const trialInfo = null;
+    const trialSpeciesLabel = { rabbit:'兔子', dog:'小狗', cat:'猫咪', bird:'飞鸟', bala:'水豚', fox:'狐狸' };
+    const trialPetName = trialInfo?.pet_card?.pet_name || trialSpeciesLabel[trialState.testSpecies] || '当前动物';
+    const trialCycle = Number(trialState.adoptionCycle || 0) || Math.max(1, (Array.isArray(trialState.archives) ? trialState.archives.length : 0) + 1);
+    const trialHTML = '<button class="wb-pet-caretaker-card wb-pet-full-caretaker wb-pet-trial-caretaker" type="button"><div class="wb-pet-avatar wb-pet-trial-avatar">试</div>' + petSnapshotHTMLForInfo(trialState, trialInfo) + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">江维</b><span class="wb-pill wb-pet-caretaker-tag">试用版</span></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(trialPetName) + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(trialCycle)) + '只宠物</div></div></button>';
+    const rowHTML = rows.map(c => {
+      const pet = petFullActivePet(data, c);
+      const infoObj = pet?.infoText ? parsePetInfoText(pet.infoText) : null;
+      const state = Object.assign(defaultPetTestState(), pet?.state || {});
+      const avatar = c.avatarUrl ? '<img src="' + esc(c.avatarUrl) + '" alt="">' : esc((c.name || '?').slice(0, 1));
+      const snap = pet ? petSnapshotHTMLForInfo(state, infoObj) : '<div class="wb-pet-snapshot"></div>';
+      const completedCount = petFullCompletedCount(c);
+      const shownCycle = pet && !petFullPetCompleted(pet) ? (Number(state.adoptionCycle || 0) || completedCount + 1) : completedCount;
+      return '<button class="wb-pet-caretaker-card wb-pet-full-caretaker" data-id="' + esc(c.id) + '"><div class="wb-pet-avatar">' + avatar + '</div>' + snap + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">' + esc(c.name || '未命名') + '</b></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(infoObj?.pet_card?.pet_name || (pet ? '未命名宠物' : '暂无宠物')) + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(Math.max(1, Number(shownCycle || 1)))) + '只宠物</div></div></button>';
+    }).join('') + (rows.length ? '' : '<div class="wb-api-status">还没有添加正式饲养员。可以先进入试用版，或点击右上角“+”添加角色。</div>') + trialHTML;
+    mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">选择饲养员</div><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-add">' + petUiIcon('plus') + '</button></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + rowHTML + '</div></div></div>';
+    appendModalMask(mask);
+    qs('#wb-pet-caretaker-close', mask).onclick = () => { mask.remove(); if (!(options && options.stay)) renderIntimacy(); };
+    qs('#wb-pet-caretaker-add', mask).onclick = () => openPetFullCharPicker(mask);
+    const trial = qs('.wb-pet-trial-caretaker', mask);
+    if (trial) trial.onclick = () => {
+      mask.remove();
+      if (petTrialHasSavedPet()) {
+        petRuntimeMode = 'test';
+        petFullActiveCaretakerId = '';
+        petTestInfoCache = null;
+        petTestInfoLoading = null;
+        renderPetHouse();
+      } else {
+        openPetTestSelect();
+      }
+    };
+    qsa('.wb-pet-full-caretaker', mask).forEach(btn => {
+      if (btn.classList.contains('wb-pet-trial-caretaker')) return;
+      btn.onclick = () => {
+      const c = petFullCaretakerById(btn.dataset.id);
+      if (!c) return;
+      withPetFullActive(c.id);
+      mask.remove();
+      if (!petFullActivePet(petFullData(), c)) openPetAdoptionForm(c);
+      else renderPetHouse();
+      };
+    });
+  }
+
+  function openPetFullCharPicker(parentMask) {
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-char-picker-mask';
+    const opts = petFullCaretakerOptions();
+    mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-char-picker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">添加角色</div><span></span></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + opts.map((o,i) => '<button class="wb-pet-caretaker-card wb-pet-char-pick" data-i="' + i + '"><div class="wb-pet-avatar">' + (o.avatarUrl ? '<img src="' + esc(o.avatarUrl) + '" alt="">' : esc(o.name.slice(0,1))) + '</div><div><b>' + esc(o.name) + '</b></div></button>').join('') + '</div></div></div>';
+    appendModalMask(mask);
+    qs('#wb-pet-char-picker-close', mask).onclick = () => mask.remove();
+    qsa('.wb-pet-char-pick', mask).forEach(btn => btn.onclick = () => {
+      const opt = opts[Number(btn.dataset.i)];
+      if (!opt) return;
+      petMiniConfirm('确认饲养员', '是否选择和' + opt.name + '一起养宠物？', () => {
+        const c = petFullEnsureCaretaker(opt);
+        mask.remove();
+        if (parentMask) parentMask.remove();
+        openPetCaretakerSelect(null, { forceFull:true });
+        setTimeout(() => { const latest = petFullCaretakerById(c.id); if (latest && !(latest.pets || []).length) openPetAdoptionForm(latest); }, 80);
+      });
+    });
+  }
+
+
+
+  function petEggOptionHTML(selected) {
+    const eggs = [['blue','蓝色蛋'], ['purple','紫色蛋'], ['pink','粉色蛋'], ['green','绿色蛋'], ['gold','金色蛋'], ['white','白色蛋']];
+    return '<div class="wb-pet-egg-grid">' + eggs.map(e => '<button class="wb-btn wb-pet-egg-choice ' + (selected === e[0] ? 'selected' : '') + '" type="button" data-egg="' + e[0] + '"><img src="' + esc(PET_ASSET_BASE + 'eggs/' + e[0] + '-1.png') + '" alt=""><span>' + e[1] + '</span></button>').join('') + '</div>';
+  }
+  function petAdoptionEggCardHTML(parsed, form, cycle) {
+    const card = parsed?.pet_card || {};
+    const eggLabels = { blue:'蓝色蛋', purple:'紫色蛋', pink:'粉色蛋', green:'绿色蛋', gold:'金色蛋', white:'白色蛋' };
+    const rawEgg = card.egg || form?.selected_egg || '';
+    const egg = eggLabels[String(rawEgg).trim()] || rawEgg || '神秘蛋';
+    const userName = form?.user_name || settings().userName || '你';
+    const item = (k, v, wide) => '<div class="wb-pet-profile-item' + (wide ? ' wide' : '') + '"><em>' + esc(k) + '</em><strong>' + esc(v || '???') + '</strong></div>';
+    return '<div class="wb-pet-profile-card wb-pet-adopt-success-card"><div class="wb-pet-profile-top"><div class="wb-pet-profile-title"><b>灵息宠物名片</b><span>蛋形态初始档案</span></div><div class="wb-pet-profile-seal">蛋</div></div><div class="wb-pet-profile-grid">'
+      + item('品种', '???', false)
+      + item('姓名', '???', false)
+      + item('蛋', egg, false)
+      + item('性别', '???', false)
+      + item('性格', '???', false)
+      + item('灵息', '???', false)
+      + item('收养人', userName, false)
+      + item('小屋编号', '这是我们的第 ' + String(cycle || 1) + ' 个宠物', false)
+      + '</div></div>';
+  }
+  function openPetAdoptionForm(caretaker) {
+    injectPetArcadeStyle();
+    withPetFullActive(caretaker.id);
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-adoption-mask';
+    const cycle = petFullAdoptionCycle(caretaker);
+    let generated = null;
+    let draft = {
+      user_name:settings().userName || petTestState().userName || '',
+      selected_egg:'green',
+      adoption_cycle:cycle,
+      wish_mode:false,
+      wish_species:'random',
+      wish_sex:'random',
+      wish_tendency:'random',
+      male_name:'',
+      female_name:'',
+      api_preset_index:'',
+      attempts:3
+    };
+    const draw = () => {
+      const wishOpen = !!draft.wish_mode;
+      const wishStyle = wishOpen ? '' : 'display:none;';
+      const apiOptions = '<option value="">当前API配置（' + esc(settings().apiModel || '未配置') + '）</option>' + apiPresets().map((p, i) => '<option value="' + i + '">' + esc((p.name || ('预设' + (i + 1))) + ' · ' + (p.apiModel || '未选模型')) + '</option>').join('');
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-adopt-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">领养登记表</div><span></span></div><div class="wb-pet-scroll"><div class="wb-pet-adopt-grid">'
+        + '<label class="wb-field"><span>你叫什么</span><input class="wb-input" id="wb-pet-adopt-user" value="' + esc(draft.user_name || '') + '"></label>'
+        + '<label class="wb-field"><span>养宠次数</span><input class="wb-input" id="wb-pet-adopt-cycle" value="' + cycle + '" readonly></label>'
+        + '<div class="wb-field wb-pet-adopt-wide"><span>选择你想要的蛋</span>' + petEggOptionHTML(draft.selected_egg) + '</div>'
+        + '<label class="wb-switch wb-pet-adopt-wide"><input id="wb-pet-wish-mode" type="checkbox" ' + (wishOpen ? 'checked' : '') + '>许愿模式</label>'
+        + '<div class="wb-pet-adopt-wide" id="wb-pet-wish-fields" style="' + wishStyle + '"><div class="wb-preset-row"><label class="wb-field" style="flex:1;"><span>品种</span><select class="wb-select" id="wb-pet-wish-species"><option value="random">随机</option><option value="rabbit">兔子</option><option value="dog">狗</option><option value="cat">猫</option><option value="bird">鹰</option><option value="bala">水豚</option><option value="fox">狐狸</option></select></label><label class="wb-field" style="flex:1;"><span>性别</span><select class="wb-select" id="wb-pet-wish-sex"><option value="random">随机</option><option value="male">男孩</option><option value="female">女孩</option></select></label></div><label class="wb-field"><span>灵息能力</span><input class="wb-input" id="wb-pet-wish-tendency" placeholder="随机 或 填写能力倾向" value="' + esc(draft.wish_tendency === 'random' ? '随机' : draft.wish_tendency) + '"></label></div>'
+        + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>男孩姓名</span><input class="wb-input" id="wb-pet-name-male" placeholder="例如：小曜" value="' + esc(draft.male_name || '') + '"></label><label class="wb-field" style="flex:1;"><span>女孩姓名</span><input class="wb-input" id="wb-pet-name-female" placeholder="例如：小露" value="' + esc(draft.female_name || '') + '"></label></div>'
+        + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>模型选择</span><select class="wb-select" id="wb-pet-adopt-model">' + apiOptions + '</select></label><label class="wb-field" style="flex:1;"><span>模型生成次数</span><input class="wb-input" id="wb-pet-adopt-attempts" type="number" min="1" max="5" value="' + esc(String(draft.attempts || 3)) + '"></label></div>'
+        + '<div class="wb-actions wb-pet-adopt-wide"><button class="wb-btn primary" id="wb-pet-adopt-generate" style="flex:1;">确定，生成宠物文案</button></div>'
+        + '<div id="wb-pet-adopt-status" class="wb-pet-adopt-wide"></div>'
+        + '</div></div></div>';
+      appendModalMask(mask);
+      const species = qs('#wb-pet-wish-species', mask); if (species) species.value = draft.wish_species || 'random';
+      const sex = qs('#wb-pet-wish-sex', mask); if (sex) sex.value = draft.wish_sex || 'random';
+      const apiSel = qs('#wb-pet-adopt-model', mask); if (apiSel) apiSel.value = draft.api_preset_index || '';
+      bind();
+    };
+    const collect = () => {
+      const userName = (qs('#wb-pet-adopt-user', mask)?.value || '').trim() || '你';
+      setSettings({ userName:userName });
+      draft = {
+        user_name:userName,
+        selected_egg:draft.selected_egg,
+        adoption_cycle:cycle,
+        wish_mode:!!qs('#wb-pet-wish-mode', mask)?.checked,
+        wish_species:qs('#wb-pet-wish-species', mask)?.value || 'random',
+        wish_sex:qs('#wb-pet-wish-sex', mask)?.value || 'random',
+        wish_tendency:(qs('#wb-pet-wish-tendency', mask)?.value || 'random').replace(/^随机$/, 'random'),
+        male_name:(qs('#wb-pet-name-male', mask)?.value || '').trim(),
+        female_name:(qs('#wb-pet-name-female', mask)?.value || '').trim(),
+        api_preset_index:qs('#wb-pet-adopt-model', mask)?.value || '',
+        attempts:Math.max(1, Math.min(5, parseInt(qs('#wb-pet-adopt-attempts', mask)?.value, 10) || 1))
+      };
+      return draft;
+    };
+    const generate = async () => {
+      const form = collect();
+      if (form.wish_mode && form.wish_sex === 'male' && !form.male_name) { toast('请填写男孩姓名'); return; }
+      if (form.wish_mode && form.wish_sex === 'female' && !form.female_name) { toast('请填写女孩姓名'); return; }
+      if ((!form.wish_mode || form.wish_sex === 'random') && (!form.male_name || !form.female_name)) { toast('需要填写男孩和女孩两个姓名'); return; }
+      const status = qs('#wb-pet-adopt-status', mask);
+      const btn = qs('#wb-pet-adopt-generate', mask);
+      let streamRaw = '';
+      if (status) status.innerHTML = '<div class="wb-api-status">生成中，正在接收模型输出...</div><pre class="wb-pet-info-stream" id="wb-pet-info-stream"></pre>';
+      if (btn) { btn.disabled = true; btn.textContent = '生成中...'; }
+      let lastErr = null;
+      for (let i = 0; i < form.attempts; i++) {
+        try {
+          if (i > 0) {
+            streamRaw = '';
+            if (status) status.innerHTML = '<div class="wb-api-status">第' + (i + 1) + '次重新生成中，正在接收模型输出...</div><pre class="wb-pet-info-stream" id="wb-pet-info-stream"></pre>';
+          }
+          generated = await generatePetFullInfo(caretaker, form, delta => {
+            streamRaw += delta;
+            const box = qs('#wb-pet-info-stream', mask);
+            if (box) { box.textContent = streamRaw; box.scrollTop = box.scrollHeight; }
+          });
+          break;
+        }
+        catch(e) { lastErr = e; if (status) status.innerHTML = '<div class="wb-api-status">第' + (i + 1) + '次失败：' + esc(e.message || e) + '</div>' + (streamRaw ? '<pre class="wb-pet-info-stream">' + esc(streamRaw) + '</pre>' : ''); }
+      }
+      if (!generated && lastErr) { if (btn) { btn.disabled = false; btn.textContent = '确定，生成宠物文案'; } return; }
+      if (status) status.innerHTML = '<div class="wb-api-status">生成完成，已解析出蛋形态名片。</div>';
+      if (btn) { btn.disabled = false; btn.textContent = '确定，生成宠物文案'; }
+      openPetAdoptionSuccessModal(form);
+    };
+    const enterGeneratedHouse = (form) => {
+        form = form || collect();
+        const state = Object.assign(defaultPetTestState(), { userName:form.user_name, adoptionCycle:cycle, firstSnapshot:null });
+        petFullAddPet(caretaker.id, generated.raw, state, { egg:generated.parsed.pet_card?.egg || draft.selected_egg });
+        petTestInfoCache = generated.parsed;
+        mask.remove();
+        renderPetHouse();
+    };
+    const openPetAdoptionSuccessModal = (form) => {
+      const old = qs('#wb-pet-adoption-success-mask', doc);
+      if (old) old.remove();
+      const success = doc.createElement('div');
+      success.className = modalMaskClass();
+      success.id = 'wb-pet-adoption-success-mask';
+      success.innerHTML = '<div class="wb-modal wb-mini-modal wb-pet-modal wb-pet-adopt-success-modal"><div class="wb-pet-modal-head"><div class="wb-pet-modal-title">生成并解析成功</div></div><div class="wb-pet-scroll">' + petAdoptionEggCardHTML(generated.parsed, form, cycle) + '<details class="wb-pet-info-raw"><summary>查看全部输出</summary><pre class="wb-pet-info-stream">' + esc(generated.raw || '') + '</pre></details></div><div class="wb-actions"><button class="wb-btn primary" id="wb-pet-enter-house" style="flex:1;">进入灵息小屋</button><button class="wb-btn" id="wb-pet-adopt-regen" style="flex:1;">重新生成</button></div></div>';
+      appendModalMask(success);
+      qs('#wb-pet-enter-house', success).onclick = () => { success.remove(); enterGeneratedHouse(form); };
+      qs('#wb-pet-adopt-regen', success).onclick = () => { success.remove(); generated = null; generate(); };
+    };
+    const bind = () => {
+      qs('#wb-pet-adopt-close', mask).onclick = () => { mask.remove(); openPetCaretakerSelect(null, { forceFull:true }); };
+      qsa('.wb-pet-egg-choice', mask).forEach(btn => btn.onclick = () => {
+        collect();
+        draft.selected_egg = btn.dataset.egg;
+        qsa('.wb-pet-egg-choice', mask).forEach(x => x.classList.toggle('selected', x === btn));
+      });
+      const wish = qs('#wb-pet-wish-mode', mask); if (wish) wish.onchange = () => {
+        collect();
+        draft.wish_mode = !!wish.checked;
+        const fields = qs('#wb-pet-wish-fields', mask);
+        if (fields) fields.style.display = draft.wish_mode ? '' : 'none';
+      };
+      const gen = qs('#wb-pet-adopt-generate', mask); if (gen) gen.onclick = generate;
+    };
+    draw();
+  }
+
+  function openPetTutorial() {
+    injectPetArcadeStyle();
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-tutorial-mask';
+    const state = petTestState();
+    const petName = petTestInfoCache?.pet_card?.pet_name || '宠物';
+    const stageName = state.stage === 'egg' ? '蛋' : (state.stage === 'juvenile' ? '幼崽' : ((state.stage === 'spirit' || state.stage === 'ordinary' || state.endingReady) ? '最终形态' : '成年'));
+    const stageTip = (() => {
+      if (state.stage === 'egg') return '蛋形态：多摸一摸孩子，去玩小游戏解锁成长度和更多形态吧！';
+      if (state.stage === 'spirit' || state.stage === 'ordinary' || state.endingReady) return esc(petName) + '已经做好回到他的世界的准备了。你准备好道别了吗？';
+      return '幼崽/成年：喂食、抚摸、玩游戏、遛弯都可以增加成长度，满足条件后在不同场景可以解锁支线剧情。挑战解锁更多的支线剧情吧！';
+    })();
+    const mark = (text, tone) => '<span class="wb-pet-mark' + (tone ? ' ' + tone : '') + '">' + esc(text) + '</span>';
+    const manual = [
+      '<div class="wb-pet-note-page wb-pet-manual">',
+      '<h2>饲养员手册</h2>',
+      '<div class="wb-pet-stage-tip"><div class="wb-pet-stage-tip-title">小提示：当前阶段——' + esc(stageName) + '</div><div class="wb-pet-stage-tip-box">' + stageTip + '</div></div>',
+      '<p><strong>欢迎来到灵息小窝。</strong>这里是一套长期养宠模块：你和当前角色会共同领养、照顾、记录一只灵息宠物。它会从蛋开始成长，触发主线与支线剧情，最后走向普通宠物或灵息宠物的结局。</p>',
+      '<h3>## 1. 从哪里开始？</h3>',
+      '<ul><li><strong>灵息小窝入口：</strong>点击亲密互动里的“灵息小窝”。如果已经有正在养的宠物，会直接进入该宠物页面；想换人养宠，请点小屋标题旁边的下拉按钮。</li><li><strong>选择饲养员：</strong>列表里会显示“试用版”和已添加的角色。试用版会读取本地角色数据；正式角色会走 AI 生成完整宠物文案。</li><li><strong>添加角色：</strong>右上角“+”可以从' + mark('当前世界观', 'blue') + '角色里选择饲养员。添加后，每个角色都有' + mark('独立宠物', 'green') + '、日志、剧情和日期记录。</li><li><strong>领养登记表：</strong>没有宠物的正式角色会进入登记表。填写 user 名、选择蛋、宠物名字、' + mark('API 预设', 'blue') + '和' + mark('生成次数', 'green') + '；开启' + mark('许愿模式', 'pink') + '后可以指定' + mark('品种/性别/灵息能力') + '，选择“随机”则交给 AI 决定。</li></ul>',
+      '<h3>## 2. 宠物有哪些阶段？</h3>',
+      '<ul><li><strong>蛋形态：</strong>刚领养时只有成长值。此时右侧按钮较少，主要通过抚摸、戳戳、写日志、查看记录来陪伴它。蛋形态戳戳/抚摸的对话可能只是“......”，这是正常的。</li><li><strong>幼年期：</strong>破壳后会出现真正的动物。开始有饱食度和开心值，可以喂食、抚摸、遛弯，宠物会说话、做动作，也会逐步解锁场景。</li><li><strong>成年期：</strong>宠物更稳定，也会触发更关键的主线。成年后需要继续提高成长值，推动它走向最终选择。</li><li><strong>灵息 / 普通路线：</strong>后期剧情会让宠物选择接受灵息力量，或回归更普通的动物生活。不同路线会影响后续剧情和名片信息。</li><li><strong>旅程结束：</strong>最终剧情完成后，小屋会空出来，右侧交互按钮消失，上方会出现“领养新的宠物”。点击后可以为同一个角色开启下一轮养宠。</li></ul>',
+      '<h3>## 3. 主页面怎么看？</h3>',
+      '<ul><li><strong>顶部栏：</strong>左上角返回；右上角有教程和重开；中间显示“角色的小屋”，旁边的小三角可以打开选择饲养员。</li><li><strong>状态栏：</strong>显示宠物名称、阶段、当前场景和时间。旁边的' + mark('名片按钮', 'blue') + '可以查看宠物品种、姓名、性别、性格、灵息、收养人和第几只宠物。</li><li><strong>进度条：</strong>' + mark('成长值', 'green') + '决定阶段推进与主线触发；' + mark('饱食度') + '会通过喂食恢复；' + mark('开心值', 'pink') + '会通过抚摸、游戏等恢复。蛋形态只有成长值。</li><li><strong>中间场景：</strong>显示当前地点和宠物。宠物待机时会做动作；有语录时，宠物旁会出现小对话云朵。</li><li><strong>切换场景：</strong>左下侧的' + mark('切换场景', 'blue') + '拉手可以展开场景抽屉。未解锁场景会有锁，继续养宠后会逐步开放。</li><li><strong>底部对话框：</strong>平时显示角色语录；进入剧情时变成 RPG 对话框。文字满两行会自动分页，点击页面任意位置继续。</li></ul>',
+      '<h3>## 4. 右侧按钮分别做什么？</h3>',
+      '<ul><li><strong>遛弯：</strong>会询问是否开启桌宠模式。确认后退出小屋，宠物会以桌宠形式陪你停留在插件页面，遛弯在线每 10 分钟增加成长值。</li><li><strong>喂食：</strong>增加饱食度；如果饱食度确实被补充，也会增加成长值。会触发吃饭动作、宠物语录和可能的支线事件。</li><li><strong>抚摸：</strong>增加开心值；如果开心值确实被补充，也会增加成长值。蛋形态每 10 分钟可通过抚摸获得成长。</li><li><strong>写日志：</strong>打开手账式日志页。可以选择模型、补充今天做了什么，AI 会结合世界观、宠物名片、当天互动和剧情生成日记。</li><li><strong>记录：</strong>查看日期记录、日志记录、剧情记录。日期会按当天累计成长值变色；日志和剧情会保留当时的时间、宠物阶段和快照。</li><li><strong>开挂模式：</strong>试用/调试用金币按钮，点击增加 5 点成长值，方便测试剧情和阶段推进。</li></ul>',
+      '<h3>## 5. 剧情怎么触发？</h3>',
+      '<ul><li><strong>主线剧情：</strong>通常由' + mark('成长值', 'green') + '和' + mark('阶段', 'blue') + '触发，例如蛋的觉醒、破壳、幼年成长、成年选择、灵息结局等。</li><li><strong>支线剧情：</strong>可能由' + mark('喂食/抚摸/遛弯', 'pink') + '、玩游戏、' + mark('时间/地点', 'blue') + '、概率或累计次数触发。有些事件会先进入“已触发”状态，等你回到合适场景或时间才弹出。</li><li><strong>触发弹窗：</strong>出现剧情时会先弹出小提示，显示主线/支线、剧情名和简介。你可以进入剧情，也可以放弃；放弃也会存档。</li><li><strong>剧情模式：</strong>进入后右侧交互按钮和场景切换会隐藏，上方显示“剧情模式中”。点击任意位置推进，剧情结束后点击回到小屋并保存。</li><li><strong>剧情回放：</strong>在剧情记录里可以点击放映机按钮回放已完成剧情，不会重复改变成长数据。</li></ul>',
+      '<h3>## 6. 日志和记录有什么用？</h3>',
+      '<ul><li><strong>写日志：</strong>适合每天结束时生成一篇手账。日志会保存日期、宠物名称、宠物形态、标签、我们的关系、特别记忆存档、标题和正文。</li><li><strong>覆盖规则：</strong>同一天如果已经有日志，再保存会提示是否覆盖当天日志。</li><li><strong>日期记录：</strong>像日历一样查看成长。' + mark('当天累计成长', 'green') + '越多，日期颜色越明显；下方会列出喂食、抚摸、遛弯、游戏等加分标签。</li><li><strong>日志记录：</strong>按日期和时间列出所有日志，点击后以同样的手账版式查看。</li><li><strong>剧情记录：</strong>按日期和时间列出主线/支线剧情，保留标题、summary、触发条件和正文，并用不同颜色区分角色姓名卡片。</li><li><strong>多宠物记录：</strong>正式模式下，一个角色养过的' + mark('所有宠物', 'pink') + '都会归入该角色记录里，便于回顾第 1 只、第 2 只……宠物的全部旅程。</li></ul>',
+      '<h3>## 7. 桌宠模式怎么玩？</h3>',
+      '<ul><li><strong>开启：</strong>点击“遛弯”并确认后，会离开灵息小窝，宠物作为可拖动桌宠陪在插件页面上。进入灵息小窝会退出桌宠模式。</li><li><strong>拖动：</strong>无论状态栏、聊天框是否打开，都可以拖动宠物移动位置。</li><li><strong>戳一戳：</strong>点击宠物会展开扇形按钮：互动、状态、聊天、回家；再次点击宠物会收起。</li><li><strong>互动：</strong>互动下方有喂食、抚摸、玩球。喂食/抚摸会更新数值；玩球超过 3 次可增加成长值。</li><li><strong>状态：</strong>显示宠物名、' + mark('灵息状态', 'blue') + '、成长/饱食/开心进度，界面很小巧，适合边玩边看。</li><li><strong>聊天：</strong>宠物会作为 {{user}} 的宠物和旁观者，结合最近剧情评论或聊天，回复约 50 字左右。</li><li><strong>回家：</strong>关闭桌宠并返回养宠页面。</li></ul>',
+      '<h3>## 8. 新手目标</h3>',
+      '<ul><li>每天进小屋看看宠物，喂食、抚摸或遛弯。</li><li>关注成长值，成长值满时通常会触发阶段剧情。</li><li>偶尔切换场景，部分支线需要特定地点或时间。</li><li>剧情后写一篇日志，记录今天发生了什么。</li><li>最终把宠物养大，让它成为属于你们的灵息宠物，或者陪它选择普通但温柔的生活。</li></ul>',
+      '</div>'
+    ].join('');
+    mask.innerHTML = '<div class="wb-modal wb-pet-modal wb-pet-tutorial-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-tutorial-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">灵息小窝教程</div><span class="wb-pet-help-mark">?</span></div><div class="wb-pet-scroll">' + manual + '</div></div>';
+    appendModalMask(mask);
+    qs('#wb-pet-tutorial-close', mask).onclick = () => mask.remove();
+  }
+
+  function openNextPetStoryPrompt(info) {
+    const state = petTestState();
+    if (state.activeStory && state.activeStory.id) return;
+    const id = petNextPendingStoryId(info, state);
+    if (!id) return;
+    const story = petStoryForPending(info, state, id);
+    const doc = getHostDocument();
+    const old = qs('#wb-pet-story-prompt', doc); if (old) old.remove();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-story-prompt';
+    const finalStory = id === 'M15';
+    const summaryText = finalStory
+      ? ((info?.pet_card?.pet_name || '宠物') + '打算回到灵息缝隙了。你确定要现在和它告别么？')
+      : petRenderText(story?.summary || '有新的剧情可以体验。', info, state);
+    mask.innerHTML = '<div class="wb-modal wb-pet-modal wb-mini-modal wb-pet-story-choice"><div class="wb-pet-story-choice-title">触发' + (/^S/.test(id) ? '支线剧情：' : '主线剧情：') + '</div><div class="wb-pet-story-choice-name">' + esc(petRenderText(story?.title || id, info, state)) + '</div><div class="wb-pet-story-choice-summary">' + esc(summaryText) + '</div><div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-story-play" style="flex:1;">' + (finalStory ? '确定' : '进入剧情') + '</button><button class="wb-btn" id="wb-pet-story-skip">' + (finalStory ? '再陪它一会' : '放弃剧情') + '</button></div></div>';
+    appendModalMask(mask);
+    qs('#wb-pet-story-play', mask).onclick = () => {
+      const next = petTestState();
+      next.activeStory = { id, prompt:false, index:0, page:0, done:false, replay:false };
+      savePetTestState(next);
+      mask.remove();
+      renderPetHouseLoaded(info, next);
+    };
+    qs('#wb-pet-story-skip', mask).onclick = () => {
+      mask.remove();
+      if (finalStory) {
+        const next = petTestState();
+        next.finalConfirmed = false;
+        next.pendingStories = (next.pendingStories || []).filter(x => x !== id);
+        savePetTestState(next);
+        renderPetHouseLoaded(info, next);
+        return;
+      }
+      completePetStory(info, id, false);
     };
   }
+  function bindPetStoryInlineControls(info, room) {
+    const play = qs('#wb-pet-story-play', room);
+    if (play) play.onclick = e => {
+      e.stopPropagation();
+      const state = petTestState();
+      if (!state.activeStory || !state.activeStory.id) return;
+      state.activeStory = { id:state.activeStory.id, prompt:false, index:0, page:0, done:false, replay:false };
+      savePetTestState(state);
+      renderPetHouseLoaded(info, state);
+    };
+    const skip = qs('#wb-pet-story-skip', room);
+    if (skip) skip.onclick = e => {
+      e.stopPropagation();
+      const state = petTestState();
+      if (state.activeStory && state.activeStory.id) completePetStory(info, state.activeStory.id, false);
+    };
+    const next = qs('#wb-pet-story-next', room);
+    const advance = () => {
+      const state = petTestState();
+      const active = state.activeStory || {};
+      if (!active.id || active.prompt) return;
+      if (active.done) {
+        if (active.replay) { state.activeStory = null; savePetTestState(state); toast('剧情回放已结束'); renderPetHouse(); return; }
+        completePetStory(info, active.id, true); return;
+      }
+      const view = petStoryLineAt(info, state, active);
+      if (view.page + 1 < view.pages.length) state.activeStory = { id:active.id, prompt:false, index:view.index, page:view.page + 1, done:false, replay:!!active.replay };
+      else if (view.index + 1 >= view.lines.length) state.activeStory = { id:active.id, prompt:false, index:view.index, page:view.page, done:true, replay:!!active.replay };
+      else state.activeStory = { id:active.id, prompt:false, index:view.index + 1, page:0, done:false, replay:!!active.replay };
+      savePetTestState(state);
+      renderPetHouseLoaded(info, state);
+    };
+    if (next) next.onclick = e => { e.stopPropagation(); advance(); };
+    const close = qs('#wb-pet-story-close', room);
+    if (close) close.onclick = e => {
+      e.stopPropagation();
+      const state = petTestState();
+      state.activeStory = null;
+      savePetTestState(state);
+      renderPetHouseLoaded(info, state);
+    };
+    const storyTap = e => {
+      if (e) {
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      }
+      if (e.target && e.target.closest && e.target.closest('button')) return;
+      const now = Date.now();
+      if (now < petStoryTapLockedUntil) return;
+      petStoryTapLockedUntil = now + 220;
+      const state = petTestState();
+      if (state.activeStory && state.activeStory.id && state.activeStory.prompt) { state.activeStory = { id:state.activeStory.id, prompt:false, index:0, page:0, done:false, replay:false }; savePetTestState(state); renderPetHouseLoaded(info, state); return; }
+      if (state.activeStory && state.activeStory.id && !state.activeStory.prompt) advance();
+    };
+    const dialogue = qs('#wb-pet-dialogue', room);
+    if (dialogue) dialogue.onclick = storyTap;
+    if (room) room.onclick = storyTap;
+  }
+  function completePetStory(info, id, experienced) {
+    let state = petTestState();
+    const story = petStoryForPending(info, state, id);
+    const isSideStory = /^S/.test(id);
+    const alreadyCompleted = (state.completedSide || []).includes(id) || (state.completedMain || []).includes(id);
+    state.pendingStories = (state.pendingStories || []).filter(x => x !== id);
+    if (isSideStory) state.sideTriggered = (state.sideTriggered || []).filter(x => x !== id);
+    state.dismissedStories = (state.dismissedStories || []).filter(x => x !== id);
+    state.activeStory = null;
+    state = markPetStoryComplete(state, id, story, state.route);
+    if (isSideStory && experienced && !alreadyCompleted) state = petApplyStoryGrowth(state, 8, 'sideStory', '支线剧情记录');
+    if (id === 'M11') {
+      savePetTestState(state);
+      openPetRouteChoice(info);
+      return;
+    }
+    if (id === 'M14') state.endingReady = true;
+    if (experienced) state.lastCharLine = '这段剧情已经记录下来了。';
+    state = updatePetPendingStories(state, info);
+    savePetTestState(state);
+    toast('剧情已保存');
+    if (id === 'M15') {
+      const fullCaretaker = petFullActiveCaretaker();
+      if (fullCaretaker) {
+        state.ended = true;
+        state.endedAt = Date.now();
+        savePetTestState(state);
+        toast('当前宠物旅程已完成，可以领养新的宠物了');
+        renderPetHouse();
+        return;
+      }
+      showConfirm('开始下一个宠物？', (info?.pet_card?.pet_name || '宠物') + '的结局已经保存。是否开始下一个宠物试用版？旧宠物记录会归档保留。', () => {
+        const ended = petTestState();
+        const fresh = defaultPetTestState();
+        fresh.testEgg = ended.testEgg;
+        fresh.testSpecies = ended.testSpecies;
+        fresh.userName = ended.userName || settings().userName || '';
+        fresh.archives = [ended].concat(ended.archives || []).slice(0, 10);
+        savePetTestState(fresh);
+        renderPetHouse();
+      }, renderPetHouse);
+      return;
+    }
+    renderPetHouse();
+  }
+  function openPetStoryPlayer(info, id) {
+    const state = petTestState();
+    const story = petStoryForPending(info, state, id);
+    const lines = story?.lines?.length ? story.lines : parsePetStoryLines(story?.story || '');
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-story-player';
+    let index = 0;
+    const draw = () => {
+      const visible = lines.slice(0, index + 1);
+      const hasShen = visible.some(line => line.speaker === '沈栖白');
+      mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(petRenderText(story.title || id, info, state)) + '</div>'
+        + (hasShen ? '<img src="' + esc(PET_ASSET_BASE + 'scene/shenqibai.png') + '" alt="" style="width:min(42vw,512px);height:min(42vw,512px);max-width:512px;max-height:512px;object-fit:contain;float:right;margin:0 0 10px 12px;border:1px solid var(--wb-border);background:transparent;">' : '')
+        + '<div class="wb-api-status wb-text-segments" style="max-height:52vh;overflow:auto;">' + visible.map(line => petRpgLineHTML(line, info, state)).join('') + '</div>'
+        + '<div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-story-next" style="flex:1;">' + (index + 1 >= lines.length ? '保存剧情' : '继续') + '</button><button class="wb-btn" id="wb-pet-story-close">稍后</button></div></div>';
+      qs('#wb-pet-story-next', mask).onclick = () => {
+        if (index + 1 >= lines.length) { mask.remove(); completePetStory(info, id, true); return; }
+        index++;
+        draw();
+      };
+      qs('#wb-pet-story-close', mask).onclick = () => mask.remove();
+    };
+    appendModalMask(mask);
+    draw();
+  }
+  function openPetRouteChoice(info) {
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-route-choice';
+    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">选择契机</div><div class="wb-api-status">' + esc(info?.pet_card?.pet_name || '宠物') + '已经获得选择未来形态的机会。选择灵息路线会进入 magic 形态；选择普通路线会继续保持 adult 形态。</div><div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-route-spirit" style="flex:1;">成为灵息宠物</button><button class="wb-btn" id="wb-pet-route-ordinary" style="flex:1;">保持普通形态</button></div></div>';
+    appendModalMask(mask);
+    const choose = route => {
+      const next = Object.assign({}, petTestState(), { route, stage:route, growth:0, petAction:'normal', pendingStories:[] });
+      savePetTestState(updatePetPendingStories(next, info));
+      mask.remove();
+      renderPetHouse();
+    };
+    qs('#wb-pet-route-spirit', mask).onclick = () => choose('spirit');
+    qs('#wb-pet-route-ordinary', mask).onclick = () => choose('ordinary');
+  }
+  function petDayGrowthTotal(day) {
+    const d = day || {};
+    const recorded = Number(d.growth || 0) + Number(d.growthAdd || 0);
+    if (recorded > 0) return recorded;
+    return Number(d.feed || 0) * 2 + Number(d.pet || 0) * 2 + Number(d.play || 0) * 3 + Number(d.outing || 0) * 2;
+  }
+  function openPetRecords(info) {
+    injectPetArcadeStyle();
+    const baseState = petTestState();
+    const fullCtx = petFullRecordContext(info, baseState);
+    const fullMode = !!(fullCtx && fullCtx.pets.length);
+    const makeItems = () => {
+      if (fullMode) return fullCtx.pets;
+      const archived = (baseState.archives || []).slice().reverse().map((st, i) => ({ pet:null, petIndex:i + 1, info, state:Object.assign(defaultPetTestState(), st || {}) }));
+      return archived.concat([{ pet:null, petIndex:archived.length + 1, info, state:baseState }]);
+    };
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-records-mask';
+    const head = title => '<div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-records-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">' + esc(title) + '</div><span></span></div>';
+    appendModalMask(mask);
+    const close = () => mask.remove();
+    const bindClose = () => { const b = qs('#wb-pet-records-close', mask); if (b) b.onclick = close; };
+    const drawHome = () => {
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head('记录') + '<div class="wb-pet-scroll"><div class="wb-pet-card-list"><button class="wb-btn primary wb-pet-record-home" data-page="dates">日期记录</button><button class="wb-btn wb-pet-record-home" data-page="logs">日志记录</button><button class="wb-btn wb-pet-record-home" data-page="stories">剧情记录</button></div></div></div>';
+      bindClose();
+      qsa('.wb-pet-record-home', mask).forEach(btn => btn.onclick = () => ({ dates:drawDates, logs:drawLogs, stories:drawStories })[btn.dataset.page]());
+    };
+    const allDayEntries = () => {
+      const out = [];
+      makeItems().forEach(ctx => {
+        Object.keys(ctx.state.days || {}).forEach(date => out.push({ date, day:ctx.state.days[date] || {}, ctx }));
+        out.push({ date:ctx.state.firstVisitDate || todayKey(), day:{ adopted:true, snapshot:ctx.state.firstSnapshot || ctx.state }, ctx });
+      });
+      return out;
+    };
+    const dayTotals = () => allDayEntries().reduce((acc, row) => {
+      if (!row.day.adopted) acc[row.date] = Number(acc[row.date] || 0) + petDayGrowthTotal(row.day);
+      return acc;
+    }, {});
+    const drawDates = (offset = 0) => {
+      const base = new Date(); base.setMonth(base.getMonth() + offset, 1);
+      const y = base.getFullYear(), m = base.getMonth();
+      const first = new Date(y, m, 1).getDay();
+      const daysIn = new Date(y, m + 1, 0).getDate();
+      const totals = dayTotals();
+      const cells = [];
+      ['日','一','二','三','四','五','六'].forEach(x => cells.push('<div style="text-align:center;font-weight:900;">' + x + '</div>'));
+      for (let i = 0; i < first; i++) cells.push('<div></div>');
+      for (let d = 1; d <= daysIn; d++) {
+        const key = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        const grow = Number(totals[key] || 0);
+        const hot = grow >= 50 ? 5 : (grow >= 30 ? 4 : (grow >= 15 ? 3 : (grow >= 5 ? 2 : (grow > 0 ? 1 : 0))));
+        cells.push('<button class="wb-btn wb-pet-day hot' + hot + '" title="' + esc(key + ' +' + grow) + '">' + d + '</button>');
+      }
+      const rows = allDayEntries().sort((a,b) => String(b.date).localeCompare(String(a.date))).map(row => {
+        const day = row.day || {};
+        if (day.adopted) return '<div class="wb-pet-record-entry compact">' + petSnapshotHTMLForInfo(day.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(petDateCN(row.date)) + '</div><div class="wb-pet-record-title">第' + row.ctx.petIndex + '只 · 收养了' + esc(row.ctx.info?.pet_card?.pet_name || '宠物') + '</div></div></div>';
+        const add = petDayGrowthTotal(day);
+        const tags = [['喂食', day.feed], ['抚摸', day.pet], ['遛弯', day.outing], ['游戏', day.play]].filter(x => Number(x[1] || 0) > 0).map(x => '<span class="wb-pet-record-tag">' + x[0] + x[1] + '</span>').join('');
+        return '<div class="wb-pet-record-entry compact">' + petSnapshotHTMLForInfo(day.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(petDateCN(row.date)) + ' · +' + add + '</div><div class="wb-pet-record-title">第' + row.ctx.petIndex + '只 · ' + esc(row.ctx.info?.pet_card?.pet_name || '宠物') + '</div><div class="wb-pet-record-tags">' + (tags || '<span class="wb-pet-record-tag">无互动</span>') + '</div></div></div>';
+      }).join('') || '<div class="wb-api-status">暂无成长记录</div>';
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head(y + '年' + (m + 1) + '月') + '<div class="wb-pet-cal-fixed"><div class="wb-actions"><button class="wb-btn" id="wb-pet-cal-prev">上一月</button><button class="wb-btn" id="wb-pet-cal-home">返回目录</button><button class="wb-btn" id="wb-pet-cal-next">下一月</button></div><div class="wb-pet-calendar" style="margin:6px 0 0;">' + cells.join('') + '</div></div><div class="wb-pet-scroll wb-pet-cal-scroll"><div class="wb-pet-card-list">' + rows + '</div></div></div>';
+      bindClose();
+      qs('#wb-pet-cal-home', mask).onclick = drawHome;
+      qs('#wb-pet-cal-prev', mask).onclick = () => drawDates(offset - 1);
+      qs('#wb-pet-cal-next', mask).onclick = () => drawDates(offset + 1);
+    };
+    const logItems = () => {
+      const rows = [];
+      makeItems().forEach(ctx => Object.keys(ctx.state.logs || {}).forEach(date => rows.push({ date, log:Object.assign({ date }, ctx.state.logs[date] || {}), ctx })));
+      return rows.sort((a,b) => Number(b.log.savedAt || 0) - Number(a.log.savedAt || 0) || String(b.date).localeCompare(String(a.date)));
+    };
+    const drawLogs = () => {
+      const logs = logItems();
+      const list = logs.map((row, i) => {
+        const time = petTimeHM(row.log.savedAt);
+        const dateText = petDateCN(row.date) + (time ? ' · ' + time : '');
+        return '<button class="wb-pet-record-entry compact wb-pet-record-log" data-i="' + i + '">' + petSnapshotHTMLForInfo(row.log.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(dateText) + ' · 第' + row.ctx.petIndex + '只</div><div class="wb-pet-record-title">' + esc(row.log.title || '日志') + '</div></div></button>';
+      }).join('') || '<div class="wb-api-status">暂无日志</div>';
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head('日志记录') + '<button class="wb-btn" id="wb-pet-log-home">返回目录</button><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + list + '</div></div></div>';
+      bindClose();
+      qs('#wb-pet-log-home', mask).onclick = drawHome;
+      qsa('.wb-pet-record-log', mask).forEach(btn => btn.onclick = () => {
+        const row = logs[Number(btn.dataset.i)];
+        mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head(row.log.title || '日志') + '<button class="wb-btn" id="wb-pet-log-list">返回列表</button><div class="wb-pet-scroll">' + petLogPageHTML(row.log, row.ctx.state, row.ctx.info) + '</div></div>';
+        bindClose();
+        qs('#wb-pet-log-list', mask).onclick = drawLogs;
+      });
+    };
+    const storyItems = () => {
+      const rows = [];
+      makeItems().forEach(ctx => (ctx.state.storyRecords || []).forEach(item => rows.push({ item, ctx })));
+      return rows.sort((a,b) => Number(b.item?.savedAt || 0) - Number(a.item?.savedAt || 0) || String(b.item?.date || '').localeCompare(String(a.item?.date || '')));
+    };
+    const drawStories = () => {
+      const stories = storyItems();
+      const list = stories.map((row, i) => {
+        const item = row.item || {};
+        const time = petTimeHM(item.savedAt);
+        const dateText = petDateCN(item.date || todayKey()) + (time ? ' · ' + time : '');
+        const type = /^S/.test(item.id || '') ? '支线' : '主线';
+        return '<button class="wb-pet-record-entry compact wb-pet-record-story" data-i="' + i + '">' + petSnapshotHTMLForInfo(item.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(dateText) + ' · 第' + row.ctx.petIndex + '只</div><div class="wb-pet-record-title"><span class="wb-pet-record-story-tag" data-type="' + esc(type) + '">' + esc(type) + '</span>' + esc(petRenderText(item.title || item.id, row.ctx.info, row.ctx.state)) + '</div></div></button>';
+      }).join('') || '<div class="wb-api-status">暂无剧情</div>';
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head('剧情记录') + '<button class="wb-btn" id="wb-pet-story-home">返回目录</button><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + list + '</div></div></div>';
+      bindClose();
+      qs('#wb-pet-story-home', mask).onclick = drawHome;
+      qsa('.wb-pet-record-story', mask).forEach(btn => btn.onclick = () => {
+        const row = stories[Number(btn.dataset.i)];
+        const item = row.item || {};
+        mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head(item.title || '剧情') + '<button class="wb-btn" id="wb-pet-story-list">返回列表</button><div class="wb-pet-scroll">' + petStoryPageHTML(item, row.ctx.info, row.ctx.state) + '</div></div>';
+        bindClose();
+        qs('#wb-pet-story-list', mask).onclick = drawStories;
+        const replay = qs('.wb-pet-story-replay', mask);
+        if (replay) replay.onclick = e => {
+          e.stopPropagation();
+          petMiniConfirm('回放剧情？', '是否回放当前剧情？', () => {
+            if (fullMode && row.ctx.pet) petFullSetActivePet(fullCtx.caretaker.id, row.ctx.pet.id);
+            petTestInfoCache = row.ctx.info;
+            const next = Object.assign(defaultPetTestState(), row.ctx.state, { activeStory:{ id:item.id, prompt:false, index:0, page:0, done:false, replay:true } });
+            savePetTestState(next);
+            mask.remove();
+            renderPetHouseLoaded(row.ctx.info, next);
+          });
+        };
+      });
+    };
+    drawHome();
+  }
+
+  function parsePetGeneratedLog(text, today) {
+    const raw = String(text || '');
+    const pick = key => {
+      const m = raw.match(new RegExp(key + '\\s*:\\s*"?([^"\\n]+)"?', 'i'));
+      return m ? m[1].trim() : '';
+    };
+    const diary = (raw.match(/diary\s*:\s*\|-\s*\n([\s\S]*)/i) || [])[1];
+    return {
+      date: today,
+      pet_name: pick('pet_name'),
+      pet_stage: pick('pet_stage'),
+      title: pick('title') || (petDateCN(today) + ' 灵息日志'),
+      tags: (pick('tags') || '').split(/[,，、\s]+/).filter(Boolean),
+      weather: pick('weather'),
+      relationship_delta: pick('relationship_delta'),
+      memory_anchor: pick('memory_anchor'),
+      body: (diary || raw).replace(/<\/?daily_pet_log>/g, '').trim()
+    };
+  }
+  function openPetLogModal(info) {
+    injectPetArcadeStyle();
+    const state = petTestState();
+    const today = todayKey();
+    const existing = state.logs[today] || null;
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-log-mask';
+    const currentModel = settings().apiModel || '本地预览';
+    const apiOptions = '<option value="">当前API配置（' + esc(currentModel) + '）</option>' + apiPresets().map((p, i) => '<option value="' + i + '">' + esc((p.name || ('预设' + (i + 1))) + ' · ' + (p.apiModel || '未选模型')) + '</option>').join('') + '<option value="__local">本地预览</option>';
+    let generated = null;
+    const renderPreview = () => generated ? petLogPageHTML(generated, state, info) : '';
+    mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-log-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">写日志</div><span></span></div><div class="wb-pet-scroll"><label class="wb-switch"><input id="wb-pet-auto-log" type="checkbox" ' + (settings().petAutoDailyLog ? 'checked' : '') + '>每日自动记录日志：' + (settings().petAutoDailyLog ? '开' : '关') + '</label><div class="wb-muted" style="margin:-4px 0 8px;">开启后每日进入小屋时，会自动调用当前模型记录前一天日志；无记录、无 API 或已存在日志时不会更新。</div><label class="wb-field"><span>选择模型</span><select class="wb-select" id="wb-pet-log-model">' + apiOptions + '</select></label><label class="wb-field"><span>今天做了什么</span><textarea class="wb-textarea" id="wb-pet-log-note" style="min-height:72px;" placeholder="可以写下今天额外发生的事，会和系统LOG一起进入日志输入。"></textarea></label><button class="wb-btn primary" type="button" id="wb-pet-log-generate">生成</button><div id="wb-pet-log-preview" style="margin-top:12px;">' + renderPreview() + '</div></div><div class="wb-actions" style="margin-top:10px;"><button class="wb-btn primary" type="button" id="wb-pet-log-save" style="flex:1;">保存</button><button class="wb-btn" type="button" id="wb-pet-log-regen" style="flex:1;">重新生成</button></div></div>';
+    appendModalMask(mask);
+    const generate = async () => {
+      const note = (qs('#wb-pet-log-note', mask)?.value || '').trim();
+      const active = doc.activeElement;
+      if (active && typeof active.blur === 'function') active.blur();
+      const btn = qs('#wb-pet-log-generate', mask);
+      const regen = qs('#wb-pet-log-regen', mask);
+      if (btn) { btn.disabled = true; btn.textContent = '生成中...'; }
+      if (regen) regen.disabled = true;
+      try {
+        const selectedApi = qs('#wb-pet-log-model', mask)?.value || '';
+        const api = selectedApi === '__local' ? { apiUrl:'', apiKey:'', apiModel:'' } : apiFieldsFromPresetIndex(selectedApi);
+        const cfg = Object.assign({}, petCaretakerPromptConfig(), api);
+        generated = await generatePetDailyLog(info, state, note, cfg);
+        const preview = qs('#wb-pet-log-preview', mask); if (preview) preview.innerHTML = renderPreview();
+      } catch(e) {
+        toast('日志生成失败：' + (e && e.message ? e.message : e));
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = generated ? '重新生成' : '生成'; }
+        if (regen) regen.disabled = false;
+      }
+    };
+    qs('#wb-pet-log-generate', mask).onclick = generate;
+    qs('#wb-pet-log-regen', mask).onclick = generate;
+    const autoLog = qs('#wb-pet-auto-log', mask);
+    if (autoLog) autoLog.onchange = () => {
+      setSettings({ petAutoDailyLog:!!autoLog.checked });
+      const label = autoLog.closest('label');
+      if (label) {
+        Array.from(label.childNodes).forEach(node => { if (node.nodeType === 3) node.nodeValue = '每日自动记录日志：' + (autoLog.checked ? '开' : '关'); });
+      }
+      toast(autoLog.checked ? '已开启每日自动记录日志' : '已关闭每日自动记录日志');
+    };
+    qs('#wb-pet-log-save', mask).onclick = () => {
+      if (!generated) { toast('请先生成日志'); return; }
+      const saveNow = () => {
+        const next = petTestState();
+        next.logs = Object.assign({}, next.logs || {}, { [today]:Object.assign({}, generated, { savedAt:Date.now(), date:today, pet_name:info?.pet_card?.pet_name || generated?.pet_name || '宠物', pet_stage:petDisplayStage(next), snapshot:petSnapshotData(next) }) });
+        savePetTestState(next);
+        mask.remove();
+        toast('日志已保存');
+        renderPetHouse();
+      };
+      if (existing) petMiniConfirm('覆盖当天日志？', '当前保存会覆盖当天日志，是否确定？', saveNow);
+      else saveNow();
+    };
+    qs('#wb-pet-log-close', mask).onclick = () => mask.remove();
+  }
+
 
   function renderSelect(mode) {
     syncPopupModeClass();
@@ -5525,7 +8771,7 @@ export async function initWanbanXiaowu() {
       const res = await fetchWithTimeout(url, {
         method: 'POST', headers,
         body: JSON.stringify({ model: cfg.apiModel, messages, temperature: 0.55, max_tokens: maxTokens || 4096 })
-      }, 300000);
+      }, 600000);
       if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error('API错误 ' + res.status + ': ' + t.slice(0, 120)); }
       const json = await res.json();
       fillApiDebugMeta(debugMeta, json);
@@ -5536,6 +8782,73 @@ export async function initWanbanXiaowu() {
       return stripJsonFence(txt);
     } finally {
       if (debugMeta) debugMeta.durationMs = Date.now() - started;
+    }
+  }
+
+  async function callApiTextStream(cfg, prompt, systemPrompt, maxTokens, onDelta) {
+    const url = apiChatUrl(cfg.apiUrl);
+    if (!url) throw new Error('请先配置API基础URL');
+    if (!cfg.apiModel) throw new Error('请先选择模型');
+    const headers = { 'Content-Type': 'application/json' };
+    if (cfg.apiKey) headers.Authorization = 'Bearer ' + cfg.apiKey;
+    const messages = [{ role:'system', content:systemPrompt || '只输出结果正文，不要解释。' }, { role:'user', content:prompt }];
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 600000) : null;
+    const emit = text => { if (text && onDelta) onDelta(text); };
+    try {
+      const res = await fetch(url, Object.assign({
+        method:'POST',
+        headers,
+        body:JSON.stringify({ model:cfg.apiModel, messages, temperature:0.55, max_tokens:maxTokens || 4096, stream:true })
+      }, ctrl ? { signal:ctrl.signal } : {}));
+      if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error('API错误 ' + res.status + ': ' + t.slice(0, 120)); }
+      if (!res.body || !res.body.getReader) {
+        const json = await res.json();
+        const txt = json.choices?.[0]?.message?.content || json.choices?.[0]?.text || json.output_text || '';
+        emit(txt);
+        return stripJsonFence(txt);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buf = '', out = '';
+      const consume = chunk => {
+        buf += chunk;
+        const parts = buf.split(/\r?\n\r?\n/);
+        buf = parts.pop() || '';
+        parts.forEach(part => {
+          part.split(/\r?\n/).forEach(line => {
+            const m = line.match(/^data:\s*(.*)$/);
+            if (!m) return;
+            const data = m[1].trim();
+            if (!data || data === '[DONE]') return;
+            try {
+              const obj = JSON.parse(data);
+              const delta = obj.choices?.[0]?.delta?.content || obj.choices?.[0]?.text || obj.delta || obj.output_text || '';
+              if (delta) { out += delta; emit(delta); }
+            } catch (_) {}
+          });
+        });
+      };
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        consume(decoder.decode(value, { stream:true }));
+      }
+      consume(decoder.decode());
+      if (!out && buf.trim()) {
+        try {
+          const obj = JSON.parse(buf.trim());
+          out = obj.choices?.[0]?.message?.content || obj.choices?.[0]?.text || obj.output_text || '';
+          emit(out);
+        } catch (_) {}
+      }
+      if (!out) throw new Error('API流式响应为空');
+      return stripJsonFence(out);
+    } catch(e) {
+      if (e && e.name === 'AbortError') throw new Error('API请求超时，请检查移动端网络或API地址');
+      throw e;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -7807,7 +11120,7 @@ function showGameRecords(game, page) {
     box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-endless-panel"><div class="wb-gomoku-info wb-gomoku-info-endless"><div class="wb-gomoku-stat"><span>轮到</span><b id="wb-gomoku-turn"></b></div><div class="wb-gomoku-stat"><span>余子</span><b id="wb-gomoku-stock"></b></div><div class="wb-gomoku-stat"><span>吃子</span><b id="wb-gomoku-captured"></b></div>' + cheatButtonCompactHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
     if (!state?.b && state?.firstMover) speakFirstMover('gomoku', state.firstMover);
     draw(); save();
-    if(!state?.b && turn === 'ta') setTimeout(aiTurn, 850);
+    if(turn === 'ta' || pendingEat === 'ta') setTimeout(resumeTaTurn, state?.b ? 260 : 850);
     qsa('.wb-gcell', box).forEach(cell => cell.onclick = () => {
       const i=+cell.dataset.i;
       if(gamePaused||over||turn!=='user'||actionBusy) return;
@@ -7885,9 +11198,18 @@ function showGameRecords(game, page) {
       draw(); save();
       if(turn === 'ta') setTimeout(aiTurn, 850);
     }
+    function resumeTaTurn(){
+      if(gamePaused||over||actionBusy) return;
+      if(pendingEat === 'ta') { aiEat(); return; }
+      if(turn !== 'ta') return;
+      const line = fiveLine(b, n, 'W');
+      if(line.length) { afterMove('ta', line[0]); return; }
+      aiTurn();
+    }
     function aiTurn(){
       if(gamePaused||over||turn!=='ta'||pendingEat||actionBusy) return;
       const empty = b.map((v,i)=>v?'':i).filter(v=>v!=='');
+      if(!empty.length) return;
       const move = bestGomoku(b,n,true);
       placeAt('ta', move >= 0 ? move : empty[Math.floor(Math.random()*empty.length)]);
     }
