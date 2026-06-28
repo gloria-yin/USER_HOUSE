@@ -1,3 +1,5 @@
+import { getRequestHeaders } from '../../../../../../script.js';
+import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 
 // Runtime migrated from 益智小游戏/玩伴小屋V1.0.1.json.
@@ -90,6 +92,9 @@ export async function initWanbanXiaowu() {
   const STORAGE_WORD_GUESS_BANK_SOURCE = SCRIPT_ID + '_wordGuessBankSource_v1';
   const STORAGE_WORD_GUESS_BANK_FILTER = SCRIPT_ID + '_wordGuessBankFilter_v1';
   const WORD_GUESS_DEFAULT_BANK_URL = new URL('./wanban-wordguess-bank.txt', import.meta.url).href;
+  const EXTENSION_UPDATE_FALLBACKS = ['/USER_HOUSE', '/wanban-xiaowu'];
+  let updateCheckStarted = false;
+  let updateState = { checking:false, updating:false, checked:false, available:false, updated:false, error:'', data:null };
   const FLAG = SCRIPT_ID + '_Loaded_v2_0_4';
   const MENU_SELECTORS = [
     '#extensionsMenu',
@@ -370,6 +375,116 @@ export async function initWanbanXiaowu() {
   function safeArray(v) { return Array.isArray(v) ? v : []; }
   function settings() { return Object.assign({}, DEFAULT_SETTINGS, safeObject(loadJSON(STORAGE_SETTINGS, {}))); }
   function setSettings(next) { saveJSON(STORAGE_SETTINGS, Object.assign(settings(), next)); }
+  function extensionUpdateHeaders() {
+    try { return getRequestHeaders(); }
+    catch(e) { return { 'Content-Type': 'application/json' }; }
+  }
+  function extensionUpdateCandidates() {
+    const out = [];
+    const add = name => {
+      name = String(name || '').trim();
+      if (!name) return;
+      if (!name.startsWith('/')) name = '/' + name;
+      if (!out.includes(name)) out.push(name);
+    };
+    EXTENSION_UPDATE_FALLBACKS.forEach(add);
+    try {
+      const raw = decodeURIComponent(String(import.meta.url || '')).replace(/\\/g, '/');
+      const match = raw.match(/(?:^|\/)public\/scripts\/extensions\/third-party\/([^/]+)/i)
+        || raw.match(/(?:^|\/)public\/scripts\/extensions\/([^/]+)/i)
+        || raw.match(/(?:^|\/)scripts\/extensions\/third-party\/([^/]+)/i)
+        || raw.match(/(?:^|\/)scripts\/extensions\/([^/]+)/i)
+        || raw.match(/(?:^|\/)third-party\/([^/]+)/i);
+      if (match) add(match[1]);
+    } catch(e) {}
+    return out;
+  }
+  async function requestExtensionApi(endpoint, extensionName) {
+    const res = await fetch('/api/extensions/' + endpoint, {
+      method:'POST',
+      headers:extensionUpdateHeaders(),
+      body:JSON.stringify({ extensionName, global:false }),
+    });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText || endpoint + ' failed');
+    const data = await res.json();
+    if (data) data.extensionName = extensionName;
+    return data;
+  }
+  function updatePanelHTML() {
+    const data = updateState.data || {};
+    const remote = data.currentBranchName || (data.currentCommitHash ? data.currentCommitHash.slice(0, 7) : '') || '远端更新';
+    let status = updateState.checked ? '当前已更新至最新版本' : '正在检查更新...';
+    let cls = 'idle';
+    if (updateState.checking) { status = '正在检查更新...'; cls = 'busy'; }
+    else if (updateState.updating) { status = '正在更新插件，请稍候...'; cls = 'busy'; }
+    else if (updateState.updated) { status = '更新完成，重启酒馆后生效。'; cls = 'done'; }
+    else if (updateState.error) { status = '检查更新失败'; cls = 'error'; }
+    else if (updateState.available) { status = '发现新版本：' + remote; cls = 'available'; }
+    else if (updateState.checked) { status = '当前已更新至最新版本'; cls = 'ok'; }
+    return '<div class="wb-panel wb-update-panel ' + cls + '" id="wb-update-panel">'
+      + '<div class="wb-update-row"><span>' + esc(status) + '</span>'
+      + (updateState.available ? '<button class="wb-btn primary wb-update-icon" id="wb-run-update" title="更新插件" aria-label="更新插件" ' + (updateState.updating ? 'disabled' : '') + '><i class="fa-solid fa-download"></i></button>' : '')
+      + (updateState.error ? '<button class="wb-btn wb-update-icon" id="wb-check-update" title="重新检查" aria-label="重新检查"><i class="fa-solid fa-rotate-right"></i></button>' : '')
+      + '</div></div>';
+  }
+  function syncUpdateNoticeClass() {
+    qsa('.wb-tab[data-tab="settings"]').forEach(btn => btn.classList.toggle('update-available', !!updateState.available));
+  }
+  function bindUpdatePanelEvents() {
+    const check = qs('#wb-check-update'); if (check) check.onclick = () => checkExtensionUpdate(true);
+    const run = qs('#wb-run-update'); if (run) run.onclick = runExtensionUpdate;
+    syncUpdateNoticeClass();
+  }
+  function refreshUpdatePanel() {
+    const panel = qs('#wb-update-panel');
+    if (panel) {
+      panel.outerHTML = updatePanelHTML();
+      bindUpdatePanelEvents();
+    } else syncUpdateNoticeClass();
+  }
+  async function checkExtensionUpdate(manual) {
+    if (updateState.checking || updateState.updating) return updateState.data;
+    updateState = Object.assign({}, updateState, { checking:true, checked:false, error:'' });
+    refreshUpdatePanel();
+    try {
+      let data = null, lastError = null;
+      for (const name of extensionUpdateCandidates()) {
+        try { data = await requestExtensionApi('version', name); break; }
+        catch(e) { lastError = e; }
+      }
+      if (!data && lastError) throw lastError;
+      updateState = { checking:false, updating:false, checked:true, available:data && data.isUpToDate === false, updated:false, error:'', data:data || null };
+      if (manual) toast(updateState.available ? '检测到可用更新' : '已经是最新版本');
+      return data;
+    } catch(e) {
+      updateState = Object.assign({}, updateState, { checking:false, checked:true, available:false, error:'检查更新失败：' + (e && e.message ? e.message : e) });
+      if (manual) toast(updateState.error);
+      return null;
+    } finally {
+      refreshUpdatePanel();
+    }
+  }
+  async function runExtensionUpdate() {
+    if (updateState.updating || updateState.checking) return;
+    updateState = Object.assign({}, updateState, { updating:true, error:'' });
+    refreshUpdatePanel();
+    try {
+      const name = (updateState.data && updateState.data.extensionName) || extensionUpdateCandidates()[0];
+      const data = await requestExtensionApi('update', name);
+      updateState = { checking:false, updating:false, checked:true, available:false, updated:!(data && data.isUpToDate), error:'', data:data || updateState.data };
+      toast(data && data.isUpToDate ? '已经是最新版本' : '更新完成，请重启酒馆后生效');
+    } catch(e) {
+      updateState = Object.assign({}, updateState, { updating:false, error:'更新失败：' + (e && e.message ? e.message : e) });
+      toast(updateState.error);
+    } finally {
+      refreshUpdatePanel();
+    }
+  }
+  function scheduleInitialUpdateCheck() {
+    if (updateCheckStarted) return;
+    updateCheckStarted = true;
+    setTimeout(() => checkExtensionUpdate(false), 1800);
+  }
   function companionDockSide(cfg) {
     cfg = cfg || settings();
     if (cfg.companionDock === 'start' || cfg.companionDock === 'end') return cfg.companionDock;
@@ -2344,9 +2459,10 @@ export async function initWanbanXiaowu() {
       .wb-ludo-dot { width:6px; height:6px; border-radius:50%; background:#28313f; box-shadow:inset 0 1px 1px rgba(255,255,255,.2); }
       .wb-ludo-dice.one .wb-ludo-dot { width:12px; height:12px; background:#d84b42; }
       @keyframes wbDicePulse { 0% { transform:rotate(-5deg) scale(1); } 50% { transform:rotate(5deg) scale(1.08); } 100% { transform:rotate(-5deg) scale(1); } }
-      .wb-gcell { border:0; border-radius:50%; background:#d7b37c; cursor:pointer; min-width:0; min-height:0; aspect-ratio:1; overflow:hidden; }
+      .wb-gcell { position:relative; border:0; border-radius:50%; background:#d7b37c; cursor:pointer; min-width:0; min-height:0; aspect-ratio:1; overflow:hidden; }
       .wb-gcell.black { background:#222; box-shadow:inset 0 0 0 2px #000; }
       .wb-gcell.white { background:#f7f2e9; box-shadow:inset 0 0 0 2px #ddd; }
+      .wb-gcell.char-last { outline:3px solid var(--wb-accent); outline-offset:-2px; }
       .wb-gcell.eatable { outline:2px solid var(--wb-accent); outline-offset:-2px; box-shadow:0 0 0 2px rgba(239,68,68,.45), inset 0 0 0 2px #ddd; }
       .wb-gcell.recycle { outline:3px solid var(--wb-gold); outline-offset:-2px; animation:wbGomokuPulse .75s ease-in-out infinite; }
       .wb-gcell.eaten { outline:3px solid #ef4444; outline-offset:-2px; animation:wbGomokuEat .7s ease-in-out infinite; }
@@ -2591,6 +2707,17 @@ export async function initWanbanXiaowu() {
       .wb-sticky-actions { position:sticky; bottom:-18px; z-index:3; margin:12px -22px -18px; padding:10px 22px; background:linear-gradient(180deg, color-mix(in srgb, var(--wb-panel) 70%, transparent 30%), var(--wb-panel)); border-top:1px solid var(--wb-border); }
       .wb-start-cover { display:grid; place-items:center; text-align:center; gap:10px; width:100%; height:100%; min-height:240px; color:var(--wb-sub); }
       .wb-start-cover .wb-btn { min-width:160px; }
+
+      .wb-update-panel { border:1px solid var(--wb-border); padding:8px 10px; }
+      .wb-update-panel.available { border-color:var(--wb-accent); box-shadow:0 0 0 2px rgba(239,138,108,.16); }
+      .wb-update-panel.busy { border-color:var(--wb-gold); }
+      .wb-update-panel.done { border-color:#22c55e; }
+      .wb-update-panel.error { border-color:#ef4444; }
+      .wb-update-row { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:32px; font-weight:900; color:var(--wb-text); }
+      .wb-update-row span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wb-update-icon { flex:0 0 auto; width:34px; min-width:34px; height:30px; padding:0; display:grid; place-items:center; }
+      .wb-tab.update-available { position:relative; color:var(--wb-accent); font-weight:900; }
+      .wb-tab.update-available::after { content:''; position:absolute; right:8px; top:7px; width:7px; height:7px; border-radius:50%; background:var(--wb-accent); box-shadow:0 0 0 3px rgba(239,138,108,.18); }
       .wb-settings-grid { display:grid; grid-template-columns:minmax(0, 820px); justify-content:center; gap:12px; align-items:start; padding-bottom:12px; }
       .wb-settings-left, .wb-settings-right { display:contents; }
       .wb-settings-grid .wb-panel { display:grid; gap:10px; align-content:start; min-height:auto; }
@@ -6052,7 +6179,8 @@ export async function initWanbanXiaowu() {
     const cfg = settings(); const p = qs('#' + POPUP_ID); syncPopupModeClass();
     p.onwheel = (e) => { e.stopPropagation(); };
     p.ontouchmove = (e) => { e.stopPropagation(); };
-    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏</button><button class="wb-tab" data-tab="double">双人游戏</button><button class="wb-tab" data-tab="intimacy">亲密互动</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V2.1.3，本游戏发布者 Gloria"><span><i>当前版本</i>V2.1.3</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
+    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏</button><button class="wb-tab" data-tab="double">双人游戏</button><button class="wb-tab" data-tab="intimacy">亲密互动</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V' + esc(EXTENSION_VERSION) + '，本游戏发布者 Gloria"><span><i>当前版本</i>V' + esc(EXTENSION_VERSION) + '</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
+    syncUpdateNoticeClass();
     qsa('.wb-tab', p).forEach(b => { b.classList.toggle('active', b.dataset.tab === currentTab); b.onclick = () => { flushSettingsProgress(); stopGame(); currentGame = null; currentTab = b.dataset.tab; saveWindowState(currentTab, ''); render(); }; });
     qs('#wb-close', p).onclick = () => { flushSettingsProgress(); saveWindowState(currentTab, currentGame); stopGame(); closePopupShell(); };
     try {
@@ -6711,6 +6839,34 @@ export async function initWanbanXiaowu() {
         color:#fff8df!important;
         font-size:24px;
         text-shadow:1px 1px 0 rgba(86,64,39,.55),0 0 8px rgba(255,244,196,.35);
+      }
+      .wb-modal-mask#wb-pet-tutorial-mask {
+        padding:12px!important;
+        overflow:hidden!important;
+        align-items:center!important;
+        justify-content:center!important;
+        box-sizing:border-box!important;
+      }
+      .wb-modal-mask#wb-pet-tutorial-mask .wb-pet-tutorial-modal {
+        width:min(94vw,760px)!important;
+        max-width:760px!important;
+        height:min(88dvh,680px)!important;
+        max-height:calc(100dvh - 24px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;
+        display:flex!important;
+        flex-direction:column!important;
+        overflow:hidden!important;
+        box-sizing:border-box!important;
+      }
+      .wb-modal-mask#wb-pet-tutorial-mask .wb-pet-modal-head {
+        flex:0 0 auto!important;
+        margin-bottom:0!important;
+      }
+      .wb-modal-mask#wb-pet-tutorial-mask .wb-pet-scroll {
+        flex:1 1 auto!important;
+        min-height:0!important;
+        overflow:auto!important;
+        padding:12px 16px 16px!important;
+        box-sizing:border-box!important;
       }
       .wb-modal-mask .wb-pet-manual h2 {
         font-size:31px;
@@ -8193,6 +8349,7 @@ export async function initWanbanXiaowu() {
 		    const languageOptions = specialLanguageOptions().map(x => '<option value="' + esc(x) + '">' + esc(x) + '</option>').join('');
 		    const charPreview = currentCharDescription(Object.assign({}, cfg, { injectCharDesc: true }));
     body.innerHTML = '<div class="wb-settings-grid">'
+      + updatePanelHTML()
       + '<div class="wb-panel"><div class="wb-section-title">基础设置</div>'
       + '<label class="wb-switch"><input id="wb-companion-toggle" type="checkbox" ' + (cfg.companion ? 'checked' : '') + '>开启陪伴模式</label>'
       + '<div id="wb-companion-suboptions" style="' + (cfg.companion ? '' : 'display:none;') + '">'
@@ -8268,6 +8425,7 @@ export async function initWanbanXiaowu() {
     const charMode = qs('#wb-char-desc-mode'); if (charMode) charMode.value = cfg.charDescMode === 'manual' ? 'manual' : 'auto';
     const manualWrap = qs('#wb-manual-char-wrap'); if (manualWrap) manualWrap.style.display = cfg.charDescMode === 'manual' ? '' : 'none';
     qs('#wb-summary-select').value = cfg.summaryId || '';
+    bindUpdatePanelEvents();
     populateModelSelect(cfg.apiModel);
     updateApiStatusUI();
     restoreSelectedWorldEntries();
@@ -8540,7 +8698,7 @@ export async function initWanbanXiaowu() {
   }
   function exportAllData() {
     flushSettingsProgress();
-    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:'2.1.3', exportedAt:new Date().toISOString(), items:{} };
+    const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:EXTENSION_VERSION, exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
@@ -9992,7 +10150,7 @@ export async function initWanbanXiaowu() {
     } catch(e) {}
   }
 
-  function init() { addMenuItem(); bindMessageNotifyEvents(); syncFloatingBall(); }
+  function init() { addMenuItem(); bindMessageNotifyEvents(); syncFloatingBall(); scheduleInitialUpdateCheck(); }
 
   if (typeof window[FLAG] === 'undefined') {
     window[FLAG] = true;
@@ -11089,22 +11247,23 @@ function showGameRecords(game, page) {
     if (choiceForState('gomoku', state).id === 'endless') { startEndlessGomoku(state); return; }
     const box = qs('#wb-gamebox'), n=15;
     let b = Array.isArray(state?.b) && state.b.length === n*n ? state.b : Array(n*n).fill(''), over=false;
+    let lastCharMove = Number.isInteger(state?.lastCharMove) ? state.lastCharMove : -1;
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     let details = state?.details || { rounds:0, userBlocks:{2:0,3:0,4:0}, charBlocks:{2:0,3:0,4:0} };
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-with-info"><div class="wb-gomoku-info wb-gomoku-info-normal"><div class="wb-gomoku-stat"><span>轮到</span><b id="wb-gomoku-turn">你</b></div><div class="wb-gomoku-stat"><span>执棋</span><b id="wb-gomoku-stock">你 黑</b></div><div class="wb-gomoku-stat"><span>规则</span><b id="wb-gomoku-captured">五连胜</b></div>' + cheatButtonCompactHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
     if (!state?.b && state?.firstMover) speakFirstMover('gomoku', state.firstMover);
-    if (!state?.b && state?.firstMover === 'ta') { const first = bestGomoku(b,n,true); if(first>=0){ b[first]='W'; maybeCharNext(); } }
+    if (!state?.b && state?.firstMover === 'ta') { const first = bestGomoku(b,n,true); if(first>=0){ b[first]='W'; lastCharMove=first; maybeCharNext(); } }
     draw(); save();
     qs('#wb-cheat', box).onclick = cheatUndo;
-    qsa('.wb-gcell', box).forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; pushUndo(); markFirstMoverUserAction(); const userBlock=blockRank(b,n,i,'W',4); if(userBlock>=2) details.userBlocks[userBlock] = (details.userBlocks[userBlock] || 0) + 1; b[i]='B'; details.rounds=b.filter(Boolean).length; const pat=gomokuPattern(b,n,i,'B'); let userEvent = ''; if(pat) userEvent = pat; else if(lineScore(b,n,i,'B')>=125) userEvent = 'user_three'; const userSpoke = !!userEvent && Math.random()<.5; if(userSpoke) speak('gomoku', userEvent); draw(); if(done('B')) return; const ai=bestGomoku(b,n,userSpoke); const aiSpoke = !!bestGomoku.lastSpoke; if(ai>=0){ const charBlock=blockRank(b,n,ai,'B',4); if(charBlock>=2) details.charBlocks[charBlock] = (details.charBlocks[charBlock] || 0) + 1; b[ai]='W'; details.rounds=b.filter(Boolean).length; if(!userSpoke && !aiSpoke){ const threat = lineScore(b,n,ai,'W')>=80; if(threat) speak('gomoku','ai_threat'); else maybeCharNext(); } draw(); if(!done('W')) save(); } });
-    function snapshot(){ return { b:b.slice(), taMoves, nextCharLineAt, details:cloneCheatState(details) }; }
+    qsa('.wb-gcell', box).forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; pushUndo(); markFirstMoverUserAction(); const userBlock=blockRank(b,n,i,'W',4); if(userBlock>=2) details.userBlocks[userBlock] = (details.userBlocks[userBlock] || 0) + 1; b[i]='B'; details.rounds=b.filter(Boolean).length; const pat=gomokuPattern(b,n,i,'B'); let userEvent = ''; if(pat) userEvent = pat; else if(lineScore(b,n,i,'B')>=125) userEvent = 'user_three'; const userSpoke = !!userEvent && Math.random()<.5; if(userSpoke) speak('gomoku', userEvent); draw(); if(done('B')) return; const ai=bestGomoku(b,n,userSpoke); const aiSpoke = !!bestGomoku.lastSpoke; if(ai>=0){ const charBlock=blockRank(b,n,ai,'B',4); if(charBlock>=2) details.charBlocks[charBlock] = (details.charBlocks[charBlock] || 0) + 1; b[ai]='W'; lastCharMove=ai; details.rounds=b.filter(Boolean).length; if(!userSpoke && !aiSpoke){ const threat = lineScore(b,n,ai,'W')>=80; if(threat) speak('gomoku','ai_threat'); else maybeCharNext(); } draw(); if(!done('W')) save(); } });
+    function snapshot(){ return { b:b.slice(), lastCharMove, taMoves, nextCharLineAt, details:cloneCheatState(details) }; }
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
-	    function cheatUndo(){ if(gamePaused||over||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('gomoku', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
-	    function save(){ saveProgress('gomoku', Object.assign({ b, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }, choiceSavePatch('gomoku', choiceForState('gomoku', state)))); }
+	    function cheatUndo(){ if(gamePaused||over||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('gomoku', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; lastCharMove=Number.isInteger(s.lastCharMove) ? s.lastCharMove : -1; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
+	    function save(){ saveProgress('gomoku', Object.assign({ b, lastCharMove, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }, choiceSavePatch('gomoku', choiceForState('gomoku', state)))); }
     function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('gomoku','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function done(m){ const rounds=b.filter(Boolean).length; details.rounds=rounds; details.gomokuMode='normal'; const meta={gomokuMode:'normal', details}; if(winG(b,n,m)){ over=true; if(m==='B'){ { const curScore = scores().gomoku; setScore('gomoku', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('gomoku','user_win'); showGameOver('gomoku', '你赢了', '回合数：' + rounds, 'user_win', meta); } else { speak('gomoku','user_lose'); showGameOver('gomoku', '游戏结束', '回合数：' + rounds + '（失败）', 'ta_win', meta); } return true; } if(b.every(Boolean)){ over=true; speak('gomoku','draw'); showGameOver('gomoku', '平局', '回合数：' + rounds + '（平局）', 'draw', meta); return true; } return false; }
-	    function draw(){ const turnEl=qs('#wb-gomoku-turn', box); if(turnEl) turnEl.textContent='你'; const roleEl=qs('#wb-gomoku-stock', box); if(roleEl) roleEl.innerHTML='你 黑<br>' + esc(displayCharNameForGame('gomoku') || 'TA') + ' 白'; qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':''); }); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over); }
+	    function draw(){ const turnEl=qs('#wb-gomoku-turn', box); if(turnEl) turnEl.textContent='你'; const roleEl=qs('#wb-gomoku-stock', box); if(roleEl) roleEl.innerHTML='你 黑<br>' + esc(displayCharNameForGame('gomoku') || 'TA') + ' 白'; qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (i===lastCharMove && b[i]==='W' ? ' char-last' : ''); }); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over); }
   }
   function startEndlessGomoku(state) {
     const box = qs('#wb-gamebox'), n=15, choice = choiceForState('gomoku', state);
@@ -11115,6 +11274,7 @@ function showGameRecords(game, page) {
     let captured = state?.captured || { user:0, ta:0 };
     stock = { user:normalizedStock('user'), ta:normalizedStock('ta') };
     let rounds = state?.rounds || 0, pendingEat = state?.pendingEat || '', over=false, actionBusy=false, highlightLine=[], highlightEat=-1;
+    let lastCharMove = Number.isInteger(state?.lastCharMove) ? state.lastCharMove : -1;
     let details = state?.details || { rounds:0, userCaptures:0, charCaptures:0, userRecycles:0, charRecycles:0 };
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-endless-panel"><div class="wb-gomoku-info wb-gomoku-info-endless"><div class="wb-gomoku-stat"><span>轮到</span><b id="wb-gomoku-turn"></b></div><div class="wb-gomoku-stat"><span>余子</span><b id="wb-gomoku-stock"></b></div><div class="wb-gomoku-stat"><span>吃子</span><b id="wb-gomoku-captured"></b></div>' + cheatButtonCompactHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
@@ -11131,10 +11291,10 @@ function showGameRecords(game, page) {
       placeAt('user', i);
     });
     qs('#wb-cheat', box).onclick = cheatUndo;
-    function snapshot(){ return { b:b.slice(), turn, stock:cloneCheatState(stock), captured:cloneCheatState(captured), rounds, pendingEat, details:cloneCheatState(details) }; }
+    function snapshot(){ return { b:b.slice(), turn, stock:cloneCheatState(stock), captured:cloneCheatState(captured), rounds, pendingEat, lastCharMove, details:cloneCheatState(details) }; }
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
-	    function cheatUndo(){ if(gamePaused||over||actionBusy||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('gomoku', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; turn=s.turn; stock=s.stock; captured=s.captured; rounds=s.rounds; pendingEat=s.pendingEat; details=s.details; }); highlightLine=[]; highlightEat=-1; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
-	    function save(){ if(!over) saveProgress('gomoku', Object.assign({ b, turn, stock, captured, rounds, pendingEat, details, cheatLeft, cheatAttempted, undoStack }, choiceSavePatch('gomoku', choice))); }
+	    function cheatUndo(){ if(gamePaused||over||actionBusy||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('gomoku', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; turn=s.turn; stock=s.stock; captured=s.captured; rounds=s.rounds; pendingEat=s.pendingEat; lastCharMove=Number.isInteger(s.lastCharMove) ? s.lastCharMove : -1; details=s.details; }); highlightLine=[]; highlightEat=-1; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
+	    function save(){ if(!over) saveProgress('gomoku', Object.assign({ b, turn, stock, captured, rounds, pendingEat, lastCharMove, details, cheatLeft, cheatAttempted, undoStack }, choiceSavePatch('gomoku', choice))); }
     function sideMark(side){ return side === 'user' ? 'B' : 'W'; }
     function other(side){ return side === 'user' ? 'ta' : 'user'; }
     function sideName(side){ return side === 'user' ? '你' : displayCharNameForGame('gomoku'); }
@@ -11145,7 +11305,7 @@ function showGameRecords(game, page) {
     }
     function placeAt(side, i){
       if(stock[side] <= 0 || b[i]) return;
-      b[i]=sideMark(side); stock[side]--; rounds++; details.rounds=rounds;
+      b[i]=sideMark(side); if(side === 'ta') lastCharMove = i; stock[side]--; rounds++; details.rounds=rounds;
       afterMove(side, i);
     }
     function eatAt(side, i){
@@ -11157,6 +11317,7 @@ function showGameRecords(game, page) {
       setTimeout(() => {
         if(over) return;
         b[i] = sideMark(side);
+        if(side === 'ta') lastCharMove = i;
         captured[side]++; details[side === 'user' ? 'userCaptures' : 'charCaptures'] = captured[side];
         speak('gomoku', side === 'user' ? 'user_capture' : 'char_capture');
         pendingEat = '';
@@ -11241,7 +11402,7 @@ function showGameRecords(game, page) {
       qs('#wb-gomoku-turn', box).textContent = pendingEat ? (pendingEat === 'user' ? '你吃子' : charName + '吃子') : (turn === 'user' ? '你' : charName);
       qs('#wb-gomoku-stock', box).innerHTML = esc(charName) + ' ' + stock.ta + '<br>你 ' + stock.user;
       qs('#wb-gomoku-captured', box).innerHTML = esc(charName) + ' ' + captured.ta + '<br>你 ' + captured.user;
-      qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (pendingEat === 'user' && !actionBusy && b[i] === 'W' ? ' eatable' : '') + (highlightLine.includes(i) ? ' recycle' : '') + (highlightEat === i ? ' eaten' : ''); });
+      qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (i===lastCharMove && b[i]==='W' ? ' char-last' : '') + (pendingEat === 'user' && !actionBusy && b[i] === 'W' ? ' eatable' : '') + (highlightLine.includes(i) ? ' recycle' : '') + (highlightEat === i ? ' eaten' : ''); });
 	      refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||actionBusy);
     }
   }
