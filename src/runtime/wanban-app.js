@@ -140,6 +140,8 @@ export async function initWanbanXiaowu() {
   let petStateReturnTimer = null;
   let petReturnHouseOnRender = false;
   let petStoryTapLockedUntil = 0;
+  let petStoryTypeTimer = 0;
+  const petStoryPageCache = new Map();
   let petDesktopPokeLockedUntil = 0;
   let petAutoDailyLogRunning = {};
   let lineGenerationBusy = false;
@@ -2082,7 +2084,7 @@ export async function initWanbanXiaowu() {
       .wb-pet-desk-panel{position:absolute;left:50%;top:105px;width:224px;max-height:158px;transform:translateX(-50%);padding:9px;border:1px solid rgba(255,255,255,.82);background:rgba(255,255,255,.74);color:#2f3b46;box-shadow:0 10px 28px rgba(58,74,92,.18),inset 0 0 0 1px rgba(255,255,255,.58);backdrop-filter:blur(12px) saturate(1.18);-webkit-backdrop-filter:blur(12px) saturate(1.18);display:none;overflow:auto;image-rendering:pixelated;z-index:2;}
       .wb-pet-desk-chat{z-index:4}.wb-pet-desk-status{z-index:3}
       #${PET_FLOAT_ID}.status-on .wb-pet-desk-status,#${PET_FLOAT_ID}.chat-on .wb-pet-desk-chat{display:block;}#${PET_FLOAT_ID}.status-on.chat-on .wb-pet-desk-status{top:105px;}#${PET_FLOAT_ID}.status-on.chat-on .wb-pet-desk-chat{top:190px;}
-      .wb-pet-desk-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:12px;font-weight:900;color:#61748a}.wb-pet-desk-close{width:22px;height:22px;border-radius:999px;border:1px solid rgba(100,125,148,.25);background:rgba(255,255,255,.7);color:#61748a;display:grid;place-items:center;padding:0;cursor:pointer}.wb-pet-desk-stats{display:grid;gap:5px;font-size:12px;line-height:1.35}.wb-pet-desk-bar{height:7px;border:1px solid rgba(80,103,125,.28);background:rgba(235,243,250,.78);overflow:hidden}.wb-pet-desk-bar span{display:block;height:100%;width:var(--v);background:#9bc7ef}.wb-pet-desk-chat{max-height:150px}.wb-pet-desk-chat-actions{display:flex;gap:5px;margin-bottom:6px}.wb-pet-desk-chat-actions button{flex:1;min-height:25px;border:1px solid rgba(100,125,148,.24);background:rgba(255,255,255,.72);color:#415466;font-size:11px;font-weight:900;padding:2px 5px;cursor:pointer}.wb-pet-desk-chat-text{min-height:44px;max-height:88px;overflow:auto;font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.wb-pet-ball-score{position:fixed;left:50%;top:14px;z-index:1000000;transform:translateX(-50%);padding:7px 12px;border:1px solid rgba(255,255,255,.86);background:rgba(255,255,255,.78);color:#415466;box-shadow:0 8px 22px rgba(58,74,92,.18);backdrop-filter:blur(10px);font-weight:900;pointer-events:none}.wb-pet-ball{position:fixed;z-index:999999;width:28px;height:28px;border-radius:999px;background:radial-gradient(circle at 32% 28%,#fff 0 12%,#ffe08a 13% 34%,#ff9c76 35% 100%);border:1px solid rgba(255,255,255,.86);box-shadow:0 6px 16px rgba(80,62,28,.20);pointer-events:none}
+      .wb-pet-desk-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:12px;font-weight:900;color:#61748a}.wb-pet-desk-close{width:22px;height:22px;border-radius:999px;border:1px solid rgba(100,125,148,.25);background:rgba(255,255,255,.7);color:#61748a;display:grid;place-items:center;padding:0;cursor:pointer}.wb-pet-desk-stats{display:grid;gap:5px;font-size:12px;line-height:1.35}.wb-pet-desk-bar{height:7px;border:1px solid rgba(80,103,125,.28);background:rgba(235,243,250,.78);overflow:hidden}.wb-pet-desk-bar span{display:block;height:100%;width:var(--v);background:#9bc7ef}.wb-pet-desk-chat{max-height:150px}.wb-pet-desk-chat-actions{display:flex;gap:5px;margin-bottom:6px}.wb-pet-desk-chat-actions button{flex:1;min-height:25px;border:1px solid rgba(100,125,148,.24);background:rgba(255,255,255,.72);color:#415466;font-size:11px;font-weight:900;padding:2px 5px;cursor:pointer}.wb-pet-desk-chat-text{min-height:44px;max-height:88px;overflow:auto;font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.wb-pet-ball-score{position:fixed;left:50%;top:14px;z-index:1000000;transform:translateX(-50%);padding:7px 12px;border:1px solid rgba(255,255,255,.86);background:rgba(255,255,255,.78);color:#415466;box-shadow:0 8px 22px rgba(58,74,92,.18);backdrop-filter:blur(10px);font-weight:900;pointer-events:none}.wb-pet-ball{position:fixed;left:0;top:0;z-index:999999;width:28px;height:28px;border-radius:999px;background:radial-gradient(circle at 32% 28%,#fff 0 12%,#ffe08a 13% 34%,#ff9c76 35% 100%);border:1px solid rgba(255,255,255,.86);box-shadow:0 6px 16px rgba(80,62,28,.20);pointer-events:none;will-change:transform;contain:layout style paint;transform:translate3d(-40px,-40px,0)}
       #wb-pet-desktop-chat-mask{position:fixed!important;inset:0!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100dvh!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:18px!important;box-sizing:border-box!important;z-index:1000006!important;}
       #wb-pet-desktop-chat-mask .wb-pet-modal{position:relative!important;margin:0 auto!important;transform:none!important;max-height:calc(100dvh - 36px)!important;}
       .wb-pet-desk-menu .wb-pet-round{width:46px!important;height:30px!important;border-radius:12px!important;font-size:11px!important;font-weight:900;letter-spacing:0;color:#263746!important;}
@@ -2094,6 +2096,7 @@ export async function initWanbanXiaowu() {
       #${PET_FLOAT_ID}.speech-on .wb-pet-desk-speech:after{content:'';position:absolute;right:-7px;top:18px;border-width:5px 0 5px 7px;border-style:solid;border-color:transparent transparent transparent #fff;}
       #${PET_FLOAT_ID}.speech-on.speech-right .wb-pet-desk-speech{left:calc(100% + 8px);right:auto;}
       #${PET_FLOAT_ID}.speech-on.speech-right .wb-pet-desk-speech:after{left:-7px;right:auto;border-width:5px 7px 5px 0;border-color:transparent #fff transparent transparent;}
+      #${PET_FLOAT_ID}.speech-on .wb-pet-desk-speech{border:1px solid #000!important;box-shadow:0 2px 0 rgba(0,0,0,.12)!important}#${PET_FLOAT_ID}.speech-on .wb-pet-desk-speech:before,#${PET_FLOAT_ID}.speech-on.speech-right .wb-pet-desk-speech:before{content:'';position:absolute;left:auto;right:20px;top:auto;bottom:-10px;border-width:10px 8px 0 8px;border-style:solid;border-color:#000 transparent transparent transparent;}#${PET_FLOAT_ID}.speech-on .wb-pet-desk-speech:after,#${PET_FLOAT_ID}.speech-on.speech-right .wb-pet-desk-speech:after{left:auto!important;right:21px!important;top:auto!important;bottom:-9px!important;border-width:9px 7px 0 7px!important;border-color:#fff transparent transparent transparent!important}
       @media (max-width:768px){#${PET_FLOAT_ID},.wb-pet-desk-fox{width:86px;height:86px}.wb-pet-desk-menu .wb-pet-round{width:42px!important;height:28px!important;font-size:10px!important}.wb-pet-desk-submenu .wb-pet-round{width:40px!important;height:21px!important;font-size:9px!important}.wb-pet-round svg{width:16px;height:16px}.wb-pet-desk-menu .wb-pet-round:nth-child(1){--dx:-60px;--dy:-48px}.wb-pet-desk-menu .wb-pet-round:nth-child(2){--dx:0px;--dy:-72px}.wb-pet-desk-menu .wb-pet-round:nth-child(3){--dx:60px;--dy:-48px}.wb-pet-desk-menu .wb-pet-round:nth-child(4){--dx:80px;--dy:8px}.wb-pet-desk-submenu .wb-pet-round:nth-child(1){--dx:-60px;--dy:-18px}.wb-pet-desk-submenu .wb-pet-round:nth-child(2){--dx:-60px;--dy:8px}.wb-pet-desk-submenu .wb-pet-round:nth-child(3){--dx:-60px;--dy:34px}.wb-pet-desk-panel{top:86px;width:184px;max-height:112px;padding:6px}#${PET_FLOAT_ID}.status-on.chat-on .wb-pet-desk-status{top:86px}#${PET_FLOAT_ID}.status-on.chat-on .wb-pet-desk-chat{top:173px}.wb-pet-desk-chat-text{max-height:62px}#${PET_FLOAT_ID}.speech-on .wb-pet-desk-speech{max-width:112px;font-size:9px;padding:3px 5px;top:30px}}
       #${POPUP_ID}, #${POPUP_ID} * { box-sizing: border-box; }
       #${POPUP_ID} {
@@ -2717,7 +2720,7 @@ export async function initWanbanXiaowu() {
       .wb-update-row span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .wb-update-icon { flex:0 0 auto; width:34px; min-width:34px; height:30px; padding:0; display:grid; place-items:center; }
       .wb-tab.update-available { position:relative; color:var(--wb-accent); font-weight:900; }
-      .wb-tab.update-available::after { content:''; position:absolute; right:8px; top:7px; width:7px; height:7px; border-radius:50%; background:var(--wb-accent); box-shadow:0 0 0 3px rgba(239,138,108,.18); }
+      .wb-tab.update-available::after { content:''; position:absolute; right:8px; top:7px; width:8px; height:8px; border-radius:50%; background:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,.20),0 0 10px rgba(239,68,68,.55); }
       .wb-settings-grid { display:grid; grid-template-columns:minmax(0, 820px); justify-content:center; gap:12px; align-items:start; padding-bottom:12px; }
       .wb-settings-left, .wb-settings-right { display:contents; }
       .wb-settings-grid .wb-panel { display:grid; gap:10px; align-content:start; min-height:auto; }
@@ -4638,6 +4641,43 @@ export async function initWanbanXiaowu() {
         color:#F6F5DE!important;
         -webkit-text-fill-color:#F6F5DE;
       }
+      #${POPUP_ID} .wb-speech,
+      #${POPUP_ID}.wb-night .wb-speech,
+      #${POPUP_ID}.wb-arcade .wb-speech,
+      #${POPUP_ID}.wb-spring .wb-speech,
+      #${POPUP_ID}.wb-mono .wb-speech,
+      #${POPUP_ID}.wb-cyber .wb-speech,
+      #${POPUP_ID} #wb-speech {
+        position:relative!important;
+        overflow:visible!important;
+        border:1px solid #000!important;
+      }
+      #${POPUP_ID} .wb-speech::before {
+        content:''!important;
+        display:block!important;
+        position:absolute!important;
+        left:18px!important;
+        bottom:-10px!important;
+        width:0!important;
+        height:0!important;
+        border-width:10px 8px 0 8px!important;
+        border-style:solid!important;
+        border-color:#000 transparent transparent transparent!important;
+        background:transparent!important;
+      }
+      #${POPUP_ID} .wb-speech::after {
+        content:''!important;
+        display:block!important;
+        position:absolute!important;
+        left:20px!important;
+        bottom:-9px!important;
+        width:0!important;
+        height:0!important;
+        border-width:9px 7px 0 7px!important;
+        border-style:solid!important;
+        border-color:var(--wb-soft) transparent transparent transparent!important;
+        background:transparent!important;
+      }
     `;
 
     getHostDocument().head.appendChild(css);
@@ -5156,6 +5196,9 @@ export async function initWanbanXiaowu() {
     if (state.stage === 'ordinary') return '普通';
     return '宠物';
   }
+  function petDisplayName(info, state, fallback) {
+    return state && state.stage === 'egg' ? '？？？' : ((info && info.pet_card && info.pet_card.pet_name) || fallback || '宠物');
+  }
   function petFormForStage(state) {
     if (state.stage === 'spirit') return 'magic';
     if (state.stage === 'adult' || state.stage === 'ordinary') return 'adult';
@@ -5177,10 +5220,12 @@ export async function initWanbanXiaowu() {
     next.lastVisitDate = today;
     const decayStepMs = 30 * 60 * 1000;
     const elapsed = Math.floor((now - Number(next.lastDecayAt || now)) / decayStepMs);
-    if (elapsed > 0) {
-      next.fullness = Math.max(0, Number(next.fullness || 0) - elapsed * 10);
-      next.happiness = Math.max(0, Number(next.happiness || 0) - elapsed * 10);
+    if (elapsed > 0 && next.stage !== 'egg') {
+      next.fullness = Math.max(0, Number(next.fullness || 0) - elapsed * 5);
+      next.happiness = Math.max(0, Number(next.happiness || 0) - elapsed * 5);
       next.lastDecayAt = Number(next.lastDecayAt || now) + elapsed * decayStepMs;
+    } else if (elapsed > 0) {
+      next.lastDecayAt = now;
     }
     if (!next.lastInteractionAt) next.lastInteractionAt = now;
     if (settings().petDesktopEnabled && next.stage !== 'egg' && !next.ended) {
@@ -5227,8 +5272,8 @@ export async function initWanbanXiaowu() {
     const listName = /^S/.test(id) ? 'completedSide' : 'completedMain';
     next[listName] = Array.from(new Set([].concat(next[listName] || [], id)));
     next.storyRecords = [{ id, route:route || next.route, title:story?.title || id, summary:story?.summary || '', story:story?.story || '', userName:petPlayerName(next), savedAt:Date.now(), date:todayKey(), snapshot:petSnapshotData(next) }].concat(next.storyRecords || []).slice(0, 120);
-    if (id === 'M05') { next.stage = 'juvenile'; next.growth = 0; }
-    if (id === 'M08') { next.stage = 'adult'; next.growth = 0; }
+    if (id === 'M05') { next.stage = 'juvenile'; next.growth = 0; next.fullness = 80; next.happiness = 80; resetPetSideCountsBeforeStage(next, 'juvenile'); }
+    if (id === 'M08') { next.stage = 'adult'; next.growth = 0; resetPetSideCountsBeforeStage(next, 'adult'); }
     if (id === 'M12') { next.stage = 'spirit'; next.route = 'spirit'; next.growth = 0; }
     if (id === 'M13') { next.stage = 'ordinary'; next.route = 'ordinary'; next.growth = 0; }
     if (id === 'M15') next.ended = true;
@@ -5258,6 +5303,33 @@ export async function initWanbanXiaowu() {
     if (req === 'juvenile') return (order[cur] || 0) >= 1;
     if (req === 'adult') return (order[cur] || 0) >= 2;
     return false;
+  }
+  function petStageOrder(stage) {
+    return ({ egg:0, juvenile:1, adult:2, spirit:3, ordinary:3 })[String(stage || '').toLowerCase()] ?? 0;
+  }
+  function resetPetSideCountsBeforeStage(state, stage) {
+    const min = petStageOrder(stage);
+    if (!state || !petTestInfoCache?.side_story) return;
+    const nextCounts = Object.assign({}, state.sideCounts || {});
+    const triggered = new Set(state.sideTriggered || []);
+    const pending = new Set(state.pendingStories || []);
+    petTestInfoCache.side_story.forEach(side => {
+      const required = String(side?.trigger?.stage || 'any').toLowerCase();
+      if (required !== 'any' && petStageOrder(required) >= min) {
+        delete nextCounts[side.id];
+        triggered.delete(side.id);
+        pending.delete(side.id);
+      }
+    });
+    state.sideCounts = nextCounts;
+    state.sideTriggered = Array.from(triggered);
+    state.pendingStories = Array.from(pending);
+  }
+  function petSideTriggerActionAllowed(trigger, state) {
+    if (!petSideStageAllowed(trigger.stage, state.stage)) return false;
+    if (trigger.context_type === 'location' && trigger.context_value !== state.location) return false;
+    if (trigger.context_type === 'time' && trigger.context_value !== petTimeOfDay()) return false;
+    return true;
   }
 
   function updatePetPendingStories(state, info) {
@@ -5390,14 +5462,14 @@ export async function initWanbanXiaowu() {
     };
     if (action === 'feed' && state.stage !== 'egg') {
       const beforeFullness = Number(state.fullness || 0);
-      state.fullness = Math.min(100, beforeFullness + 5);
+      state.fullness = Math.min(100, beforeFullness + 15);
       if (state.fullness > beforeFullness) addGrowth(2, '喂食照顾');
       state.feedCount = Number(state.feedCount || 0) + 1;
       day.feed++;
     } else if (action === 'pet') {
       if (state.stage !== 'egg') {
         const beforeHappiness = Number(state.happiness || 0);
-        state.happiness = Math.min(100, beforeHappiness + 5);
+        state.happiness = Math.min(100, beforeHappiness + 15);
         if (state.happiness > beforeHappiness) addGrowth(2, '抚摸陪伴');
       }
       if (state.stage === 'egg') {
@@ -5432,6 +5504,7 @@ export async function initWanbanXiaowu() {
     (petTestInfoCache?.side_story || []).forEach(side => {
       const trigger = side.trigger || {};
       if (trigger.behavior !== action) return;
+      if (!petSideTriggerActionAllowed(trigger, state)) return;
       sideCounts[side.id] = Number(sideCounts[side.id] || 0) + 1;
       if ((state.completedSide || []).includes(side.id)) return;
       if (trigger.behavior_trigger_type === 'count' && sideCounts[side.id] >= Number(trigger.threshold || 0)) triggered.add(side.id);
@@ -5468,6 +5541,7 @@ export async function initWanbanXiaowu() {
     (petTestInfoCache?.side_story || []).forEach(side => {
       const trigger = side.trigger || {};
       if (trigger.behavior !== 'play') return;
+      if (!petSideTriggerActionAllowed(trigger, state)) return;
       sideCounts[side.id] = Number(sideCounts[side.id] || 0) + 1;
       if ((state.completedSide || []).includes(side.id)) return;
       if (trigger.behavior_trigger_type === 'count' && sideCounts[side.id] >= Number(trigger.threshold || 0)) triggered.add(side.id);
@@ -5556,7 +5630,7 @@ export async function initWanbanXiaowu() {
     const action = ({ normal:'poke', happy:'pet', eat:'feed', sleep:'sleep', sad:'sad' })[cls] || 'poke';
     const quoted = petTestInfoCache && petQuote(petTestInfoCache, 'pet', stage, action, '');
     if (quoted) return quoted;
-    const name = petTestInfoCache?.pet_card?.pet_name || '我';
+    const name = petDisplayName(petTestInfoCache, pet, '我');
     return ({
       eat: name + '吃得很认真。',
       happy: name + '开心地蹭了蹭你。',
@@ -5684,12 +5758,12 @@ export async function initWanbanXiaowu() {
       ['饱食度', pet.stage === 'egg' ? '???' : Math.round(pet.fullness || 0), pet.stage === 'egg' ? 0 : Math.round(pet.fullness || 0)],
       ['开心值', pet.stage === 'egg' ? '???' : Math.round(pet.happiness || 0), pet.stage === 'egg' ? 0 : Math.round(pet.happiness || 0)]
     ];
-    return '<div class="wb-pet-desk-panel-head"><span>灵息状态 · ' + esc(petTestInfoCache?.pet_card?.pet_name || '宠物') + ' · ' + esc(petDisplayStage(pet)) + '</span><button class="wb-pet-desk-close" data-pet-close="status" type="button">▲</button></div><div class="wb-pet-desk-stats">' + rows.map(r => '<div class="wb-pet-desk-stat-row"><b>' + esc(r[0]) + '</b><div class="wb-pet-desk-bar" style="--v:' + Math.max(0, Math.min(100, Number(r[2] || 0))) + '%"><span></span></div></div>').join('') + '</div>';
+    return '<div class="wb-pet-desk-panel-head"><span>灵息状态 · ' + esc(petDisplayName(petTestInfoCache, pet)) + ' · ' + esc(petDisplayStage(pet)) + '</span><button class="wb-pet-desk-close" data-pet-close="status" type="button">▲</button></div><div class="wb-pet-desk-stats">' + rows.map(r => '<div class="wb-pet-desk-stat-row"><b>' + esc(r[0]) + '</b><div class="wb-pet-desk-bar" style="--v:' + Math.max(0, Math.min(100, Number(r[2] || 0))) + '%"><span></span></div></div>').join('') + '</div>';
   }
   function petCardPromptText(info, state) {
     const hidden = v => v ? String(v) : '???';
     return [
-      '宠物名称：' + (info?.pet_card?.pet_name || '宠物'),
+      '宠物名称：' + petDisplayName(info, state),
       '当前阶段：' + petDisplayStage(state),
       '成长值：' + petGrowthPercent(state) + '%',
       '饱食度：' + (state.stage === 'egg' ? '???' : Math.round(state.fullness || 0)),
@@ -5792,6 +5866,8 @@ export async function initWanbanXiaowu() {
     let y = -20;
     let vx = 0;
     let vy = 1.2;
+    let frame = 0;
+    let petRect = el.getBoundingClientRect();
     const end = () => {
       if (!running) return;
       running = false;
@@ -5806,11 +5882,17 @@ export async function initWanbanXiaowu() {
     };
     const tick = () => {
       if (!running) return;
-      const rect = el.getBoundingClientRect();
+      if ((frame++ & 3) === 0) {
+        petRect = el.getBoundingClientRect();
+        if (petRect.top < vh() * .63) {
+          placePetDesktop(el, petRect.left, vh() * .68);
+          petRect = el.getBoundingClientRect();
+        }
+      }
+      const rect = petRect;
       const petSize = Math.min(rect.width, rect.height) * .5;
       const pcx = rect.left + rect.width / 2;
       const pcy = rect.top + rect.height / 2;
-      if (rect.top < vh() * .63) placePetDesktop(el, rect.left, vh() * .68);
       vy += .22;
       x += vx;
       y += vy;
@@ -5823,8 +5905,7 @@ export async function initWanbanXiaowu() {
         vx = Math.max(-4.4, Math.min(4.4, vx * .55 + (dx / petSize) * 1.8 + (Math.random() - .5) * .55));
         if (score % 3 === 0) petSetState(score <= 3 ? 'sad' : 'happy', '', { root:el, persistent:false, temporary:true, animate:true, suppressSpeech:true });
       }
-      ball.style.left = x + 'px';
-      ball.style.top = y + 'px';
+      ball.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
       if (y > vh() - 18 || y < -80 || x < -28 || x > vw()) { end(); return; }
       raf = requestAnimationFrame(tick);
     };
@@ -6363,10 +6444,10 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID} .wb-pet-room{height:100%;min-height:0;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:6px;color:var(--wb-text);font-family:'Trebuchet MS','Microsoft YaHei',sans-serif;justify-items:stretch}
       #${POPUP_ID} .wb-pet-room button,.wb-modal-mask .wb-pet-modal button{image-rendering:pixelated;border-radius:0!important;border:2px solid color-mix(in srgb,var(--wb-accent) 48%,var(--wb-border) 52%)!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;box-shadow:3px 3px 0 color-mix(in srgb,var(--wb-text) 55%,#000 45%)!important;font-weight:1000;display:inline-grid;place-items:center;text-align:center;line-height:1!important;transition:transform .08s steps(1,end),filter .08s steps(1,end),box-shadow .08s steps(1,end)}#${POPUP_ID} .wb-pet-room button:hover,.wb-modal-mask .wb-pet-modal button:hover{transform:translate(-1px,-1px);filter:none;box-shadow:4px 4px 0 color-mix(in srgb,var(--wb-text) 55%,#000 45%)!important}#${POPUP_ID} .wb-pet-room button:active,.wb-modal-mask .wb-pet-modal button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 color-mix(in srgb,var(--wb-text) 55%,#000 45%)!important}
       #${POPUP_ID} .wb-pet-topbar{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:8px;border:2px solid color-mix(in srgb,var(--wb-text) 60%,#000 40%);background:linear-gradient(180deg,color-mix(in srgb,var(--wb-accent) 82%,#fff 18%),var(--wb-accent2));box-shadow:none!important;color:var(--wb-on-accent)}
-      #${POPUP_ID} .wb-pet-titlebox{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;max-width:calc(100% - 176px);font-weight:1000;letter-spacing:1px;text-shadow:1px 1px 0 rgba(255,255,255,.5);z-index:2}
+      #${POPUP_ID} .wb-pet-titlebox{position:relative;grid-column:2;justify-self:center;display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;max-width:100%;font-weight:1000;letter-spacing:.5px;text-shadow:1px 1px 0 rgba(255,255,255,.5);z-index:2}
       #${POPUP_ID} .wb-pet-title-avatar{width:30px;height:30px;min-width:30px;border-radius:999px;overflow:hidden;display:grid;place-items:center;background:color-mix(in srgb,var(--wb-panel) 82%,var(--wb-accent) 18%);color:var(--wb-text);border:2px solid color-mix(in srgb,var(--wb-on-accent) 70%,transparent);font-size:14px;font-weight:1000;line-height:1;text-shadow:none}
       #${POPUP_ID} .wb-pet-title-avatar img{width:100%;height:100%;object-fit:cover;display:block}
-      #${POPUP_ID} .wb-pet-house-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #${POPUP_ID} .wb-pet-house-name{white-space:normal;overflow:visible;text-overflow:clip;text-align:center;line-height:1.05;font-size:clamp(11px,1.55vw,15px);overflow-wrap:anywhere;word-break:break-word}
       #${POPUP_ID} .wb-pet-top-actions{display:flex;gap:6px;align-items:center;justify-self:end;margin-left:auto;position:relative;z-index:4;grid-column:3}
       #${POPUP_ID} .wb-pet-iconbtn{width:38px;min-width:38px;height:36px;padding:0!important;display:grid!important;place-items:center!important;align-items:center!important;justify-items:center!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;font-size:18px;font-family:'Trebuchet MS','Microsoft YaHei',sans-serif}#${POPUP_ID} .wb-pet-topbar .wb-pet-iconbtn{background:var(--wb-soft)!important;color:var(--wb-text)!important;box-shadow:3px 3px 0 color-mix(in srgb,var(--wb-text) 54%,#000 46%)!important}#${POPUP_ID} .wb-pet-svg{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:2.8;stroke-linecap:square;stroke-linejoin:miter}#${POPUP_ID} #wb-pet-back .wb-pet-svg{width:24px;height:24px}#${POPUP_ID} #wb-pet-caretakers .wb-pet-svg{width:18px;height:18px}#${POPUP_ID} #wb-pet-help .wb-pet-svg,#${POPUP_ID} #wb-pet-restart .wb-pet-svg{width:21px;height:21px;stroke-width:2.6}#${POPUP_ID} #wb-pet-back,#${POPUP_ID} #wb-pet-caretakers,#${POPUP_ID} #wb-pet-help,#${POPUP_ID} #wb-pet-restart{background:transparent!important;border-color:transparent!important;color:var(--wb-on-accent)!important}.wb-modal-mask .wb-pet-modal-head .wb-pet-iconbtn{background:transparent!important;border-color:transparent!important;color:var(--wb-on-accent)!important}#${POPUP_ID} #wb-pet-caretakers .wb-pet-svg{stroke-width:3.2}#${POPUP_ID} #wb-pet-restart .wb-pet-svg{width:23px;height:23px;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
       #${POPUP_ID} .wb-pet-status-card{display:grid;gap:6px;padding:8px;border:2px solid color-mix(in srgb,var(--wb-text) 65%,#000 35%);background:linear-gradient(180deg,var(--wb-panel),var(--wb-soft));box-shadow:none!important}
@@ -6390,8 +6471,9 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID} .wb-pet-scene-drawer{position:absolute;left:0;bottom:12px;z-index:7;display:grid;justify-items:start;gap:5px}#${POPUP_ID} .wb-pet-scene-toggle{width:16px;height:58px;padding:1px!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;border-color:transparent!important;font-size:9px;letter-spacing:0}#${POPUP_ID} .wb-pet-scene-toggle .wb-pet-svg{display:none}#${POPUP_ID} .wb-pet-scene-toggle-text{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;line-height:1}#${POPUP_ID} .wb-pet-scene-menu{display:none;position:absolute;left:20px;bottom:0;grid-template-columns:repeat(3,42px);gap:5px;padding:5px;border:2px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background:var(--wb-panel);box-shadow:none!important}#${POPUP_ID} .wb-pet-scene-drawer.open .wb-pet-scene-menu{display:grid}#${POPUP_ID} .wb-pet-scene-choice{width:42px;height:42px;padding:2px!important;display:grid;gap:1px;place-items:center;font-size:8px;background:var(--wb-soft)!important;color:var(--wb-text)!important}#${POPUP_ID} .wb-pet-scene-thumb{width:33px;height:19px;border:1px solid var(--wb-border);background-size:cover;background-position:center;image-rendering:pixelated}#${POPUP_ID} .wb-pet-scene-choice.locked{position:relative;overflow:hidden}#${POPUP_ID} .wb-pet-scene-choice.locked::before{content:'';position:absolute;inset:0;background:rgba(255,255,255,.62);z-index:2;pointer-events:none}#${POPUP_ID} .wb-pet-scene-choice.locked::after{content:'🔒';position:absolute;inset:0;display:grid;place-items:center;z-index:3;font-size:16px;color:#2b2137;pointer-events:none}
       #${POPUP_ID} .wb-pet-room-fox{top:43%;width:clamp(124px,20dvh,158px);min-width:124px;filter:drop-shadow(0 12px 0 rgba(0,0,0,.2));image-rendering:pixelated;border:0!important;box-shadow:none!important;outline:0!important;background:transparent!important}#${POPUP_ID} #wb-pet-poke{border:0!important;box-shadow:none!important;outline:0!important;background:transparent!important}#${POPUP_ID} #wb-pet-poke .wb-pet-egg-img{width:100%;height:100%;object-fit:contain;transform-origin:50% 78%;}#${POPUP_ID} #wb-pet-poke.egg-shake .wb-pet-egg-img{animation:wbPetEggShake .34s steps(2,end)}@keyframes wbPetEggShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-.7px)}50%{transform:translateX(.7px)}75%{transform:translateX(-.4px)}}#${POPUP_ID} #wb-pet-poke,#${POPUP_ID} #wb-pet-poke:hover,#${POPUP_ID} #wb-pet-poke:active{transform:translate(-50%,-50%)!important;filter:none!important;box-shadow:none!important}
       #${POPUP_ID} .wb-pet-fox,.wb-pet-asset{image-rendering:pixelated}#${POPUP_ID} .wb-pet-fox,.wb-modal-mask .wb-pet-snapshot .wb-pet-fox{background-size:400% 100%!important;background-position:0 0}.wb-pet-fox.animating,#${POPUP_ID} .wb-pet-fox.animating{animation:wbPetFoxFrames 2s steps(1,end) 1}
-      #${POPUP_ID} .wb-pet-speech{left:12px;top:14px;transform:none;max-width:min(64%,420px);padding:5px 8px;border:3px solid #f7f7f7;border-radius:12px;background:#fff;color:#2b2137;box-shadow:0 0 0 2px #2b2137,0 4px 0 rgba(0,0,0,.18);text-align:left;font-size:11px;font-weight:900;line-height:1.22;image-rendering:pixelated}
-      #${POPUP_ID} .wb-pet-speech:before{content:'';position:absolute;right:20px;bottom:-19px;border-width:16px 9px 0 9px;border-style:solid;border-color:#2b2137 transparent transparent transparent}#${POPUP_ID} .wb-pet-speech:after{content:'';position:absolute;right:22px;bottom:-13px;border-width:12px 7px 0 7px;border-style:solid;border-color:#fff transparent transparent transparent}
+      #${POPUP_ID} .wb-pet-speech{left:12px;top:14px;transform:none;max-width:min(64%,420px);padding:5px 8px;border:1px solid #000;border-radius:12px;background:#fff;color:#2b2137;box-shadow:0 3px 0 rgba(0,0,0,.14);text-align:left;font-size:11px;font-weight:900;line-height:1.22;image-rendering:pixelated}
+      #${POPUP_ID} .wb-pet-speech:before{content:'';position:absolute;right:20px;bottom:-10px;border-width:10px 8px 0 8px;border-style:solid;border-color:#000 transparent transparent transparent}#${POPUP_ID} .wb-pet-speech:after{content:'';position:absolute;right:21px;bottom:-9px;border-width:9px 7px 0 7px;border-style:solid;border-color:#fff transparent transparent transparent}
+      #${POPUP_ID} .wb-pet-speech{border-color:#000!important;box-shadow:0 3px 0 rgba(0,0,0,.14)!important}#${POPUP_ID} .wb-pet-speech:before{border-color:#000 transparent transparent transparent!important}#${POPUP_ID} .wb-pet-speech:after{border-color:#fff transparent transparent transparent!important}
       #${POPUP_ID} .wb-pet-scene-actions{position:absolute;right:18px;top:12px;z-index:5;display:grid;gap:5px}
       #${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn{width:34px;height:34px;min-width:34px;padding:0!important;border-radius:999px!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;border-color:var(--wb-text)!important;font-size:16px;display:grid!important;place-items:center!important;box-shadow:2px 2px 0 color-mix(in srgb,var(--wb-text) 55%,#000 45%)!important}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn:hover{transform:translate(-1px,-1px);filter:none}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-svg{width:18px;height:18px;stroke-width:1.8}
       #${POPUP_ID} .wb-pet-dialogue{height:68px;min-height:68px;max-height:68px;border:3px solid color-mix(in srgb,var(--wb-accent) 46%,var(--wb-border) 54%);background:var(--wb-soft);color:var(--wb-text);box-shadow:0 5px 0 #120b18;padding:16px 12px 8px;position:relative;overflow:visible;display:grid;grid-template-rows:1fr}
@@ -6433,9 +6515,11 @@ export async function initWanbanXiaowu() {
       .wb-modal-mask .wb-pet-modal .wb-actions{gap:14px;margin:14px 0}.wb-modal-mask .wb-pet-record-home{min-height:52px}.wb-modal-mask .wb-pet-snapshot{position:relative;width:72px;height:58px;overflow:hidden;border:2px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background-size:cover;background-position:center;box-shadow:none!important;image-rendering:pixelated}.wb-modal-mask .wb-pet-snapshot .wb-pet-asset,.wb-modal-mask .wb-pet-snapshot .wb-pet-egg-img{position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%);object-fit:contain}.wb-modal-mask .wb-pet-snapshot .wb-pet-fox{position:absolute;left:50%;top:50%;width:46px;height:46px;transform:translate(-50%,-50%);background-image:var(--wb-pet-sprite);background-size:400% 100%;background-repeat:no-repeat;animation:none!important;background-position:0 0!important}.wb-modal-mask .wb-pet-snapshot-label{position:absolute;left:2px;bottom:2px;min-width:16px;padding:1px 4px;background:rgba(255,253,240,.9);border:1px solid rgba(43,33,55,.72);color:#2b2137;font-size:10px;font-weight:1000;line-height:1}
       .wb-modal-mask .wb-pet-modal button{box-shadow:1px 1px 0 color-mix(in srgb,var(--wb-text) 50%,#000 50%)!important}.wb-modal-mask .wb-pet-modal button:hover{box-shadow:2px 2px 0 color-mix(in srgb,var(--wb-text) 50%,#000 50%)!important}.wb-modal-mask .wb-pet-diary-page{box-sizing:border-box;background:radial-gradient(circle at 18px 18px,rgba(112,151,170,.10) 0 2px,transparent 3px),repeating-linear-gradient(to bottom,#fffdf5 0,#fffdf5 31px,rgba(139,177,190,.26) 32px),#fffdf5!important}.wb-modal-mask .wb-pet-diary-body p{text-decoration:none!important;border-bottom:0!important}.wb-modal-mask .wb-pet-story-page{position:relative;padding:22px 26px 26px;border:2px solid #b7c7d8;background:linear-gradient(180deg,#fbfdff,#f5f9ff 46%,#fffdf7);color:#2f3b46;box-shadow:0 8px 0 #7d91aa,0 18px 42px rgba(38,54,75,.16);font-family:'Microsoft YaHei','PingFang SC',system-ui,sans-serif;line-height:1.82}.wb-modal-mask .wb-pet-story-page *{font-family:inherit}.wb-modal-mask .wb-pet-story-head{display:grid;grid-template-columns:1fr;align-items:center;justify-items:center;gap:12px;margin-bottom:14px;padding:12px 14px;border:1px solid rgba(125,145,170,.36);border-radius:16px;background:linear-gradient(135deg,rgba(229,242,255,.96),rgba(255,255,255,.82))}.wb-modal-mask .wb-pet-story-type{display:inline-grid;grid-auto-flow:column;align-items:center;justify-content:center;place-items:center;gap:7px;min-height:34px;padding:0 14px;border-radius:999px;background:#dbeafe;color:#41658f;font-size:15px;font-weight:1000;letter-spacing:1px}.wb-modal-mask .wb-pet-story-replay{width:28px!important;min-width:28px!important;height:28px!important;padding:0!important;border-color:transparent!important;background:transparent!important;color:#41658f!important}.wb-modal-mask .wb-pet-story-replay .wb-pet-svg{width:18px;height:18px;stroke-width:1.6!important}.wb-modal-mask .wb-pet-story-meta{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;color:#657489;font-size:13px;font-weight:900}.wb-modal-mask .wb-pet-story-meta b{color:#31465d;font-weight:900}.wb-modal-mask .wb-pet-story-title{margin:6px 0 10px;text-align:center;color:#be6a55;font-size:28px;line-height:1.3;font-weight:1000}.wb-modal-mask .wb-pet-story-summary{margin:0 auto 18px;padding:10px 14px;max-width:680px;border:1px solid rgba(190,106,85,.24);border-radius:14px;background:linear-gradient(135deg,rgba(255,244,226,.95),rgba(255,250,242,.72));color:#9b6a49;text-align:center;font-weight:850;box-shadow:0 4px 14px rgba(120,82,45,.08)}.wb-modal-mask .wb-pet-story-lines{display:grid;gap:8px}.wb-modal-mask .wb-pet-story-body .narrator{color:#6b7c93;font-style:italic;margin:0 0 8px 42px}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line{margin:0 0 8px 42px;padding:8px 10px;border:1px solid rgba(132,148,168,.24);border-radius:12px;background:rgba(255,255,255,.58);line-height:1.85}.wb-modal-mask .wb-pet-rpg-line .wb-pet-rpg-text{display:inline}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-speaker{margin:0 7px 0 0;vertical-align:baseline;color:#4a3b37!important;font-weight:1000}.wb-modal-mask .speaker-u .wb-pet-rpg-speaker,.wb-modal-mask .speaker-c .wb-pet-rpg-speaker,.wb-modal-mask .speaker-p .wb-pet-rpg-speaker,.wb-modal-mask .speaker-shen .wb-pet-rpg-speaker{color:#4a3b37!important}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-line{background:#fffdf7!important;color:#2f3b46!important;border-color:#d7c7a8!important}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-text,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-text{color:#2f3b46!important}.wb-modal-mask .wb-pet-story-body .narrator,.wb-modal-mask#wb-pet-story-player .wb-text-segments .speaker-narrator{background:#f7fbff!important;color:#607086!important;border-color:#cfdcea!important}
 
-      .wb-modal-mask .wb-pet-record-entry{min-height:0}.wb-modal-mask#wb-pet-records-mask :is(#wb-pet-log-home,#wb-pet-log-list,#wb-pet-story-home,#wb-pet-story-list,#wb-pet-cal-home){width:max-content!important;min-width:96px!important;justify-self:center;align-self:center;margin:0 auto 8px!important;padding:7px 13px!important}.wb-modal-mask .wb-pet-record-entry.compact{grid-template-columns:auto 1fr;padding:8px 10px;gap:10px}.wb-modal-mask .wb-pet-record-main{display:grid;gap:3px;min-width:0}.wb-modal-mask .wb-pet-record-date{font-size:11px;color:var(--wb-sub);font-weight:500;line-height:1.2}.wb-modal-mask .wb-pet-record-title{font-size:12px;color:var(--wb-text);font-weight:500;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wb-modal-mask .wb-pet-record-story-tag{display:inline-flex;align-items:center;justify-content:center;margin-right:5px;padding:1px 5px;border:1px solid currentColor;border-radius:4px;background:#eef6ff;color:#41658f;font-size:10px;line-height:1.2;font-weight:800;vertical-align:1px}.wb-modal-mask .wb-pet-record-story-tag[data-type="支线"]{background:#fff4e8;color:#9b6a49}.wb-modal-mask .wb-pet-record-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}.wb-modal-mask .wb-pet-record-tag{display:inline-flex;align-items:center;min-height:18px;padding:1px 5px;border:1px solid color-mix(in srgb,var(--wb-accent) 36%,var(--wb-border) 64%);background:var(--wb-soft);color:var(--wb-text);font-size:10px;line-height:1;white-space:nowrap}.wb-modal-mask .wb-pet-cal-fixed{flex:0 0 auto;padding:0 12px 8px}.wb-modal-mask .wb-pet-cal-fixed .wb-actions{margin:8px 0}.wb-modal-mask .wb-pet-cal-scroll{min-height:0;overflow:auto}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-text,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-text{word-break:break-all!important;overflow-wrap:anywhere!important}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-line{word-break:break-all!important;overflow-wrap:anywhere!important}
+      .wb-modal-mask .wb-pet-record-entry{min-height:0}.wb-modal-mask#wb-pet-records-mask :is(#wb-pet-log-home,#wb-pet-log-list,#wb-pet-story-home,#wb-pet-story-list,#wb-pet-cal-home,#wb-pet-dex-home){width:max-content!important;min-width:96px!important;justify-self:center;align-self:center;margin:0 auto 8px!important;padding:7px 13px!important}.wb-modal-mask .wb-pet-record-entry.compact{grid-template-columns:auto 1fr;padding:8px 10px;gap:10px}.wb-modal-mask .wb-pet-record-main{display:grid;gap:3px;min-width:0}.wb-modal-mask .wb-pet-record-date{font-size:11px;color:var(--wb-sub);font-weight:500;line-height:1.2}.wb-modal-mask .wb-pet-record-title{font-size:12px;color:var(--wb-text);font-weight:500;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wb-modal-mask .wb-pet-record-story-tag{display:inline-flex;align-items:center;justify-content:center;margin-right:5px;padding:1px 5px;border:1px solid currentColor;border-radius:4px;background:#eef6ff;color:#41658f;font-size:10px;line-height:1.2;font-weight:800;vertical-align:1px}.wb-modal-mask .wb-pet-record-story-tag[data-type="支线"]{background:#fff4e8;color:#9b6a49}.wb-modal-mask .wb-pet-record-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}.wb-modal-mask .wb-pet-record-tag{display:inline-flex;align-items:center;min-height:18px;padding:1px 5px;border:1px solid color-mix(in srgb,var(--wb-accent) 36%,var(--wb-border) 64%);background:var(--wb-soft);color:var(--wb-text);font-size:10px;line-height:1;white-space:nowrap}.wb-modal-mask .wb-pet-cal-fixed{flex:0 0 auto;padding:0 12px 8px}.wb-modal-mask .wb-pet-cal-fixed .wb-actions{margin:8px 0}.wb-modal-mask .wb-pet-cal-scroll{min-height:0;overflow:auto}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-text,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-text{word-break:break-all!important;overflow-wrap:anywhere!important}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line,.wb-modal-mask#wb-pet-story-player .wb-text-segments .wb-pet-rpg-line{word-break:break-all!important;overflow-wrap:anywhere!important}
+      .wb-modal-mask .wb-pet-dex-modal .wb-pet-scroll{padding:8px 12px 16px;background:radial-gradient(circle at 14% 8%,rgba(255,255,255,.62),transparent 24%),linear-gradient(135deg,#e54343 0 18%,#fff9e8 18% 22%,#2f78c9 22% 100%)}.wb-modal-mask .wb-pet-dex-head{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px;padding:12px 14px;border:3px solid #22324d;border-radius:18px;background:linear-gradient(180deg,#fffdf4,#dff0ff);box-shadow:0 5px 0 #22324d;color:#22324d;overflow:hidden}.wb-modal-mask .wb-pet-dex-head::after{content:'';position:absolute;right:70px;top:-24px;width:72px;height:72px;border:8px solid rgba(47,120,201,.14);border-radius:999px}.wb-modal-mask .wb-pet-dex-head strong{display:block;font-size:22px;line-height:1;font-weight:1000;letter-spacing:2px}.wb-modal-mask .wb-pet-dex-head span{display:block;margin-top:3px;color:#5e728d;font-size:11px;font-weight:900}.wb-modal-mask .wb-pet-dex-head b{position:relative;z-index:1;min-width:74px;padding:8px 10px;border:2px solid #22324d;border-radius:999px;background:#ffde59;color:#22324d;text-align:center;font-size:19px;box-shadow:0 3px 0 rgba(34,50,77,.35)}.wb-modal-mask .wb-pet-dex-progress{height:16px;margin:0 0 12px;padding:3px;border:2px solid #22324d;border-radius:999px;background:#16243c;box-shadow:0 3px 0 rgba(0,0,0,.24);overflow:hidden}.wb-modal-mask .wb-pet-dex-progress span{display:block;width:var(--v);height:100%;border-radius:999px;background:linear-gradient(90deg,#7ce38b,#fff16a,#ff9b54);box-shadow:0 0 12px rgba(255,241,106,.7)}.wb-modal-mask .wb-pet-dex-grid{display:grid;grid-template-columns:repeat(6,minmax(108px,1fr));gap:10px}.wb-modal-mask .wb-pet-dex-card{position:relative;min-height:156px;padding:8px 7px 9px!important;border:3px solid #22324d!important;border-radius:18px!important;background:linear-gradient(180deg,#eef3f8,#cbd5df)!important;color:#22324d!important;box-shadow:0 5px 0 #22324d!important;overflow:hidden;display:grid!important;grid-template-rows:auto 1fr auto auto;gap:4px;place-items:center}.wb-modal-mask .wb-pet-dex-card::before{content:'';position:absolute;inset:8px;border-radius:14px;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.72) 0 28px,transparent 29px),linear-gradient(135deg,rgba(255,255,255,.28),transparent);pointer-events:none}.wb-modal-mask .wb-pet-dex-card.unlocked{background:linear-gradient(180deg,#fff8d9,#9ed9ff 55%,#7ad68a)!important}.wb-modal-mask .wb-pet-dex-card.unlocked:nth-child(4n+2){background:linear-gradient(180deg,#fff2d0,#ffc4d0 58%,#ffe26c)!important}.wb-modal-mask .wb-pet-dex-card.unlocked:nth-child(4n+3){background:linear-gradient(180deg,#e8fff6,#afe7ff 58%,#b9e887)!important}.wb-modal-mask .wb-pet-dex-card.unlocked:nth-child(4n+4){background:linear-gradient(180deg,#f3edff,#cbb7ff 58%,#86e0ff)!important}.wb-modal-mask .wb-pet-dex-no{position:relative;z-index:1;justify-self:start;padding:2px 7px;border:2px solid #22324d;border-radius:999px;background:#fffdf4;font-size:10px;font-weight:1000}.wb-modal-mask .wb-pet-dex-ball{position:absolute;right:7px;top:7px;width:22px;height:22px;border:2px solid #22324d;border-radius:999px;background:linear-gradient(#e64646 0 46%,#22324d 46% 56%,#fff 56%);z-index:1}.wb-modal-mask .wb-pet-dex-ball span{position:absolute;left:50%;top:50%;width:7px;height:7px;border:2px solid #22324d;border-radius:999px;background:#fff;transform:translate(-50%,-50%)}.wb-modal-mask .wb-pet-dex-art{position:relative;z-index:1;width:86px;height:76px;display:grid;place-items:center;margin-top:3px}.wb-modal-mask .wb-pet-dex-egg{width:62px;height:62px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 7px 0 rgba(34,50,77,.22))}.wb-modal-mask .wb-pet-dex-fox{width:76px;height:76px;background-image:var(--wb-pet-sprite);background-size:400% 100%;background-repeat:no-repeat;background-position:0 0;image-rendering:pixelated;filter:drop-shadow(0 8px 0 rgba(34,50,77,.2))}.wb-modal-mask .wb-pet-dex-fox.animating{animation:wbPetFoxFrames 1.45s steps(1,end) 1}.wb-modal-mask .wb-pet-dex-shadow{width:64px;height:50px;border-radius:45% 48% 40% 42%;background:#66707b;filter:blur(.2px);opacity:.48;clip-path:polygon(20% 82%,14% 52%,28% 34%,35% 12%,48% 31%,62% 10%,70% 35%,84% 54%,78% 83%,58% 76%,42% 86%)}.wb-modal-mask .wb-pet-dex-question{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:54px;font-weight:1000;text-shadow:0 3px 0 #22324d,0 0 12px rgba(34,50,77,.45)}.wb-modal-mask .wb-pet-dex-name{position:relative;z-index:1;font-size:15px;font-weight:1000;line-height:1}.wb-modal-mask .wb-pet-dex-form{position:relative;z-index:1;padding:2px 8px;border:1px solid rgba(34,50,77,.48);border-radius:999px;background:rgba(255,255,255,.68);font-size:10px;font-weight:900}.wb-modal-mask .wb-pet-dex-card.happy .wb-pet-dex-egg{animation:wbPetDexHappy .62s steps(2,end) 2}.wb-modal-mask .wb-pet-dex-card.happy{transform:translateY(-2px) rotate(-1deg)!important;filter:saturate(1.18)}@keyframes wbPetDexHappy{0%,100%{transform:translateY(0) scale(1)}35%{transform:translateY(-8px) scale(1.06)}70%{transform:translateY(1px) scale(.98)}}
+      .wb-modal-mask .wb-pet-dex-modal .wb-pet-scroll{background:radial-gradient(circle at 14% 8%,color-mix(in srgb,var(--wb-glow) 78%,transparent),transparent 26%),linear-gradient(135deg,color-mix(in srgb,var(--wb-accent) 70%,var(--wb-bg) 30%) 0 18%,color-mix(in srgb,var(--wb-panel) 92%,var(--wb-soft) 8%) 18% 23%,color-mix(in srgb,var(--wb-accent2) 64%,var(--wb-bg) 36%) 23% 100%)!important}.wb-modal-mask .wb-pet-dex-head{border-color:color-mix(in srgb,var(--wb-text) 78%,#000 22%)!important;background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 90%,#fff 10%),color-mix(in srgb,var(--wb-soft) 72%,var(--wb-accent2) 28%))!important;color:var(--wb-text)!important;box-shadow:0 5px 0 color-mix(in srgb,var(--wb-text) 70%,#000 30%)!important}.wb-modal-mask .wb-pet-dex-head span{color:var(--wb-sub)!important}.wb-modal-mask .wb-pet-dex-head b{border-color:color-mix(in srgb,var(--wb-text) 78%,#000 22%)!important;background:color-mix(in srgb,var(--wb-gold,#ffde59) 78%,var(--wb-panel) 22%)!important;color:var(--wb-text)!important}.wb-modal-mask .wb-pet-dex-progress{border-color:color-mix(in srgb,var(--wb-text) 74%,#000 26%)!important;background:color-mix(in srgb,var(--wb-bg) 72%,#000 28%)!important}.wb-modal-mask .wb-pet-dex-progress span{background:linear-gradient(90deg,var(--wb-accent),var(--wb-gold,#fff16a),var(--wb-accent2))!important}.wb-modal-mask .wb-pet-dex-card{border-color:color-mix(in srgb,var(--wb-text) 76%,#000 24%)!important;background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 86%,var(--wb-bg) 14%),color-mix(in srgb,var(--wb-soft) 62%,var(--wb-bg) 38%))!important;color:var(--wb-text)!important;box-shadow:0 5px 0 color-mix(in srgb,var(--wb-text) 70%,#000 30%)!important}.wb-modal-mask .wb-pet-dex-card.unlocked{background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 78%,#fff 22%),color-mix(in srgb,var(--wb-accent2) 40%,var(--wb-soft) 60%) 58%,color-mix(in srgb,var(--wb-accent) 34%,var(--wb-panel) 66%))!important}.wb-modal-mask .wb-pet-dex-card.unlocked:nth-child(4n+2),.wb-modal-mask .wb-pet-dex-card.unlocked:nth-child(4n+3),.wb-modal-mask .wb-pet-dex-card.unlocked:nth-child(4n+4){background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 80%,#fff 20%),color-mix(in srgb,var(--wb-accent) 28%,var(--wb-soft) 72%) 58%,color-mix(in srgb,var(--wb-accent2) 34%,var(--wb-panel) 66%))!important}.wb-modal-mask .wb-pet-dex-card::before{background:radial-gradient(circle at 50% 42%,color-mix(in srgb,var(--wb-panel) 76%,transparent) 0 28px,transparent 29px),linear-gradient(135deg,color-mix(in srgb,#fff 20%,transparent),transparent)!important}.wb-modal-mask .wb-pet-dex-no{border-color:color-mix(in srgb,var(--wb-text) 72%,#000 28%)!important;background:var(--wb-panel)!important;color:var(--wb-text)!important}.wb-modal-mask .wb-pet-dex-form{border-color:color-mix(in srgb,var(--wb-text) 42%,transparent)!important;background:color-mix(in srgb,var(--wb-panel) 72%,transparent)!important;color:var(--wb-text)!important}.wb-modal-mask .wb-pet-dex-shadow-sprite{opacity:.46;filter:grayscale(1) brightness(0) drop-shadow(1px 0 0 #b9c0c8) drop-shadow(-1px 0 0 #b9c0c8) drop-shadow(0 1px 0 #b9c0c8) drop-shadow(0 -1px 0 #b9c0c8)!important}.wb-modal-mask .wb-pet-dex-shadow-img{opacity:.42;filter:grayscale(1) brightness(0) drop-shadow(1px 0 0 #b9c0c8) drop-shadow(-1px 0 0 #b9c0c8) drop-shadow(0 1px 0 #b9c0c8) drop-shadow(0 -1px 0 #b9c0c8)!important}.wb-modal-mask .wb-pet-dex-egg-mini{position:absolute;right:7px;top:7px;z-index:1;max-width:42px;padding:2px 5px;border:1px solid color-mix(in srgb,var(--wb-text) 52%,transparent);border-radius:999px;background:color-mix(in srgb,var(--wb-panel) 78%,transparent);color:var(--wb-text);font-size:9px;font-weight:1000;line-height:1;white-space:nowrap}.wb-modal-mask .wb-pet-dex-card.locked .wb-pet-dex-art{opacity:.76}.wb-modal-mask .wb-pet-dex-card.locked .wb-pet-dex-name{color:var(--wb-sub)}.wb-modal-mask .wb-pet-dex-trinket,.wb-modal-mask .wb-pet-dex-trinket-mini{position:relative;z-index:1;display:grid;place-items:center;image-rendering:pixelated}.wb-modal-mask .wb-pet-dex-trinket{width:64px;height:64px;filter:drop-shadow(0 7px 0 rgba(0,0,0,.20))}.wb-modal-mask .wb-pet-dex-trinket-mini{position:absolute;right:7px;top:7px;width:24px;height:24px;border:2px solid color-mix(in srgb,var(--wb-text) 64%,#000 36%);border-radius:9px;background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 82%,#fff 18%),color-mix(in srgb,var(--wb-soft) 72%,var(--wb-accent2) 28%));box-shadow:0 2px 0 color-mix(in srgb,var(--wb-text) 54%,#000 46%),inset 0 0 0 1px rgba(255,255,255,.42)}.wb-modal-mask .wb-pet-dex-trinket i,.wb-modal-mask .wb-pet-dex-trinket-mini i{display:block;width:30px;height:30px;background:var(--wb-accent);clip-path:polygon(50% 0,61% 34%,98% 34%,68% 55%,80% 94%,50% 70%,20% 94%,32% 55%,2% 34%,39% 34%);box-shadow:0 0 0 3px color-mix(in srgb,var(--wb-panel) 78%,#fff 22%) inset}.wb-modal-mask .wb-pet-dex-trinket-mini i{width:14px;height:14px;box-shadow:0 0 0 2px rgba(255,255,255,.45) inset,0 1px 0 rgba(0,0,0,.16)}.wb-modal-mask .trinket-blue i{background:#64b5ff;clip-path:polygon(50% 4%,78% 22%,86% 58%,50% 96%,14% 58%,22% 22%)}.wb-modal-mask .trinket-purple i{background:#b790ff;clip-path:polygon(50% 2%,63% 34%,98% 34%,69% 55%,80% 96%,50% 73%,20% 96%,31% 55%,2% 34%,37% 34%)}.wb-modal-mask .trinket-pink i{background:#ff8fc2;clip-path:polygon(50% 88%,12% 50%,12% 24%,34% 12%,50% 28%,66% 12%,88% 24%,88% 50%)}.wb-modal-mask .trinket-green i{background:#72d978;clip-path:polygon(52% 4%,88% 22%,78% 62%,44% 96%,18% 70%,24% 30%)}.wb-modal-mask .trinket-gold i{background:#ffc94f;clip-path:polygon(50% 0,62% 28%,92% 18%,82% 52%,98% 80%,64% 76%,50% 100%,36% 76%,2% 80%,18% 52%,8% 18%,38% 28%)}.wb-modal-mask .trinket-white i{background:#dff6ff;clip-path:polygon(50% 2%,72% 18%,88% 42%,78% 78%,50% 98%,22% 78%,12% 42%,28% 18%)}.wb-modal-mask .trinket-rabbit i{background:#ffb6ca;clip-path:polygon(38% 18%,28% 0,20% 24%,31% 42%,22% 76%,50% 96%,78% 76%,69% 42%,80% 24%,72% 0,62% 18%,50% 14%)}.wb-modal-mask .trinket-fox i{background:#ff9a42;clip-path:polygon(50% 4%,94% 36%,78% 88%,50% 98%,22% 88%,6% 36%)}.wb-modal-mask .trinket-dog i{background:#d69b68;clip-path:polygon(14% 24%,36% 8%,50% 20%,64% 8%,86% 24%,78% 80%,50% 98%,22% 80%)}.wb-modal-mask .trinket-cat i{background:#7cc8ff;clip-path:polygon(16% 18%,38% 32%,50% 16%,62% 32%,84% 18%,76% 78%,50% 98%,24% 78%)}.wb-modal-mask .trinket-bird i{background:#81d884;clip-path:polygon(50% 4%,84% 35%,70% 92%,50% 76%,30% 92%,16% 35%)}.wb-modal-mask .trinket-bala i{background:#c59b72;clip-path:polygon(22% 20%,78% 20%,94% 52%,78% 84%,22% 84%,6% 52%)}.wb-modal-mask .wb-pet-dex-card.happy .wb-pet-dex-trinket{animation:wbPetDexHappy .62s steps(2,end) 2}.wb-modal-mask .wb-pet-dex-trinket-mini{width:32px;height:32px;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}.wb-modal-mask .wb-pet-dex-pixel-icon{width:28px;height:28px;display:block;image-rendering:pixelated;filter:drop-shadow(1px 2px 0 rgba(0,0,0,.18))}.wb-modal-mask .wb-pet-dex-card.happy .wb-pet-dex-trinket-mini{animation:wbPetDexHappy .62s steps(2,end) 2}
       .wb-pet-hatch-flash{position:fixed;inset:0;z-index:1000005;background:#fff;animation:wbPetHatchFlash .7s ease both;pointer-events:none}@keyframes wbPetHatchFlash{0%{opacity:0}28%{opacity:1}100%{opacity:0}}.wb-modal-mask .wb-pet-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.wb-modal-mask .wb-pet-day{min-height:42px;background:#fffdf0!important}.wb-modal-mask .wb-pet-day.hot1{background:#effcf4!important}.wb-modal-mask .wb-pet-day.hot2{background:#d8f7e3!important}.wb-modal-mask .wb-pet-day.hot3{background:#b6efcb!important}.wb-modal-mask .wb-pet-day.hot4{background:#78dc9c!important}.wb-modal-mask .wb-pet-day.hot5{background:#30bd69!important;color:#fff!important}
-      @media (max-width:768px){.wb-modal-mask#wb-pet-profile-mask{overflow:hidden!important;padding:0!important}.wb-modal-mask#wb-pet-profile-mask .wb-pet-modal{width:calc(100vw - 18px)!important;max-width:calc(100vw - 18px)!important;height:auto!important;max-height:calc(100dvh - 18px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;overflow:hidden!important}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-card{padding:12px 10px 10px;max-height:calc(100dvh - 28px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow:hidden}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-card::before{height:6px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-top{grid-template-columns:1fr 76px;gap:7px;margin-bottom:8px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-title b{font-size:17px;line-height:1.1}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-title span{font-size:10px;line-height:1.2}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo{width:74px;height:54px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-asset,.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-egg-img{width:44px;height:44px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-fox{width:48px;height:48px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-grid{grid-template-columns:1fr 1fr;gap:5px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item{padding:5px 7px;border-radius:9px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item em{font-size:9px;margin-bottom:1px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item strong{font-size:12px;line-height:1.22}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-num{font-size:16px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-actions{margin-top:8px}.wb-modal-mask#wb-pet-profile-mask #wb-pet-profile-close{min-height:30px!important;padding:5px 12px!important;font-size:12px}.wb-modal-mask .wb-pet-note-page{box-sizing:border-box;width:100%;padding:12px 4px 14px;background:repeating-linear-gradient(to bottom,#fffdf5 0,#fffdf5 30px,rgba(139,177,190,.24) 31px),#fffdf5}.wb-modal-mask .wb-pet-note-page::before{content:none}.wb-modal-mask .wb-pet-diary-cover{margin-left:2px;margin-right:0;padding:8px 6px}.wb-modal-mask .wb-pet-diary-meta{display:grid;grid-template-columns:1fr;justify-content:stretch;gap:2px;flex-wrap:nowrap}.wb-modal-mask .wb-pet-diary-meta span{display:grid;grid-template-columns:58px minmax(0,1fr);align-items:end;gap:4px;font-size:10px;padding:0 2px;white-space:nowrap}.wb-modal-mask .wb-pet-diary-meta b{min-width:0;font-size:14px;padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wb-modal-mask .wb-pet-note-tags,.wb-modal-mask .wb-pet-diary-two,.wb-modal-mask .wb-pet-diary-title,.wb-modal-mask .wb-pet-diary-body,.wb-modal-mask .wb-pet-note-meta{margin-left:2px}.wb-modal-mask .wb-pet-note-tags{gap:4px;margin-bottom:8px}.wb-modal-mask .wb-pet-note-tag{font-size:13px;padding:2px 6px}.wb-modal-mask .wb-pet-diary-two{gap:5px;margin-right:0;margin-bottom:9px;width:calc(100% - 2px);box-sizing:border-box}.wb-modal-mask .wb-pet-diary-two div{grid-template-columns:1fr;gap:2px;padding:5px 6px;box-sizing:border-box;min-width:0;overflow:hidden}.wb-modal-mask .wb-pet-diary-two em{font-size:13px;min-width:0}.wb-modal-mask .wb-pet-diary-two span{font-size:14px;line-height:1.45;min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-all;line-break:anywhere}.wb-modal-mask .wb-pet-diary-title{font-size:23px;margin-top:5px;margin-bottom:8px}.wb-modal-mask .wb-pet-diary-body{background:transparent}.wb-modal-mask .wb-pet-diary-body p{font-size:16px;line-height:31px;min-height:31px;text-indent:2em;text-decoration:none!important;border:0!important}.wb-modal-mask .wb-pet-story-page{box-sizing:border-box;width:100%;max-width:100%;padding:14px 8px 16px;overflow:hidden}.wb-modal-mask .wb-pet-story-head{grid-template-columns:1fr;justify-items:center;gap:7px;padding:9px;box-sizing:border-box}.wb-modal-mask .wb-pet-story-meta{justify-content:center}.wb-modal-mask .wb-pet-story-title{font-size:23px}.wb-modal-mask .wb-pet-story-summary{padding:8px 9px;margin-bottom:12px;box-sizing:border-box;max-width:100%;overflow-wrap:anywhere}.wb-modal-mask .wb-pet-story-lines{min-width:0}.wb-modal-mask .wb-pet-story-body .narrator,.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line{margin-left:0;margin-right:0;box-sizing:border-box;max-width:100%;min-width:0;overflow-wrap:anywhere;word-break:break-word}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line{padding:7px 8px}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-text{overflow-wrap:anywhere;word-break:break-word}.wb-modal-mask#wb-pet-records-mask :is(#wb-pet-log-home,#wb-pet-log-list,#wb-pet-story-home,#wb-pet-story-list,#wb-pet-cal-home){min-width:82px!important;padding:6px 10px!important;font-size:12px}.wb-modal-mask#wb-pet-records-mask .wb-pet-cal-fixed .wb-actions{gap:6px}.wb-modal-mask#wb-pet-log-mask .wb-pet-scroll{padding:6px 7px 10px!important;gap:7px}.wb-modal-mask#wb-pet-log-mask .wb-field{padding:8px}.wb-modal-mask#wb-pet-log-mask .wb-textarea{min-height:64px!important}#${POPUP_ID} .wb-pet-bars{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}#${POPUP_ID} .wb-pet-bars.egg{grid-template-columns:1fr}#${POPUP_ID} .wb-pet-bar{font-size:9px;padding:4px}#${POPUP_ID} .wb-pet-stage{place-items:center}#${POPUP_ID} .wb-pet-stage{justify-self:center;width:100%;grid-template-columns:1fr;margin-top:-5px}#${POPUP_ID} .wb-pet-scene{width:min(82vw,49dvh,440px);height:auto;aspect-ratio:1/1;min-height:0;justify-self:center}#${POPUP_ID} .wb-pet-room-fox{top:43%;width:clamp(124px,20dvh,158px);min-width:124px}#${POPUP_ID} .wb-pet-scene-actions{right:14px;top:12px;gap:4px}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn{width:30px;min-width:30px;height:30px;border-radius:999px!important}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-svg{width:16px;height:16px;stroke-width:1.8}#${POPUP_ID} .wb-pet-iconbtn{width:32px;min-width:32px;height:32px;padding:0!important;display:grid!important;place-items:center!important}.wb-modal-mask .wb-pet-modal:not(.wb-mini-modal){width:100%!important;height:auto;max-height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));}.wb-modal-mask .wb-pet-modal{padding:0!important}.wb-modal-mask .wb-pet-scroll{padding:4px 12px 12px}.wb-modal-mask .wb-pet-modal>.wb-actions{padding:0 12px 12px}.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-api-status,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-title,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-name,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-summary{margin-left:14px!important;margin-right:14px!important}.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-actions{padding:0 14px 14px!important}}
+      @media (max-width:768px){.wb-modal-mask#wb-pet-profile-mask{overflow:hidden!important;padding:0!important}.wb-modal-mask#wb-pet-profile-mask .wb-pet-modal{width:calc(100vw - 18px)!important;max-width:calc(100vw - 18px)!important;height:auto!important;max-height:calc(100dvh - 18px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important;overflow:hidden!important}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-card{padding:12px 10px 10px;max-height:calc(100dvh - 28px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow:hidden}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-card::before{height:6px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-top{grid-template-columns:1fr 76px;gap:7px;margin-bottom:8px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-title b{font-size:17px;line-height:1.1}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-title span{font-size:10px;line-height:1.2}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo{width:74px;height:54px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-asset,.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-egg-img{width:44px;height:44px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-photo .wb-pet-fox{width:48px;height:48px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-grid{grid-template-columns:1fr 1fr;gap:5px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item{padding:5px 7px;border-radius:9px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item em{font-size:9px;margin-bottom:1px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-item strong{font-size:12px;line-height:1.22}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-num{font-size:16px}.wb-modal-mask#wb-pet-profile-mask .wb-pet-profile-actions{margin-top:8px}.wb-modal-mask#wb-pet-profile-mask #wb-pet-profile-close{min-height:30px!important;padding:5px 12px!important;font-size:12px}.wb-modal-mask .wb-pet-note-page{box-sizing:border-box;width:100%;padding:12px 4px 14px;background:repeating-linear-gradient(to bottom,#fffdf5 0,#fffdf5 30px,rgba(139,177,190,.24) 31px),#fffdf5}.wb-modal-mask .wb-pet-note-page::before{content:none}.wb-modal-mask .wb-pet-diary-cover{margin-left:2px;margin-right:0;padding:8px 6px}.wb-modal-mask .wb-pet-diary-meta{display:grid;grid-template-columns:1fr;justify-content:stretch;gap:2px;flex-wrap:nowrap}.wb-modal-mask .wb-pet-diary-meta span{display:grid;grid-template-columns:58px minmax(0,1fr);align-items:end;gap:4px;font-size:10px;padding:0 2px;white-space:nowrap}.wb-modal-mask .wb-pet-diary-meta b{min-width:0;font-size:14px;padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wb-modal-mask .wb-pet-note-tags,.wb-modal-mask .wb-pet-diary-two,.wb-modal-mask .wb-pet-diary-title,.wb-modal-mask .wb-pet-diary-body,.wb-modal-mask .wb-pet-note-meta{margin-left:2px}.wb-modal-mask .wb-pet-note-tags{gap:4px;margin-bottom:8px}.wb-modal-mask .wb-pet-note-tag{font-size:13px;padding:2px 6px}.wb-modal-mask .wb-pet-diary-two{gap:5px;margin-right:0;margin-bottom:9px;width:calc(100% - 2px);box-sizing:border-box}.wb-modal-mask .wb-pet-diary-two div{grid-template-columns:1fr;gap:2px;padding:5px 6px;box-sizing:border-box;min-width:0;overflow:hidden}.wb-modal-mask .wb-pet-diary-two em{font-size:13px;min-width:0}.wb-modal-mask .wb-pet-diary-two span{font-size:14px;line-height:1.45;min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-all;line-break:anywhere}.wb-modal-mask .wb-pet-diary-title{font-size:23px;margin-top:5px;margin-bottom:8px}.wb-modal-mask .wb-pet-diary-body{background:transparent}.wb-modal-mask .wb-pet-diary-body p{font-size:16px;line-height:31px;min-height:31px;text-indent:2em;text-decoration:none!important;border:0!important}.wb-modal-mask .wb-pet-story-page{box-sizing:border-box;width:100%;max-width:100%;padding:14px 8px 16px;overflow:hidden}.wb-modal-mask .wb-pet-story-head{grid-template-columns:1fr;justify-items:center;gap:7px;padding:9px;box-sizing:border-box}.wb-modal-mask .wb-pet-story-meta{justify-content:center}.wb-modal-mask .wb-pet-story-title{font-size:23px}.wb-modal-mask .wb-pet-story-summary{padding:8px 9px;margin-bottom:12px;box-sizing:border-box;max-width:100%;overflow-wrap:anywhere}.wb-modal-mask .wb-pet-story-lines{min-width:0}.wb-modal-mask .wb-pet-story-body .narrator,.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line{margin-left:0;margin-right:0;box-sizing:border-box;max-width:100%;min-width:0;overflow-wrap:anywhere;word-break:break-word}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-line{padding:7px 8px}.wb-modal-mask .wb-pet-story-body .wb-pet-rpg-text{overflow-wrap:anywhere;word-break:break-word}.wb-modal-mask#wb-pet-records-mask :is(#wb-pet-log-home,#wb-pet-log-list,#wb-pet-story-home,#wb-pet-story-list,#wb-pet-cal-home,#wb-pet-dex-home){min-width:82px!important;padding:6px 10px!important;font-size:12px}.wb-modal-mask#wb-pet-records-mask .wb-pet-cal-fixed .wb-actions{gap:6px}.wb-modal-mask#wb-pet-log-mask .wb-pet-scroll{padding:6px 7px 10px!important;gap:7px}.wb-modal-mask#wb-pet-log-mask .wb-field{padding:8px}.wb-modal-mask#wb-pet-log-mask .wb-textarea{min-height:64px!important}.wb-modal-mask .wb-pet-dex-grid{grid-template-columns:repeat(3,minmax(92px,1fr));gap:8px}.wb-modal-mask .wb-pet-dex-card{min-height:140px}.wb-modal-mask .wb-pet-dex-head strong{font-size:18px}.wb-modal-mask .wb-pet-dex-head b{font-size:16px;min-width:62px}.wb-modal-mask .wb-pet-dex-art{width:74px;height:66px}.wb-modal-mask .wb-pet-dex-fox{width:66px;height:66px}.wb-modal-mask .wb-pet-dex-egg{width:54px;height:54px}#${POPUP_ID} .wb-pet-bars{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}#${POPUP_ID} .wb-pet-bars.egg{grid-template-columns:1fr}#${POPUP_ID} .wb-pet-bar{font-size:9px;padding:4px}#${POPUP_ID} .wb-pet-stage{place-items:center}#${POPUP_ID} .wb-pet-stage{justify-self:center;width:100%;grid-template-columns:1fr;margin-top:-5px}#${POPUP_ID} .wb-pet-scene{width:min(82vw,49dvh,440px);height:auto;aspect-ratio:1/1;min-height:0;justify-self:center}#${POPUP_ID} .wb-pet-room-fox{top:43%;width:clamp(124px,20dvh,158px);min-width:124px}#${POPUP_ID} .wb-pet-scene-actions{right:14px;top:12px;gap:4px}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-iconbtn{width:30px;min-width:30px;height:30px;border-radius:999px!important}#${POPUP_ID} .wb-pet-scene-actions .wb-pet-svg{width:16px;height:16px;stroke-width:1.8}#${POPUP_ID} .wb-pet-iconbtn{width:32px;min-width:32px;height:32px;padding:0!important;display:grid!important;place-items:center!important}.wb-modal-mask .wb-pet-modal:not(.wb-mini-modal){width:100%!important;height:auto;max-height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));}.wb-modal-mask .wb-pet-modal{padding:0!important}.wb-modal-mask .wb-pet-scroll{padding:4px 12px 12px}.wb-modal-mask .wb-pet-modal>.wb-actions{padding:0 12px 12px}.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-api-status,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-title,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-name,.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-pet-story-choice-summary{margin-left:14px!important;margin-right:14px!important}.wb-modal-mask .wb-mini-modal.wb-pet-modal > .wb-actions{padding:0 14px 14px!important}}
 
       #${POPUP_ID} .wb-body.wb-pet-mode button,
       #${POPUP_ID} .wb-pet-room button,
@@ -6970,7 +7054,7 @@ export async function initWanbanXiaowu() {
       .replace(/\{\{user\}\}/g, petPlayerName(state))
       .replace(/\{\{char\}\}/g, petCharName())
       .replace(/江维/g, petCharName())
-      .replace(/小黑/g, info?.pet_card?.pet_name || '宠物');
+      .replace(/小黑/g, petDisplayName(info, state));
   }
   function petInlineHTML(text) {
     return esc(text).replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
@@ -6979,7 +7063,7 @@ export async function initWanbanXiaowu() {
     const speaker = line.speaker || '旁白';
     const isNarrator = speaker === '旁白' || petSpeakerClass(speaker) === 'speaker-narrator';
     const name = petSpeakerName(speaker, info, state);
-    return '<div class="wb-pet-rpg-line ' + petSpeakerClass(speaker) + '">' + (isNarrator ? '' : '<span class="wb-pet-rpg-speaker">' + esc(name) + '</span>') + '<span class="wb-pet-rpg-text">' + petInlineHTML(petRenderText(line.text || '', info)) + '</span></div>';
+    return '<div class="wb-pet-rpg-line ' + petSpeakerClass(speaker) + '">' + (isNarrator ? '' : '<span class="wb-pet-rpg-speaker">' + esc(name) + '</span>') + '<span class="wb-pet-rpg-text">' + petInlineHTML(petRenderText(line.text || '', info, state)) + '</span></div>';
   }
   function petStoryForPending(info, state, id) {
     if (/^S/.test(id)) return info.sideById[id] || null;
@@ -7006,7 +7090,7 @@ export async function initWanbanXiaowu() {
     const sp = String(speaker || '').toLowerCase();
     if (speaker === 'U' || sp === 'user' || speaker === '{{user}}') return petPlayerName();
     if (speaker === 'C' || sp === 'char' || speaker === '{{char}}') return petCharName();
-    if (speaker === 'P' || sp === 'pet' || speaker === '宠物') return (state && state.stage === 'egg') ? '???' : (info?.pet_card?.pet_name || '宠物');
+    if (speaker === 'P' || sp === 'pet' || speaker === '宠物') return (state && state.stage === 'egg') ? '？？？' : (info?.pet_card?.pet_name || '宠物');
     if (speaker === '沈') return '沈栖白';
     return speaker || '旁白';
   }
@@ -7024,11 +7108,15 @@ export async function initWanbanXiaowu() {
     if (!raw) return [''];
     const doc = getHostDocument();
     if (!doc || !doc.body) return [raw];
+    const width = Math.round(petStoryMeasureWidth(doc));
+    const cacheKey = width + '|' + (className || '') + '|' + raw;
+    if (petStoryPageCache.has(cacheKey)) return petStoryPageCache.get(cacheKey).slice();
+    if (petStoryPageCache.size > 80) petStoryPageCache.clear();
     const source = qs('#wb-pet-dialogue .wb-pet-dialogue-text', doc);
     const probe = doc.createElement('div');
     probe.className = 'wb-pet-dialogue-text ' + (className || '');
     probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;z-index:-1;visibility:hidden;pointer-events:none;box-sizing:border-box;display:block!important;max-height:none!important;height:auto!important;-webkit-line-clamp:unset!important;-webkit-box-orient:initial!important;white-space:normal!important;word-break:break-all!important;overflow-wrap:anywhere!important;overflow:visible!important;padding:0!important;border:0!important;margin:0!important;';
-    probe.style.width = petStoryMeasureWidth(doc) + 'px';
+    probe.style.width = width + 'px';
     if (source && doc.defaultView) {
       const cs = doc.defaultView.getComputedStyle(source);
       ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','lineHeight','textTransform'].forEach(prop => { probe.style[prop] = cs[prop]; });
@@ -7064,7 +7152,9 @@ export async function initWanbanXiaowu() {
       while (start < raw.length && /\s/.test(raw[start])) start++;
     }
     probe.remove();
-    return pages.length ? pages : [''];
+    const result = pages.length ? pages : [''];
+    petStoryPageCache.set(cacheKey, result);
+    return result.slice();
   }
   function petStoryLineAt(info, state, active) {
     const story = active && active.id ? petStoryForPending(info, state, active.id) : null;
@@ -7188,7 +7278,7 @@ export async function initWanbanXiaowu() {
     const currentState = log?.snapshot ? petSnapshotState(log.snapshot) : (state || petTestState());
     const displayDate = log?.date || todayKey();
     const displayStage = log?.pet_stage || petDisplayStage(currentState);
-    const displayName = log?.pet_name || info?.pet_card?.pet_name || '宠物';
+    const displayName = petDisplayName(info, currentState, log?.pet_name || '宠物');
     const title = log?.title || (petDateCN(displayDate) + ' 灵息日志');
     const body = String(log?.body || log?.diary || '').trim();
     const lines = body ? body.split(/\n+/).map(x => x.trim()).filter(Boolean) : [];
@@ -7256,12 +7346,14 @@ export async function initWanbanXiaowu() {
       '  male: ' + (form.male_name || '小星'),
       '  female: ' + (form.female_name || '小月'),
       'egg_options: [blue, purple, pink, green, gold, white]',
-      'selected_egg: ' + (form.selected_egg || 'green'),
+      'selected_egg: ' + (form.wish_mode ? 'wish' : (form.selected_egg || 'green')),
+      'selected_egg_color: ' + (form.selected_egg || 'green'),
       'wish_mode: ' + (!!form.wish_mode),
       'wish_species: ' + (form.wish_species || 'random'),
       'wish_sex: ' + (form.wish_sex || 'random'),
       'wish_tendency: ' + (form.wish_tendency || 'random'),
-      'narrative_person: second',
+      'narrative_person: ' + (['first','second','third'].includes(form.narrative_person) ? form.narrative_person : 'second'),
+      'user_pronoun: TA',
       'adoption_cycle: ' + cycle,
       'user_name: ' + (form.user_name || petPlayerName(petTestState())),
       'char_name: ' + (caretaker?.name || petCharName()),
@@ -7315,7 +7407,7 @@ export async function initWanbanXiaowu() {
       '用户：' + petPlayerName(state),
       '用户设定：\n' + currentUserDescription(cfg),
       '语言/风格要求：\n' + (cfg.specialLanguageEnabled ? (cfg.specialLanguage || '已开启') : '无'),
-      '宠物名称：' + (info?.pet_card?.pet_name || '宠物'),
+      '宠物名称：' + petDisplayName(info, state),
       '宠物阶段：' + petDisplayStage(state),
       '宠物名片：\n' + petCardPromptText(info, state),
       '当前世界观：\n' + (selectedWorldText(cfg) || '无'),
@@ -7351,7 +7443,7 @@ export async function initWanbanXiaowu() {
         savedAt:Date.now(),
         auto:true,
         date,
-        pet_name:info?.pet_card?.pet_name || log?.pet_name || '宠物',
+        pet_name:petDisplayName(info, latest, log?.pet_name || '宠物'),
         pet_stage:petDisplayStage(latest),
         snapshot:day.snapshot || petSnapshotData(latest)
       }) });
@@ -7396,8 +7488,8 @@ export async function initWanbanXiaowu() {
     const isEgg = state.stage === 'egg';
     const hasSpirit = state.stage === 'spirit';
     const n = Number(state.adoptionCycle || card.adoption_cycle || 0) || ((state.archives || []).length + 1);
-    const name = isEgg ? ('蛋（' + petEggDisplayName(card.egg) + '）') : (card.pet_name || '宠物');
-    const shape = isEgg ? '' : petDisplayStage(state);
+    const name = petDisplayName(info, state);
+    const shape = isEgg ? '蛋' : petDisplayStage(state);
     const spirit = String(card.spirit_tendency_skill || '').split('|').filter(Boolean).join(' / ');
     const doc = getHostDocument();
     const old = qs('#wb-pet-profile-mask', doc); if (old) old.remove();
@@ -7410,7 +7502,7 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-pet-profile-grid">'
       + item('宠物品种', petProfileValue(petSpeciesName(card.species), !isEgg), false)
       + item('姓名', esc(name), false)
-      + item('形态', petProfileValue(shape, !isEgg), false)
+      + item('形态', esc(shape), false)
       + item('性别', petProfileValue(petSexName(card.sex), !isEgg), false)
       + item('性格', petProfileValue(String(card.personality || '').split('|').join(' / '), !isEgg), true)
       + item('灵息', petProfileValue(spirit, hasSpirit), true)
@@ -7459,10 +7551,11 @@ export async function initWanbanXiaowu() {
     });
   }
   function renderPetHouseLoaded(info, state) {
+    if (petStoryTypeTimer) { clearInterval(petStoryTypeTimer); petStoryTypeTimer = 0; }
     const body = qs('#wb-body');
     const renderState = petStoryPreviewState(state);
     const storyMode = !!(state.activeStory && state.activeStory.id && !state.activeStory.prompt);
-    const petName = info?.pet_card?.pet_name || '宠物';
+    const petName = petDisplayName(info, renderState);
     const activeLine = petActiveStoryLine(info, state);
     const storyTalkAction = storyMode && activeLine && ['U','C','user','char','{{user}}','{{char}}'].includes(String(activeLine.speaker || '')) && Math.random() < .45 ? (Math.random() < .5 ? 'happy' : 'normal') : '';
     const autoAction = storyMode ? '' : petAutoAction(renderState);
@@ -7502,11 +7595,11 @@ export async function initWanbanXiaowu() {
         const full = textEl.dataset.raw || textEl.textContent || '';
         textEl.textContent = '';
         let i = 0;
-        const timer = setInterval(() => {
-          i = Math.min(full.length, i + 3);
+        petStoryTypeTimer = setInterval(() => {
+          i = Math.min(full.length, i + 6);
           textEl.textContent = full.slice(0, i);
-          if (i >= full.length) { clearInterval(timer); textEl.innerHTML = petInlineHTML(full); }
-        }, 18);
+          if (i >= full.length) { clearInterval(petStoryTypeTimer); petStoryTypeTimer = 0; textEl.innerHTML = petInlineHTML(full); }
+        }, 12);
       }
     }
     resetPetIdleTimer(room);
@@ -7594,8 +7687,21 @@ export async function initWanbanXiaowu() {
       openPetTestSelect();
     });
     if (back) back.onclick = () => {
-      if (petTestState().activeStory && petTestState().activeStory.id) petMiniConfirm('是否返回？', '当前正在剧情模式中，是否返回小屋？', () => { const next = petTestState(); next.activeStory = null; savePetTestState(next); renderPetHouse(); });
-      else openPetFullEntry();
+      const goHub = () => {
+        currentTab = 'intimacy';
+        currentGame = null;
+        petReturnHouseOnRender = false;
+        clearPetTimers();
+        renderIntimacy();
+      };
+      if (petTestState().activeStory && petTestState().activeStory.id) {
+        petMiniConfirm('是否返回？', '当前正在剧情模式中，是否返回亲密互动首页？', () => {
+          const next = petTestState();
+          next.activeStory = null;
+          savePetTestState(next);
+          goHub();
+        });
+      } else goHub();
     };
     if (walk) walk.onclick = () => {
       toast('带' + petName + '去遛一遛。');
@@ -7634,7 +7740,7 @@ export async function initWanbanXiaowu() {
       const mask = doc.createElement('div');
       mask.className = modalMaskClass();
       mask.id = 'wb-pet-caretaker-mask';
-      const rows = [{ name:petCharName(), pet:info?.pet_card?.pet_name || '宠物', test:true }].concat(saved);
+      const rows = [{ name:petCharName(), pet:petDisplayName(info, state), test:true }].concat(saved);
       mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">选择饲养员</div><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-add">' + petUiIcon('plus') + '</button></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + rows.map((r, i) => '<div class="wb-pet-caretaker-card" data-i="' + i + '"><div class="wb-pet-avatar">' + esc((r.name || '?').slice(0, 1)) + '</div><div><b>' + esc(r.name || '未命名') + '</b>' + (r.test ? ' <span class="wb-pill">试用版</span>' : '') + '<div class="wb-muted">当前动物：' + esc(r.pet || '暂无') + '</div></div>' + (r.test ? '<span class="wb-muted">可进入</span>' : '<button class="wb-btn wb-pet-caretaker-del" data-i="' + i + '">删除</button>') + '</div>').join('') + '</div></div></div>';
       appendModalMask(mask);
       qs('#wb-pet-caretaker-close', mask).onclick = () => mask.remove();
@@ -7650,7 +7756,7 @@ export async function initWanbanXiaowu() {
     const trialState = Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
     const trialInfo = null;
     const trialSpeciesLabel = { rabbit:'兔子', dog:'小狗', cat:'猫咪', bird:'飞鸟', bala:'水豚', fox:'狐狸' };
-    const trialPetName = trialInfo?.pet_card?.pet_name || trialSpeciesLabel[trialState.testSpecies] || '当前动物';
+    const trialPetName = petDisplayName(trialInfo, trialState, trialSpeciesLabel[trialState.testSpecies] || '当前动物');
     const trialCycle = Number(trialState.adoptionCycle || 0) || Math.max(1, (Array.isArray(trialState.archives) ? trialState.archives.length : 0) + 1);
     const trialHTML = '<button class="wb-pet-caretaker-card wb-pet-full-caretaker wb-pet-trial-caretaker" type="button"><div class="wb-pet-avatar wb-pet-trial-avatar">试</div>' + petSnapshotHTMLForInfo(trialState, trialInfo) + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">江维</b><span class="wb-pill wb-pet-caretaker-tag">试用版</span></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(trialPetName) + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(trialCycle)) + '只宠物</div></div></button>';
     const rowHTML = rows.map(c => {
@@ -7661,7 +7767,7 @@ export async function initWanbanXiaowu() {
       const snap = pet ? petSnapshotHTMLForInfo(state, infoObj) : '<div class="wb-pet-snapshot"></div>';
       const completedCount = petFullCompletedCount(c);
       const shownCycle = pet && !petFullPetCompleted(pet) ? (Number(state.adoptionCycle || 0) || completedCount + 1) : completedCount;
-      return '<button class="wb-pet-caretaker-card wb-pet-full-caretaker" data-id="' + esc(c.id) + '"><div class="wb-pet-avatar">' + avatar + '</div>' + snap + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">' + esc(c.name || '未命名') + '</b></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(infoObj?.pet_card?.pet_name || (pet ? '未命名宠物' : '暂无宠物')) + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(Math.max(1, Number(shownCycle || 1)))) + '只宠物</div></div></button>';
+      return '<button class="wb-pet-caretaker-card wb-pet-full-caretaker" data-id="' + esc(c.id) + '"><div class="wb-pet-avatar">' + avatar + '</div>' + snap + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">' + esc(c.name || '未命名') + '</b></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(pet ? petDisplayName(infoObj, state, '未命名宠物') : '暂无宠物') + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(Math.max(1, Number(shownCycle || 1)))) + '只宠物</div></div></button>';
     }).join('') + (rows.length ? '' : '<div class="wb-api-status">还没有添加正式饲养员。可以先进入试用版，或点击右上角“+”添加角色。</div>') + trialHTML;
     mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">选择饲养员</div><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-add">' + petUiIcon('plus') + '</button></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + rowHTML + '</div></div></div>';
     appendModalMask(mask);
@@ -7758,6 +7864,7 @@ export async function initWanbanXiaowu() {
       wish_tendency:'random',
       male_name:'',
       female_name:'',
+      narrative_person:'second',
       api_preset_index:'',
       attempts:3
     };
@@ -7772,6 +7879,7 @@ export async function initWanbanXiaowu() {
         + '<label class="wb-switch wb-pet-adopt-wide"><input id="wb-pet-wish-mode" type="checkbox" ' + (wishOpen ? 'checked' : '') + '>许愿模式</label>'
         + '<div class="wb-pet-adopt-wide" id="wb-pet-wish-fields" style="' + wishStyle + '"><div class="wb-preset-row"><label class="wb-field" style="flex:1;"><span>品种</span><select class="wb-select" id="wb-pet-wish-species"><option value="random">随机</option><option value="rabbit">兔子</option><option value="dog">狗</option><option value="cat">猫</option><option value="bird">鹰</option><option value="bala">水豚</option><option value="fox">狐狸</option></select></label><label class="wb-field" style="flex:1;"><span>性别</span><select class="wb-select" id="wb-pet-wish-sex"><option value="random">随机</option><option value="male">男孩</option><option value="female">女孩</option></select></label></div><label class="wb-field"><span>灵息能力</span><input class="wb-input" id="wb-pet-wish-tendency" placeholder="随机 或 填写能力倾向" value="' + esc(draft.wish_tendency === 'random' ? '随机' : draft.wish_tendency) + '"></label></div>'
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>男孩姓名</span><input class="wb-input" id="wb-pet-name-male" placeholder="例如：小曜" value="' + esc(draft.male_name || '') + '"></label><label class="wb-field" style="flex:1;"><span>女孩姓名</span><input class="wb-input" id="wb-pet-name-female" placeholder="例如：小露" value="' + esc(draft.female_name || '') + '"></label></div>'
+        + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>剧情人称</span><select class="wb-select" id="wb-pet-narrative-person"><option value="first">第一人称（我）</option><option value="second">第二人称（你）</option><option value="third">第三人称（TA）</option></select></label><div style="flex:1;"></div></div>'
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>模型选择</span><select class="wb-select" id="wb-pet-adopt-model">' + apiOptions + '</select></label><label class="wb-field" style="flex:1;"><span>模型生成次数</span><input class="wb-input" id="wb-pet-adopt-attempts" type="number" min="1" max="5" value="' + esc(String(draft.attempts || 3)) + '"></label></div>'
         + '<div class="wb-actions wb-pet-adopt-wide"><button class="wb-btn primary" id="wb-pet-adopt-generate" style="flex:1;">确定，生成宠物文案</button></div>'
         + '<div id="wb-pet-adopt-status" class="wb-pet-adopt-wide"></div>'
@@ -7779,6 +7887,7 @@ export async function initWanbanXiaowu() {
       appendModalMask(mask);
       const species = qs('#wb-pet-wish-species', mask); if (species) species.value = draft.wish_species || 'random';
       const sex = qs('#wb-pet-wish-sex', mask); if (sex) sex.value = draft.wish_sex || 'random';
+      const narrative = qs('#wb-pet-narrative-person', mask); if (narrative) narrative.value = draft.narrative_person || 'second';
       const apiSel = qs('#wb-pet-adopt-model', mask); if (apiSel) apiSel.value = draft.api_preset_index || '';
       bind();
     };
@@ -7795,6 +7904,7 @@ export async function initWanbanXiaowu() {
         wish_tendency:(qs('#wb-pet-wish-tendency', mask)?.value || 'random').replace(/^随机$/, 'random'),
         male_name:(qs('#wb-pet-name-male', mask)?.value || '').trim(),
         female_name:(qs('#wb-pet-name-female', mask)?.value || '').trim(),
+        narrative_person:qs('#wb-pet-narrative-person', mask)?.value || 'second',
         api_preset_index:qs('#wb-pet-adopt-model', mask)?.value || '',
         attempts:Math.max(1, Math.min(5, parseInt(qs('#wb-pet-adopt-attempts', mask)?.value, 10) || 1))
       };
@@ -7875,7 +7985,7 @@ export async function initWanbanXiaowu() {
     mask.className = modalMaskClass();
     mask.id = 'wb-pet-tutorial-mask';
     const state = petTestState();
-    const petName = petTestInfoCache?.pet_card?.pet_name || '宠物';
+    const petName = petDisplayName(petTestInfoCache, state);
     const stageName = state.stage === 'egg' ? '蛋' : (state.stage === 'juvenile' ? '幼崽' : ((state.stage === 'spirit' || state.stage === 'ordinary' || state.endingReady) ? '最终形态' : '成年'));
     const stageTip = (() => {
       if (state.stage === 'egg') return '蛋形态：多摸一摸孩子，去玩小游戏解锁成长度和更多形态吧！';
@@ -7924,7 +8034,7 @@ export async function initWanbanXiaowu() {
     mask.id = 'wb-pet-story-prompt';
     const finalStory = id === 'M15';
     const summaryText = finalStory
-      ? ((info?.pet_card?.pet_name || '宠物') + '打算回到灵息缝隙了。你确定要现在和它告别么？')
+      ? (petDisplayName(info, state) + '打算回到灵息缝隙了。你确定要现在和它告别么？')
       : petRenderText(story?.summary || '有新的剧情可以体验。', info, state);
     mask.innerHTML = '<div class="wb-modal wb-pet-modal wb-mini-modal wb-pet-story-choice"><div class="wb-pet-story-choice-title">触发' + (/^S/.test(id) ? '支线剧情：' : '主线剧情：') + '</div><div class="wb-pet-story-choice-name">' + esc(petRenderText(story?.title || id, info, state)) + '</div><div class="wb-pet-story-choice-summary">' + esc(summaryText) + '</div><div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-story-play" style="flex:1;">' + (finalStory ? '确定' : '进入剧情') + '</button><button class="wb-btn" id="wb-pet-story-skip">' + (finalStory ? '再陪它一会' : '放弃剧情') + '</button></div></div>';
     appendModalMask(mask);
@@ -7997,7 +8107,7 @@ export async function initWanbanXiaowu() {
       if (e.target && e.target.closest && e.target.closest('button')) return;
       const now = Date.now();
       if (now < petStoryTapLockedUntil) return;
-      petStoryTapLockedUntil = now + 220;
+      petStoryTapLockedUntil = now + 70;
       const state = petTestState();
       if (state.activeStory && state.activeStory.id && state.activeStory.prompt) { state.activeStory = { id:state.activeStory.id, prompt:false, index:0, page:0, done:false, replay:false }; savePetTestState(state); renderPetHouseLoaded(info, state); return; }
       if (state.activeStory && state.activeStory.id && !state.activeStory.prompt) advance();
@@ -8037,7 +8147,7 @@ export async function initWanbanXiaowu() {
         renderPetHouse();
         return;
       }
-      showConfirm('开始下一个宠物？', (info?.pet_card?.pet_name || '宠物') + '的结局已经保存。是否开始下一个宠物试用版？旧宠物记录会归档保留。', () => {
+      showConfirm('开始下一个宠物？', petDisplayName(info, state) + '的结局已经保存。是否开始下一个宠物试用版？旧宠物记录会归档保留。', () => {
         const ended = petTestState();
         const fresh = defaultPetTestState();
         fresh.testEgg = ended.testEgg;
@@ -8082,7 +8192,7 @@ export async function initWanbanXiaowu() {
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-pet-route-choice';
-    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">选择契机</div><div class="wb-api-status">' + esc(info?.pet_card?.pet_name || '宠物') + '已经获得选择未来形态的机会。选择灵息路线会进入 magic 形态；选择普通路线会继续保持 adult 形态。</div><div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-route-spirit" style="flex:1;">成为灵息宠物</button><button class="wb-btn" id="wb-pet-route-ordinary" style="flex:1;">保持普通形态</button></div></div>';
+    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">选择契机</div><div class="wb-api-status">' + esc(petDisplayName(info, petTestState())) + '已经获得选择未来形态的机会。选择灵息路线会进入 magic 形态；选择普通路线会继续保持 adult 形态。</div><div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-route-spirit" style="flex:1;">成为灵息宠物</button><button class="wb-btn" id="wb-pet-route-ordinary" style="flex:1;">保持普通形态</button></div></div>';
     appendModalMask(mask);
     const choose = route => {
       const next = Object.assign({}, petTestState(), { route, stage:route, growth:0, petAction:'normal', pendingStories:[] });
@@ -8118,9 +8228,9 @@ export async function initWanbanXiaowu() {
     const close = () => mask.remove();
     const bindClose = () => { const b = qs('#wb-pet-records-close', mask); if (b) b.onclick = close; };
     const drawHome = () => {
-      mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head('记录') + '<div class="wb-pet-scroll"><div class="wb-pet-card-list"><button class="wb-btn primary wb-pet-record-home" data-page="dates">日期记录</button><button class="wb-btn wb-pet-record-home" data-page="logs">日志记录</button><button class="wb-btn wb-pet-record-home" data-page="stories">剧情记录</button></div></div></div>';
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head('记录') + '<div class="wb-pet-scroll"><div class="wb-pet-card-list"><button class="wb-btn primary wb-pet-record-home" data-page="dates">日期记录</button><button class="wb-btn wb-pet-record-home" data-page="dex">图鉴</button><button class="wb-btn wb-pet-record-home" data-page="logs">日志记录</button><button class="wb-btn wb-pet-record-home" data-page="stories">剧情记录</button></div></div></div>';
       bindClose();
-      qsa('.wb-pet-record-home', mask).forEach(btn => btn.onclick = () => ({ dates:drawDates, logs:drawLogs, stories:drawStories })[btn.dataset.page]());
+      qsa('.wb-pet-record-home', mask).forEach(btn => btn.onclick = () => ({ dates:drawDates, dex:drawDex, logs:drawLogs, stories:drawStories })[btn.dataset.page]());
     };
     const allDayEntries = () => {
       const out = [];
@@ -8134,6 +8244,126 @@ export async function initWanbanXiaowu() {
       if (!row.day.adopted) acc[row.date] = Number(acc[row.date] || 0) + petDayGrowthTotal(row.day);
       return acc;
     }, {});
+    const dexEggs = ['blue','purple','pink','green','gold','white'];
+    const dexEggNames = { blue:'蓝色蛋', purple:'紫色蛋', pink:'粉色蛋', green:'绿色蛋', gold:'金色蛋', white:'蓝白蛋' };
+    const dexSpecies = ['rabbit','fox','dog','cat','bird','bala'];
+    const dexForms = [
+      { id:'baby', name:'幼崽', stage:'juvenile', story:'M05' },
+      { id:'adult', name:'成年', stage:'adult', story:'M08' },
+      { id:'magic', name:'灵息', stage:'spirit', story:'M12' }
+    ];
+    const dexStageReached = (state, formId) => {
+      const st = String(state?.stage || 'egg');
+      const completed = new Set(state?.completedMain || []);
+      if (formId === 'egg') return true;
+      if (formId === 'baby') return st !== 'egg' || completed.has('M05');
+      if (formId === 'adult') return ['adult','ordinary','spirit'].includes(st) || completed.has('M08');
+      if (formId === 'magic') return st === 'spirit' || completed.has('M12');
+      return false;
+    };
+    const dexSpriteUrl = (ctx, species, formId, action) => {
+      if (formId === 'egg') return PET_ASSET_BASE + 'eggs/' + (dexEggs.includes(species) ? species : 'green') + '-1.png';
+      return PET_ASSET_BASE + species + '/' + formId + '/' + petStateClass(action || 'normal') + '.png';
+    };
+    const dexDateRank = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? String(value) : '';
+    const dexMinDate = dates => dates.map(dexDateRank).filter(Boolean).sort()[0] || '';
+    const dexStateUnlockDate = (ctx, formId) => {
+      const state = ctx?.state || {};
+      if (formId === 'egg') return dexDateRank(state.firstVisitDate) || todayKey();
+      const storyId = formId === 'baby' ? 'M05' : (formId === 'adult' ? 'M08' : 'M12');
+      const dates = (state.storyRecords || []).filter(x => x && x.id === storyId).map(x => x.date);
+      Object.keys(state.days || {}).forEach(date => {
+        const snap = state.days[date] && state.days[date].snapshot;
+        if (snap && dexStageReached(snap, formId)) dates.push(date);
+      });
+      if (state.firstSnapshot && dexStageReached(state.firstSnapshot, formId)) dates.push(state.firstVisitDate);
+      const found = dexMinDate(dates);
+      return found || (dexStageReached(state, formId) ? (dexDateRank(state.firstVisitDate) || todayKey()) : '');
+    };
+    const dexEntries = () => {
+      const unlocked = new Map();
+      makeItems().forEach(ctx => {
+        const species = (ctx?.info?.pet_card?.species || ctx?.state?.testSpecies || '').replace(/[^a-z]/g, '');
+        const egg = (ctx?.info?.pet_card?.egg || ctx?.state?.testEgg || '').replace(/[^a-z]/g, '');
+        if (egg && dexEggs.includes(egg) && dexStageReached(ctx.state, 'egg')) {
+          const key = egg + ':egg';
+          const date = dexStateUnlockDate(ctx, 'egg');
+          const prev = unlocked.get(key);
+          if (!prev || (date && date < prev.date)) unlocked.set(key, { ctx, date });
+        }
+        if (!species || !dexSpecies.includes(species)) return;
+        dexForms.forEach(form => {
+          if (!dexStageReached(ctx.state, form.id)) return;
+          const key = species + ':' + form.id;
+          const date = dexStateUnlockDate(ctx, form.id);
+          const prev = unlocked.get(key);
+          if (!prev || (date && date < prev.date)) unlocked.set(key, { ctx, date });
+        });
+      });
+      const eggEntries = dexEggs.map(species => ({ species, form:{ id:'egg', name:'宠物蛋', stage:'egg' } }));
+      const animalEntries = dexSpecies.flatMap(species => dexForms.map(form => ({ species, form })));
+      return eggEntries.concat(animalEntries).map(entry => {
+        const got = unlocked.get(entry.species + ':' + entry.form.id);
+        return Object.assign(entry, { ctx:got && got.ctx, unlocked:!!got, date:(got && got.date) || '' });
+      });
+    };
+    const petDexPixelIcon = key => {
+      const eggKeys = new Set(['blue', 'purple', 'pink', 'green', 'gold', 'white']);
+      const palette = {
+        rabbit:'#ffb6ca', fox:'#ff9a42', dog:'#d69b68', cat:'#fffdf4', bird:'#81d884', bala:'#c59b72'
+      };
+      const fill = eggKeys.has(key) ? '#ffd45c' : (palette[key] || 'var(--wb-accent)');
+      const dark = '#22324d', light = '#fffdf4', blush = '#ff8fa3', beak = '#ffd45c';
+      const r = (x, y, w, h, c) => '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + c + '"/>';
+      const egg = () => [r(9,3,6,2,fill),r(7,5,10,3,fill),r(5,8,14,4,fill),r(4,12,16,5,fill),r(6,17,12,3,fill),r(8,20,8,1,dark),r(6,10,3,2,light),r(13,6,2,2,light)].join('');
+      const maps = {
+        rabbit:[r(7,2,3,7,fill),r(14,2,3,7,fill),r(8,3,1,5,light),r(15,3,1,5,light),r(5,9,14,10,fill),r(7,18,10,2,fill),r(8,12,2,2,dark),r(14,12,2,2,dark),r(11,15,2,1,dark),r(7,15,2,1,blush),r(15,15,2,1,blush)],
+        fox:[r(8,4,2,2,fill),r(7,6,4,4,fill),r(14,4,2,2,fill),r(13,6,4,4,fill),r(8,6,1,2,light),r(15,6,1,2,light),r(6,8,12,9,fill),r(8,12,8,5,light),r(10,15,4,3,light),r(8,10,2,2,dark),r(14,10,2,2,dark),r(11,14,2,2,dark),r(4,16,5,3,fill),r(15,16,5,3,fill)],
+        dog:[r(4,7,5,8,'#8d6749'),r(15,7,5,8,'#8d6749'),r(7,6,10,10,fill),r(8,14,8,5,light),r(8,10,2,2,dark),r(14,10,2,2,dark),r(11,13,2,2,dark),r(10,16,4,1,dark),r(9,7,2,2,light),r(6,17,4,2,fill),r(14,17,4,2,fill)],
+        cat:[r(8,4,2,2,fill),r(7,6,4,4,fill),r(14,4,2,2,fill),r(13,6,4,4,fill),r(8,7,1,2,blush),r(15,7,1,2,blush),r(6,8,12,10,fill),r(8,15,8,4,'#eaf7ff'),r(8,11,2,2,dark),r(14,11,2,2,dark),r(11,14,2,1,dark),r(8,16,2,1,blush),r(15,16,2,1,blush),r(3,13,4,1,dark),r(17,13,4,1,dark),r(3,15,4,1,dark),r(17,15,4,1,dark)],
+        bird:[r(10,4,6,4,fill),r(7,8,11,9,fill),r(5,10,4,5,fill),r(18,10,3,2,beak),r(14,8,2,2,dark),r(9,17,8,2,fill),r(10,19,2,2,dark),r(15,19,2,2,dark),r(9,8,3,2,light)],
+        bala:[r(5,8,14,9,fill),r(7,6,3,3,fill),r(15,6,3,3,fill),r(7,17,10,2,fill),r(8,11,2,2,dark),r(15,11,2,2,dark),r(11,13,3,2,'#6f5038'),r(9,15,6,1,dark),r(6,9,2,2,light)]
+      };
+      const body = maps[key] ? maps[key].join('') : egg();
+      return '<svg class="wb-pet-dex-pixel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" shape-rendering="crispEdges">' + body + '</svg>';
+    };
+    const drawDex = () => {
+      const entries = dexEntries();
+      const count = entries.filter(x => x.unlocked).length;
+      const total = dexEggs.length + dexSpecies.length * dexForms.length;
+      const cards = entries.map((entry, idx) => {
+        const no = String(idx + 1).padStart(2, '0');
+        const dateText = entry.unlocked ? (entry.date ? petDateCN(entry.date) : '已解锁') : '？？？？.??.??';
+        const formName = entry.unlocked ? entry.form.name : '未解锁';
+        const art = dexSpriteUrl(entry.ctx, entry.species, entry.form.id, 'normal');
+        const happy = dexSpriteUrl(entry.ctx, entry.species, entry.form.id, 'happy');
+        const visual = !entry.unlocked
+          ? (entry.form.id === 'egg'
+            ? '<img class="wb-pet-dex-egg wb-pet-dex-shadow-img" src="' + esc(art) + '" alt=""><div class="wb-pet-dex-question">?</div>'
+            : '<div class="wb-pet-dex-fox wb-pet-dex-shadow-sprite ' + esc(entry.form.id) + '" style="--wb-pet-sprite:url(' + esc(art) + ')"></div><div class="wb-pet-dex-question">?</div>')
+          : (entry.form.id === 'egg'
+            ? '<img class="wb-pet-dex-egg" src="' + esc(art) + '" alt="">'
+            : '<div class="wb-pet-dex-fox ' + esc(entry.form.id) + ' normal" data-normal="' + esc(art) + '" data-happy="' + esc(happy) + '" style="--wb-pet-sprite:url(' + esc(art) + ')"></div>');
+        const corner = '<div class="wb-pet-dex-trinket-mini trinket-' + esc(entry.species) + '">' + petDexPixelIcon(entry.species) + '</div>';
+        return '<button class="wb-pet-dex-card ' + (entry.unlocked ? 'unlocked' : 'locked') + '" type="button" data-form="' + esc(entry.form.id) + '" data-species="' + esc(entry.species) + '"><div class="wb-pet-dex-no">No.' + no + '</div>' + corner + '<div class="wb-pet-dex-art">' + visual + '</div><div class="wb-pet-dex-name">' + esc(dateText) + '</div><div class="wb-pet-dex-form">' + esc(formName) + '</div></button>';
+      }).join('');
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal wb-pet-dex-modal">' + head('图鉴') + '<button class="wb-btn" id="wb-pet-dex-home">返回目录</button><div class="wb-pet-scroll"><div class="wb-pet-dex-head"><div><strong>灵息图鉴</strong><span>当前角色全部宠物</span></div><b>' + count + '/' + total + '</b></div><div class="wb-pet-dex-progress" style="--v:' + Math.round(count / total * 100) + '%"><span></span></div><div class="wb-pet-dex-grid">' + cards + '</div></div></div>';
+      bindClose();
+      qs('#wb-pet-dex-home', mask).onclick = drawHome;
+      qsa('.wb-pet-dex-card.unlocked', mask).forEach(card => card.onclick = () => {
+        const sprite = qs('.wb-pet-dex-fox', card);
+        if (sprite) sprite.style.setProperty('--wb-pet-sprite', 'url(' + (sprite.dataset.happy || sprite.dataset.normal || '') + ')');
+        card.classList.add('happy');
+        if (sprite) sprite.classList.add('animating');
+        setTimeout(() => {
+          if (sprite) {
+            sprite.style.setProperty('--wb-pet-sprite', 'url(' + (sprite.dataset.normal || '') + ')');
+            sprite.classList.remove('animating');
+          }
+          card.classList.remove('happy');
+        }, 1500);
+      });
+    };
     const drawDates = (offset = 0) => {
       const base = new Date(); base.setMonth(base.getMonth() + offset, 1);
       const y = base.getFullYear(), m = base.getMonth();
@@ -8151,10 +8381,10 @@ export async function initWanbanXiaowu() {
       }
       const rows = allDayEntries().sort((a,b) => String(b.date).localeCompare(String(a.date))).map(row => {
         const day = row.day || {};
-        if (day.adopted) return '<div class="wb-pet-record-entry compact">' + petSnapshotHTMLForInfo(day.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(petDateCN(row.date)) + '</div><div class="wb-pet-record-title">第' + row.ctx.petIndex + '只 · 收养了' + esc(row.ctx.info?.pet_card?.pet_name || '宠物') + '</div></div></div>';
+        if (day.adopted) return '<div class="wb-pet-record-entry compact">' + petSnapshotHTMLForInfo(day.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(petDateCN(row.date)) + '</div><div class="wb-pet-record-title">第' + row.ctx.petIndex + '只 · 收养了' + esc(petDisplayName(row.ctx.info, day.snapshot ? petSnapshotState(day.snapshot) : row.ctx.state)) + '</div></div></div>';
         const add = petDayGrowthTotal(day);
         const tags = [['喂食', day.feed], ['抚摸', day.pet], ['遛弯', day.outing], ['游戏', day.play]].filter(x => Number(x[1] || 0) > 0).map(x => '<span class="wb-pet-record-tag">' + x[0] + x[1] + '</span>').join('');
-        return '<div class="wb-pet-record-entry compact">' + petSnapshotHTMLForInfo(day.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(petDateCN(row.date)) + ' · +' + add + '</div><div class="wb-pet-record-title">第' + row.ctx.petIndex + '只 · ' + esc(row.ctx.info?.pet_card?.pet_name || '宠物') + '</div><div class="wb-pet-record-tags">' + (tags || '<span class="wb-pet-record-tag">无互动</span>') + '</div></div></div>';
+        return '<div class="wb-pet-record-entry compact">' + petSnapshotHTMLForInfo(day.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(petDateCN(row.date)) + ' · +' + add + '</div><div class="wb-pet-record-title">第' + row.ctx.petIndex + '只 · ' + esc(petDisplayName(row.ctx.info, day.snapshot ? petSnapshotState(day.snapshot) : row.ctx.state)) + '</div><div class="wb-pet-record-tags">' + (tags || '<span class="wb-pet-record-tag">无互动</span>') + '</div></div></div>';
       }).join('') || '<div class="wb-api-status">暂无成长记录</div>';
       mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head(y + '年' + (m + 1) + '月') + '<div class="wb-pet-cal-fixed"><div class="wb-actions"><button class="wb-btn" id="wb-pet-cal-prev">上一月</button><button class="wb-btn" id="wb-pet-cal-home">返回目录</button><button class="wb-btn" id="wb-pet-cal-next">下一月</button></div><div class="wb-pet-calendar" style="margin:6px 0 0;">' + cells.join('') + '</div></div><div class="wb-pet-scroll wb-pet-cal-scroll"><div class="wb-pet-card-list">' + rows + '</div></div></div>';
       bindClose();
@@ -8294,7 +8524,7 @@ export async function initWanbanXiaowu() {
       if (!generated) { toast('请先生成日志'); return; }
       const saveNow = () => {
         const next = petTestState();
-        next.logs = Object.assign({}, next.logs || {}, { [today]:Object.assign({}, generated, { savedAt:Date.now(), date:today, pet_name:info?.pet_card?.pet_name || generated?.pet_name || '宠物', pet_stage:petDisplayStage(next), snapshot:petSnapshotData(next) }) });
+        next.logs = Object.assign({}, next.logs || {}, { [today]:Object.assign({}, generated, { savedAt:Date.now(), date:today, pet_name:petDisplayName(info, next, generated?.pet_name || '宠物'), pet_stage:petDisplayStage(next), snapshot:petSnapshotData(next) }) });
         savePetTestState(next);
         mask.remove();
         toast('日志已保存');

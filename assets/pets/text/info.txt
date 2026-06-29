@@ -6,9 +6,9 @@
 ## 输入解析
 1. `pet_name_candidates` 必须包含雄性名和雌性名。只提供一个名称时保留该名称，并补充另一个同风格名称；孵化后按实际性别使用对应名称。
 2. `egg_options` 是界面可选项；`selected_egg` 是本次实际使用的蛋。标准模式只能选择蓝色、紫色、粉色、绿色、金色、蓝白色之一。
-3. `selected_egg: wish` 时读取 `wish_species`、`wish_sex` 与可选的 `wish_tendency`。许愿仅固定宠物种族、性别及明确提出的倾向，其余成长仍遵守灵息规则。
+3. `selected_egg: wish` 时读取 `selected_egg_color`、`wish_species`、`wish_sex` 与可选的 `wish_tendency`。`selected_egg_color` 是本次实际使用的蛋色；许愿仅固定宠物种族、性别及明确提出的倾向，其余成长仍遵守灵息规则。
 4. 标准模式下，宠物种族从狐狸、猫、水豚、鹰、狗、兔子中选择；性别由 AI 确定。蛋只影响灵息倾向，不能直接决定种族和性格。
-5. `narrative_person` 只能为 `first`、`second`、`third`。第一人称旁白将 {{user}} 写作“我”；第二人称写作“你”；第三人称按输入的 user 代词写作“他”“她”或“TA”。{{char}} 始终保留为 `{{char}}`。
+5. `narrative_person` 只能为 `first`、`second`、`third`。第一人称旁白将 {{user}} 写作“我”；第二人称写作“你”；第三人称按 `user_pronoun` 写作“他”“她”。
 6. `adoption_cycle` 为养宠次数，数字。数值为1，初次养育时必须完整建立与沈栖白的相识；再次养育时，沈栖白与二人已是熟人。
 7. 世界背景、{{user}} 与 {{char}} 的生活环境、性格和关系对宠物性格与事件影响最大；宠物种族次之；蛋倾向负责魔法表现和事件气氛。
 
