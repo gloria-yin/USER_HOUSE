@@ -451,10 +451,11 @@ export async function initWanbanXiaowu() {
     else if (updateState.error) { status = '检查更新失败'; cls = 'error'; }
     else if (updateState.available) { status = '发现新版本：' + remote; cls = 'available'; }
     else if (updateState.checked) { status = '当前已更新至最新版本'; cls = 'ok'; }
+    const busyAttr = (updateState.checking || updateState.updating) ? 'disabled' : '';
     return '<div class="wb-panel wb-update-panel ' + cls + '" id="wb-update-panel">'
       + '<div class="wb-update-row"><span>' + esc(status) + '</span>'
+      + '<button class="wb-btn wb-update-icon" id="wb-check-update" title="检查更新" aria-label="检查更新" ' + busyAttr + '><i class="fa-solid fa-rotate-right"></i></button>'
       + (updateState.available ? '<button class="wb-btn primary wb-update-icon" id="wb-run-update" title="更新插件" aria-label="更新插件" ' + (updateState.updating ? 'disabled' : '') + '><i class="fa-solid fa-download"></i></button>' : '')
-      + (updateState.error ? '<button class="wb-btn wb-update-icon" id="wb-check-update" title="重新检查" aria-label="重新检查"><i class="fa-solid fa-rotate-right"></i></button>' : '')
       + '</div></div>';
   }
   function syncUpdateNoticeClass() {
