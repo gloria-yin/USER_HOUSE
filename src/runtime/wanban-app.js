@@ -266,7 +266,7 @@ export async function initWanbanXiaowu() {
     uyangle: '三消叠牌小游戏。普通模式可通关；无尽模式会在剩余牌较少时自动追加下一批牌层，失败时统计已消除数量。点击没有被上层遮挡的卡牌放入下方7格槽，同图标凑满3张会消除；槽位超过7格且没有消除时失败。',
     screw: '每局会选择普通模式或无尽模式，并保证每种颜色螺丝数量为3的倍数、工具盒数量正确。顶部同时出现3个随机颜色工具盒，点击可见螺丝后，同色螺丝进入对应工具盒；非当前盒颜色会进入5格临时托盘。任意工具盒收满3颗会自动打包并刷新下一个颜色。上层面板会遮挡下层螺丝；板件剩一个螺丝时会悬挂摆动，失去全部螺丝后受重力下落。普通模式清空全部面板即可过关，无尽模式会在快结束时续上下一批。',
     popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5。消除后上方星星下落，空列向左收拢；无可消除组合时本关结算，剩余20个以内按(20-剩余数)×100奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。每局有3次打乱和3次单消道具。',
-    paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。每发射5次顶部压下一行，任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
+    paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '进入时可选择普通模式或无尽模式。普通模式任意方向先连成五子获胜；无尽模式双方各30颗棋子，连五后回收自己的五子并吃掉对方一子，直到一方棋子被吃完或双方无可用棋子。',
@@ -1014,7 +1014,7 @@ export async function initWanbanXiaowu() {
     if (game === 'uyangle') return '字段说明：U了个U是三消叠牌小游戏；分数由用时和打乱次数共同计算，用时越短、打乱越少，分数越高。';
     if (game === 'screw') return '字段说明：拧螺丝是颜色盒子收集和玻璃层级解谜；普通模式分数由用时、候补槽压力和增加盒子次数共同计算；无尽模式失败时按当前盒子数量结算倍率，盒子越少倍率越高。';
     if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5；无可消除组合后按剩余方块结算，累计分数达到关卡目标进入下一关。';
-    if (game === 'paopao') return '字段说明：泡泡龙是交错网格射击生存游戏；发射表示本局射出的泡泡数量，下压表示每10发后顶部新增行并整体下移的次数。';
+    if (game === 'paopao') return '字段说明：泡泡龙是交错网格射击生存游戏；发射表示本局射出的泡泡数量；下压表示顶部新增行并整体下移的次数，下压间隔会从10发逐步缩短到5发。';
     if (game === 'game1010') return '字段说明：1010!是10×10方块拼图；放置表示成功落下的候补方块数量，消除表示累计清掉的行/列数量。';
     if (game === 'wordguess') return '字段说明：猜中题数只表示user猜中的题数。';
     if ((GAME_META[game] || {}).mode === 'double') return '字段说明：胜负是user的胜负，胜表示user赢，负表示' + role + '赢。';
@@ -1062,7 +1062,7 @@ export async function initWanbanXiaowu() {
     if (game === 'screw') return (d.endless ? '模式：无尽模式；收纳盒子：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '个；结算盒子数：' + (d.endlessBoxCount || (3 + (d.addBoxUses || 0))) + '个；基础分：' + (d.endlessBaseScore == null ? '未记录' : d.endlessBaseScore) + '；结算倍率：×' + (d.endlessScoreMultiplier || '未记录') + '；' : '结果：' + (d.completed ? '成功' : '失败') + '；最终进度：' + (d.progress || 0) + '%；打包次数：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '次；') + '候补槽最大占用：' + (d.maxTray || 0) + '格；候补槽填满5个次数：' + (d.trayFullCount || d.trayFourCount || 0) + '次；使用增加盒子次数：' + (d.addBoxUses || 0) + '次；被遮挡螺丝点击次数：' + (d.blocked || 0) + '次；掉落玻璃数量：' + (d.fallen || 0) + '块。';
     if (game === 'popstar') return '最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '。';
     if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次。';
-    if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；道具耗尽后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
+    if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
     if (game === 'ludo') return cheatText + 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user飞行次数：' + (d.userFlights || 0) + '次；' + (rec.companion || '{{char}}') + '飞行次数：' + (d.charFlights || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
     if (game === 'guessnumber') return '每次猜测：\n' + ((d.guesses || []).map((x,i) => (i+1) + '. 猜“' + x.guess + '”：数字对' + x.nums + '个，位置对' + x.pos + '个').join('\n') || '无');
     if (game === 'wordguess') return '每题记录：\n' + ((d.rounds || []).map((r,i) => (i+1) + '. 题目：' + r.word + '；5条提示：' + (r.clues || []).join(' / ') + '；user猜过：' + ((r.guesses || []).join('、') || '无') + '；第几条提示猜中：' + (r.winClueIndex || '未猜中')).join('\n') || '无');
@@ -1245,7 +1245,7 @@ export async function initWanbanXiaowu() {
       if (game === 'game1010') return [
         'record：破纪录小剧场。刷新当前游戏历史最高分。',
         'game1010_strategy：运筹帷幄小剧场。1010!一次消除超过4行/列，重点写user提前规划空位、一块落下后行列同时清空。',
-        'game1010_bad_luck：倒霉小剧场。1010!已经不能放置时，user把重新生成和小锤子道具全部用完但仍然输了。',
+        'game1010_bad_luck：倒霉小剧场。1010!已经不能放置时，user这一轮使用重新生成或小锤子救场，但用完后仍然输了。',
         'game1010_clutch：命悬一线小剧场。1010!超过3次剩5个以下空格，重点写棋盘几乎堵死但又被user续住。',
         'normal：普通小剧场。没有命中特殊条件时，根据分数、消除行列、放置数量和道具使用自然复盘。'
       ].join('\n');
@@ -11451,7 +11451,7 @@ function showGameRecords(game, page) {
     let grid = cloneGrid(state?.grid);
     let score = Number(state?.score || 0), regen = Math.max(0, Math.min(3, Number(state?.regen == null ? 3 : state.regen))), hammers = Math.max(0, Math.min(3, Number(state?.hammers == null ? 3 : state.hammers)));
     let pieces = Array.isArray(state?.pieces) ? state.pieces.map(p => p && { shape:p.shape, color:p.color, used:!!p.used }) : [];
-    let details = Object.assign({ score, clearedLines:0, placements:0, maxClear:0, regenUsed:0, hammerUsed:0, lowSpaceCount:0, toolExhaustLose:false }, state?.details || {});
+    let details = Object.assign({ score, clearedLines:0, placements:0, maxClear:0, regenUsed:0, hammerUsed:0, lowSpaceCount:0, toolExhaustLose:false, lastToolPlacement:-1 }, state?.details || {});
     let seen = Object.assign({ scoreMilestone:Math.floor(score / 1000), lowTick:'' }, state?.seen || {});
     let hammerMode = false, dragging = null, hover = null, W = 360, H = 520, board = { x:20, y:20, size:320, cell:32 }, slots = [], over = false;
     const rand = n => Math.floor(Math.random() * n);
@@ -11608,7 +11608,7 @@ function showGameRecords(game, page) {
     function checkEnd() {
       const isBlocked = blocked();
       if (isBlocked && regen <= 0 && hammers <= 0) {
-        details.toolExhaustLose = true;
+        details.toolExhaustLose = Number(details.lastToolPlacement) === Number(details.placements || 0);
         endGame();
         return true;
       }
@@ -11636,7 +11636,7 @@ function showGameRecords(game, page) {
     function hammerAt(x, y) {
       const pos = boardCell(x, y);
       if (pos.r < 0 || pos.r >= N || pos.c < 0 || pos.c >= N || !grid[pos.r][pos.c]) return false;
-      grid[pos.r][pos.c] = null; hammers--; details.hammerUsed++; hammerMode = false; speak('game1010','tool');
+      grid[pos.r][pos.c] = null; hammers--; details.hammerUsed++; details.lastToolPlacement = details.placements || 0; hammerMode = false; speak('game1010','tool');
       checkLowSpace(); updateUI(); draw(); save(); checkEnd();
       return true;
     }
@@ -11667,7 +11667,7 @@ function showGameRecords(game, page) {
     c.addEventListener('pointercancel', () => { dragging = null; hover = null; draw(); });
     qs('#wb-1010-regen').onclick = () => {
       if (gamePaused || over || regen <= 0) return;
-      regen--; details.regenUsed++; newBatch(); hammerMode = false; speak('game1010','tool');
+      regen--; details.regenUsed++; details.lastToolPlacement = details.placements || 0; newBatch(); hammerMode = false; speak('game1010','tool');
       updateUI(); draw(); save(); checkEnd();
     };
     qs('#wb-1010-hammer').onclick = () => {
@@ -11690,7 +11690,7 @@ function showGameRecords(game, page) {
     let bubbles = Array.isArray(state?.bubbles) ? state.bubbles.map(b => Object.assign({}, b)) : [];
     let falling = Array.isArray(state?.falling) ? state.falling : [];
     let popping = [];
-    let score = Number(state?.score || 0), shots = Number(state?.shots || 0), pushes = Number(state?.pushes || 0), bombs = Math.max(0, Math.min(5, Number(state?.bombs == null ? 5 : state.bombs)));
+    let score = Number(state?.score || 0), shots = Number(state?.shots || 0), pushes = Number(state?.pushes || 0), shotsSincePush = Number(state?.shotsSincePush ?? (Number(state?.shots || 0) % Math.max(5, 10 - Math.floor(Number(state?.pushes || 0) / 3)))), bombs = Math.max(0, Math.min(5, Number(state?.bombs == null ? 5 : state.bombs)));
     let current = state?.current || '', next = state?.next || '', armedBomb = !!state?.armedBomb;
     let flying = null, aiming = false, resolving = false, aimAngle = 0, over = false, raf = 0, lastT = 0;
     let seen = Object.assign({ aim:false, dangerTick:0, scoreMilestone:Math.floor(score/1000) }, state?.seen || {});
@@ -11699,7 +11699,8 @@ function showGameRecords(game, page) {
     const key = (r,col) => r + ':' + col;
     const byKey = () => { const m = new Map(); bubbles.forEach(b => { if (!b.dead) m.set(key(b.r,b.c), b); }); return m; };
     const valid = (r,col) => r >= 0 && col >= 0 && col < cap(r);
-    const baseCenter = (r,col) => ({ x:boardPad + (Math.abs(r) % 2 ? D / 2 : 0) + col * D + R, y:boardPad + r * rowH + R });
+    const rowParity = r => Math.abs(r - pushes) % 2;
+    const baseCenter = (r,col) => ({ x:boardPad + (rowParity(r) ? D / 2 : 0) + col * D + R, y:boardPad + r * rowH + R });
     const center = (r,col,b) => baseCenter(r,col);
     const liveColors = () => { const a = [...new Set(bubbles.filter(b => !b.dead).map(b => b.color))]; return a.length ? a : colors.slice(); };
     const rand = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -11707,7 +11708,7 @@ function showGameRecords(game, page) {
     function seed() {
       bubbles = [];
       for (let r=0; r<ROWS_INIT; r++) for (let col=0; col<cap(r); col++) bubbles.push({ r, c:col, color:rand(colors) });
-      current = rand(colors); next = rand(colors); score = shots = pushes = 0; bombs = 5; armedBomb = false; falling = []; details = { shots:0, pushes:0, cleared:0, dropTotal:0, dangerCount:0, bombUsed:0, bombBad:false, highStreak:0, maxHighStreak:0 }; seen = { aim:false, dangerTick:0, scoreMilestone:0 };
+      current = rand(colors); next = rand(colors); score = shots = pushes = shotsSincePush = 0; bombs = 5; armedBomb = false; falling = []; details = { shots:0, pushes:0, cleared:0, dropTotal:0, dangerCount:0, bombUsed:0, bombBad:false, highStreak:0, maxHighStreak:0 }; seen = { aim:false, dangerTick:0, scoreMilestone:0 };
     }
     if (!bubbles.length) seed();
     if (!current) current = randomColor();
@@ -11743,7 +11744,7 @@ function showGameRecords(game, page) {
         swapBtn.style.top = Math.round(canvasTop + launch.y - D * 1.32) + 'px';
       }
     }
-    function save() { saveProgress('paopao', { bubbles, falling, score, shots, pushes, bombs, current, next, armedBomb, seen, details }); }
+    function save() { saveProgress('paopao', { bubbles, falling, score, shots, pushes, shotsSincePush, bombs, current, next, armedBomb, seen, details }); }
     function updateScore(add) {
       if (!add) return;
       score += add; setScore('paopao', score);
@@ -11752,7 +11753,7 @@ function showGameRecords(game, page) {
     }
     function neighbors(r,col) {
       const out = [[r,col-1],[r,col+1]];
-      if (Math.abs(r) % 2 === 0) out.push([r-1,col-1],[r-1,col],[r+1,col-1],[r+1,col]);
+      if (rowParity(r) === 0) out.push([r-1,col-1],[r-1,col],[r+1,col-1],[r+1,col]);
       else out.push([r-1,col],[r-1,col+1],[r+1,col],[r+1,col+1]);
       return out.filter(x => valid(x[0], x[1]));
     }
@@ -11828,9 +11829,6 @@ function showGameRecords(game, page) {
         popBubbles(list, true);
         list.forEach(() => { gained += 30; });
       };
-      const occAfterClear = byKey();
-      const loose = bubbles.filter(x => !neighbors(x.r, x.c).some(n => occAfterClear.has(key(n[0], n[1]))));
-      applyDrop(loose);
       const anchored = supportedSet();
       const hanging = bubbles.filter(x => !anchored.has(key(x.r, x.c)));
       applyDrop(hanging);
@@ -11838,13 +11836,15 @@ function showGameRecords(game, page) {
       if (gained > 50) details.highStreak++; else details.highStreak = 0;
       details.maxHighStreak = Math.max(details.maxHighStreak || 0, details.highStreak || 0);
       updateScore(gained);
-      shots++; details.shots = shots;
-      const shouldPush = shots % 10 === 0;
+      shots++; shotsSincePush++; details.shots = shots;
+      const shouldPush = shotsSincePush >= pushInterval();
       const finishTurn = () => {
         if (over) return;
         if (shouldPush) pushDown();
         if (over) return;
-        current = next; next = randomColor(); armedBomb = false; resolving = false;
+        if (bubbles.length <= 5) pushDown();
+        if (over) return;
+        resolving = false;
         checkDanger();
         if (over) return;
         save(); updateBombUI(); draw();
@@ -11852,10 +11852,14 @@ function showGameRecords(game, page) {
       if (shouldPush && (clearCount || dropCount || bombRemoved || popping.length)) setTimeout(finishTurn, 360);
       else finishTurn();
     }
+    function pushInterval() {
+      return Math.max(5, 10 - Math.floor(pushes / 3));
+    }
     function pushDown() {
-      pushes++; details.pushes = pushes;
-      bubbles.forEach(b => { b.r++; delete b.xOffset; });
       const pool = liveColors();
+      pushes++; details.pushes = pushes;
+      shotsSincePush = 0;
+      bubbles.forEach(b => { b.r++; delete b.xOffset; });
       for (let col=0; col<cap(0); col++) bubbles.push({ r:0, c:col, color:rand(pool) });
       checkDanger();
     }
@@ -11948,7 +11952,20 @@ function showGameRecords(game, page) {
     function setAim(e) { const p=pointerPos(e), dx=p.x-launch.x, dy=launch.y-p.y; aimAngle = Math.max(-1.22, Math.min(1.22, Math.atan2(dx, Math.max(20, dy)))); if(!seen.aim){ seen.aim=true; speak('paopao','aim'); } }
     function startAim(e){ if(gamePaused||over||flying||resolving) return; aiming=true; setAim(e); e.preventDefault(); draw(); }
     function moveAim(e){ if(!aiming) return; setAim(e); e.preventDefault(); draw(); }
-    function fire(e){ if(!aiming||gamePaused||over||flying||resolving) return; setAim(e); aiming=false; flying={ x:launch.x, y:launch.y, vx:Math.sin(aimAngle), vy:-Math.cos(aimAngle), color:current, bomb:armedBomb }; e.preventDefault(); save(); }
+    function fire(e){
+      if(!aiming||gamePaused||over||flying||resolving) return;
+      setAim(e);
+      aiming = false;
+      const shotColor = current, shotBomb = armedBomb;
+      flying = { x:launch.x, y:launch.y, vx:Math.sin(aimAngle), vy:-Math.cos(aimAngle), color:shotColor, bomb:shotBomb };
+      current = next;
+      next = randomColor();
+      armedBomb = false;
+      e.preventDefault();
+      updateBombUI();
+      save();
+      draw();
+    }
     function updateBombUI(){ const el=qs('#wb-paopao-bombs'); if(el) el.textContent=bombs; const btn=qs('#wb-paopao-bomb'); if(btn){ btn.disabled=over||flying||resolving||bombs<=0; btn.classList.toggle('primary', armedBomb); } updateSwapUI(); }
     function updateSwapUI(){ const btn=qs('#wb-paopao-swap'); if(btn){ const disabled=over||flying||resolving||aiming||armedBomb; btn.disabled=disabled; btn.style.opacity=disabled ? '.32' : '.9'; btn.style.cursor=disabled ? 'default' : 'pointer'; } }
     c.addEventListener('pointerdown', startAim); c.addEventListener('pointermove', moveAim); c.addEventListener('pointerup', fire); c.addEventListener('pointercancel', () => aiming=false);
