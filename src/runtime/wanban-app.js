@@ -119,6 +119,8 @@ export async function initWanbanXiaowu() {
   let gameStartAt = 0;
   let gameAccumulatedMs = 0;
   let gameActiveStartedAt = 0;
+  let gamePetRewardNextMs = 30 * 60 * 1000;
+  let gameDurationRewardTimer = null;
   let randomLineTimer = null;
   let lastDialogueAt = 0;
   let singleDialogueQueue = null;
@@ -208,6 +210,9 @@ export async function initWanbanXiaowu() {
     charPersona: '',
     userPersona: '',
     worldView: '',
+    lazyWorldInject: false,
+    userDescSource: 'manual',
+    worldAutoMountMode: '',
     injectUserDesc: true,
     injectCharDesc: true,
     charDescMode: 'auto',
@@ -265,7 +270,7 @@ export async function initWanbanXiaowu() {
     minesweeper: '每局会先选择难度：简单9×9、10雷；中等12×12、25雷；困难16×16、50雷。下方按钮可在“翻开”和“插旗”之间切换；数字格周围旗数等于数字时会按正式扫雷规则翻开周围未插旗格，旗插错会直接失败。',
     uyangle: '三消叠牌小游戏。普通模式可通关；无尽模式会在剩余牌较少时自动追加下一批牌层，失败时统计已消除数量。点击没有被上层遮挡的卡牌放入下方7格槽，同图标凑满3张会消除；槽位超过7格且没有消除时失败。',
     screw: '每局会选择普通模式或无尽模式，并保证每种颜色螺丝数量为3的倍数、工具盒数量正确。顶部同时出现3个随机颜色工具盒，点击可见螺丝后，同色螺丝进入对应工具盒；非当前盒颜色会进入5格临时托盘。任意工具盒收满3颗会自动打包并刷新下一个颜色。上层面板会遮挡下层螺丝；板件剩一个螺丝时会悬挂摆动，失去全部螺丝后受重力下落。普通模式清空全部面板即可过关，无尽模式会在快结束时续上下一批。',
-    popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5。消除后上方星星下落，空列向左收拢；无可消除组合时本关结算，剩余20个以内按(20-剩余数)×100奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。每局有3次打乱和3次单消道具。',
+    popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5，8/12/16个以上大块会有额外奖励。每关步数为25-Math.floor(关卡/3)，最少20步；消除、打乱、单消都会消耗1步。无可消除组合或步数用完时本关结算，剩余10个以内有少量奖励；如果无可消除组合且还剩步数，会按未用步数奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。',
     paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
@@ -663,7 +668,8 @@ export async function initWanbanXiaowu() {
     const startedAt = (state && state.startedAt) || prev.startedAt || gameStartAt || Date.now();
     const extra = game === currentGame ? { lineEvents: currentRoundLineEvents.slice(-120) } : {};
     const durationMs = game === currentGame ? currentGameDurationMs() : (state && state.durationMs) || prev.durationMs || 0;
-    return Object.assign({ savedAt: Date.now(), startedAt }, extra, state || {}, { durationMs });
+    const petRewardNextMs = game === currentGame ? gamePetRewardNextMs : (state && state.petRewardNextMs) || prev.petRewardNextMs || nextPetGameRewardThreshold(durationMs);
+    return Object.assign({ savedAt: Date.now(), startedAt }, extra, state || {}, { durationMs, petRewardNextMs });
   }
   function flushProgressSave(game) {
     if (!game || !progressSaveCache[game]) return;
@@ -679,19 +685,69 @@ export async function initWanbanXiaowu() {
   function flushAllProgressSaves() { Object.keys(progressSaveCache).forEach(flushProgressSave); }
   function gameProgress(game) { flushProgressSave(game); const p = progress()[game]; return p && p.savedAt ? p : null; }
   function currentGameDurationMs() {
-    const active = gameStarted && !gamePaused && gameActiveStartedAt ? Math.max(0, Date.now() - gameActiveStartedAt) : 0;
+    const active = isGameOnlineActive() && gameActiveStartedAt ? Math.max(0, Date.now() - gameActiveStartedAt) : 0;
     return Math.max(0, (gameAccumulatedMs || 0) + active);
   }
-  function commitGameActiveDuration(updateStored) {
-    if (gameStarted && !gamePaused && gameActiveStartedAt) {
+  function isGameSurfaceVisible() {
+    const doc = getHostDocument();
+    const shell = qs('#' + SHELL_ID, doc);
+    return !!(shell && shell.classList.contains('wb-shell-visible') && shell.style.display !== 'none' && !doc.hidden);
+  }
+  function isGameOnlineActive() {
+    return !!(gameStarted && !gamePaused && currentGame && isGameSurfaceVisible());
+  }
+  function nextPetGameRewardThreshold(durationMs) {
+    const step = 10 * 60 * 1000, first = 30 * 60 * 1000;
+    return Math.max(first, (Math.floor(Math.max(0, Number(durationMs || 0)) / step) + 1) * step);
+  }
+  function petApplyTimedGameGrowth() {
+    let state = applyPetVisitAndDecay(petTestState());
+    if (state.ended) return;
+    const today = todayKey();
+    const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
+    const beforeGrowth = Number(state.growth || 0);
+    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + 3);
+    const added = Math.max(0, Number(state.growth || 0) - beforeGrowth);
+    if (added > 0) {
+      day.growth = Number(day.growth || 0) + added;
+      day.playTime = Number(day.playTime || 0) + added;
+      day.snapshot = petSnapshotData(state);
+      state.days = Object.assign({}, state.days || {}, { [today]:day });
+      state.lastDecayAt = Date.now();
+      savePetTestState(updatePetPendingStories(state, petTestInfoCache || { side_story:[] }));
+      toast('玩得很开心！成长值+3');
+    }
+  }
+  function applyTimedGameRewards(durationMs) {
+    while (durationMs >= gamePetRewardNextMs) {
+      petApplyTimedGameGrowth();
+      gamePetRewardNextMs += 10 * 60 * 1000;
+    }
+  }
+  function startGameDurationRewardTimer() {
+    if (gameDurationRewardTimer) clearInterval(gameDurationRewardTimer);
+    gameDurationRewardTimer = setInterval(() => {
+      if (gameStarted && !gamePaused && currentGame) commitGameActiveDuration(true);
+    }, 30000);
+  }
+  function clearGameDurationRewardTimer() {
+    if (gameDurationRewardTimer) clearInterval(gameDurationRewardTimer);
+    gameDurationRewardTimer = null;
+  }
+  function commitGameActiveDuration(updateStored, forceActive) {
+    if ((forceActive || isGameOnlineActive()) && gameActiveStartedAt) {
       gameAccumulatedMs += Math.max(0, Date.now() - gameActiveStartedAt);
       gameActiveStartedAt = Date.now();
+      applyTimedGameRewards(gameAccumulatedMs || 0);
+    } else if (gameStarted && !gamePaused) {
+      gameActiveStartedAt = isGameSurfaceVisible() ? Date.now() : 0;
     }
     if (updateStored && currentGame) {
       flushProgressSave(currentGame);
       const p = progress();
       if (p[currentGame]) {
         p[currentGame].durationMs = Math.max(Number(p[currentGame].durationMs || 0), gameAccumulatedMs || 0);
+        p[currentGame].petRewardNextMs = gamePetRewardNextMs;
         saveJSON(STORAGE_PROGRESS, p);
       }
     }
@@ -912,7 +968,7 @@ export async function initWanbanXiaowu() {
     commitGameActiveDuration(false);
     const all = records(); const g = GAME_META[game] || { name: game, mode: 'single' }; const result = explicitResult || inferResult(game, title, scoreText);
     const item = { id:'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), playedAt: new Date().toLocaleString(), savedAt: Date.now(), durationMs: currentGameDurationMs(), game: g.name, result, scoreText: displayCharTextForGame(scoreText || '', game), companion: displayCharNameForGame(game), details: meta && meta.details ? meta.details : null, log: '' };
-    if (!all[game]) all[game] = []; all[game].unshift(item); all[game] = all[game].slice(0, 100); saveRecords(all); petApplyGameReward(g, result, item.durationMs); return item;
+    if (!all[game]) all[game] = []; all[game].unshift(item); all[game] = all[game].slice(0, 100); saveRecords(all); petApplyGameReward(g, result, item.durationMs, currentRoundRecord); return item;
   }
   function formatDuration(ms) { const sec = Math.max(0, Math.round((ms || 0) / 1000)); const m = Math.floor(sec / 60), s = sec % 60; return (m ? m + '分' : '') + s + '秒'; }
   function formatRecordTime(r) {
@@ -1013,7 +1069,7 @@ export async function initWanbanXiaowu() {
     if (game === 'minesweeper') return '字段说明：胜负是user的扫雷结果；排对雷表示插旗位置确实是雷的数量；成功时用时越短分数越高，失败时按已排对雷和已翻开安全格给少量分。';
     if (game === 'uyangle') return '字段说明：U了个U是三消叠牌小游戏；分数由用时和打乱次数共同计算，用时越短、打乱越少，分数越高。';
     if (game === 'screw') return '字段说明：拧螺丝是颜色盒子收集和玻璃层级解谜；普通模式分数由用时、候补槽压力和增加盒子次数共同计算；无尽模式失败时按当前盒子数量结算倍率，盒子越少倍率越高。';
-    if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5；无可消除组合后按剩余方块结算，累计分数达到关卡目标进入下一关。';
+    if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5，并对8个以上大块追加奖励；每关有步数限制，消除和使用道具都会消耗步数；无可消除组合或步数用完后按剩余方块和未用步数结算，累计分数达到关卡目标进入下一关。';
     if (game === 'paopao') return '字段说明：泡泡龙是交错网格射击生存游戏；发射表示本局射出的泡泡数量；下压表示顶部新增行并整体下移的次数，下压间隔会从10发逐步缩短到5发。';
     if (game === 'game1010') return '字段说明：1010!是10×10方块拼图；放置表示成功落下的候补方块数量，消除表示累计清掉的行/列数量。';
     if (game === 'wordguess') return '字段说明：猜中题数只表示user猜中的题数。';
@@ -1060,7 +1116,7 @@ export async function initWanbanXiaowu() {
     if (game === 'sudoku') return '分数：' + sudokuRecordPoints(rec) + '；提示次数：' + (d.hints || 0) + '次；修改次数：' + (d.edits || 0) + '次；修改最多的格子修改次数：' + (d.maxEditsOneCell || 0) + '次；全部完成后错误次数：' + (d.finalErrors || 0) + '格。';
     if (game === 'minesweeper') return '结果：' + (d.won ? '成功' : '失败') + '；插旗数量：' + (d.flags || 0) + '；排对的雷：' + (d.correctFlags || 0) + '个；未插旗扫雷数量：' + (d.unflaggedMines || 0) + '个；踩雷时已开格子：' + (d.openedAtBlast || d.openedSafe || 0) + '格；犹豫次数：' + (d.hesitations || 0) + '次；数字试探成功次数：' + (d.chordSuccesses || 0) + '次；不确定试探成功次数：' + (d.riskyChordSuccesses || 0) + '次。';
     if (game === 'screw') return (d.endless ? '模式：无尽模式；收纳盒子：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '个；结算盒子数：' + (d.endlessBoxCount || (3 + (d.addBoxUses || 0))) + '个；基础分：' + (d.endlessBaseScore == null ? '未记录' : d.endlessBaseScore) + '；结算倍率：×' + (d.endlessScoreMultiplier || '未记录') + '；' : '结果：' + (d.completed ? '成功' : '失败') + '；最终进度：' + (d.progress || 0) + '%；打包次数：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '次；') + '候补槽最大占用：' + (d.maxTray || 0) + '格；候补槽填满5个次数：' + (d.trayFullCount || d.trayFourCount || 0) + '次；使用增加盒子次数：' + (d.addBoxUses || 0) + '次；被遮挡螺丝点击次数：' + (d.blocked || 0) + '次；掉落玻璃数量：' + (d.fallen || 0) + '块。';
-    if (game === 'popstar') return '最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '。';
+    if (game === 'popstar') return '最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；大块额外奖励：' + (d.bigBonusTotal || 0) + '分；余步奖励：' + (d.unusedMoveBonusTotal || 0) + '分；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '。';
     if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次。';
     if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
     if (game === 'ludo') return cheatText + 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user飞行次数：' + (d.userFlights || 0) + '次；' + (rec.companion || '{{char}}') + '飞行次数：' + (d.charFlights || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
@@ -1786,6 +1842,14 @@ export async function initWanbanXiaowu() {
     showGamePauseOverlay();
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
   }
+  function pauseGameForInactiveSurface() {
+    if (!gameStarted || !currentGame || gamePaused) return;
+    commitGameActiveDuration(true, true);
+    gamePaused = true;
+    gameActiveStartedAt = 0;
+    showGamePauseOverlay();
+    const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
+  }
   function notifyBeep() {
     try {
       const w = getHostWindow();
@@ -1917,7 +1981,7 @@ export async function initWanbanXiaowu() {
     }, 1200);
   }
 
-  function stopGame() { flushAllProgressSaves(); commitGameActiveDuration(true); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (screwTimer) clearInterval(screwTimer); if (randomLineTimer) clearInterval(randomLineTimer); if (singleDialogueTimer) clearTimeout(singleDialogueTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = screwTimer = randomLineTimer = null; singleDialogueTimer = null; singleDialogueQueue = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
+  function stopGame() { flushAllProgressSaves(); commitGameActiveDuration(true); clearGameDurationRewardTimer(); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (screwTimer) clearInterval(screwTimer); if (randomLineTimer) clearInterval(randomLineTimer); if (singleDialogueTimer) clearTimeout(singleDialogueTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = screwTimer = randomLineTimer = null; singleDialogueTimer = null; singleDialogueQueue = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
   function showGamePauseOverlay() {
     const box = qs('#wb-gamebox');
     if (!box || qs('#wb-pause-overlay', box)) return;
@@ -2632,7 +2696,7 @@ export async function initWanbanXiaowu() {
       @keyframes wbMinePress { 0%,100% { transform:translateY(0); } 50% { transform:translateY(1px); box-shadow:inset 1px 1px 0 rgba(0,0,0,.24); } }
       @keyframes wbMineBoom { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); filter:brightness(1.18); } }
       .wb-popstar-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:7px; place-items:center; overflow:hidden; }
-      .wb-popstar-top { width:100%; min-width:0; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; align-items:center; }
+      .wb-popstar-top { width:100%; min-width:0; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; align-items:center; }
       .wb-popstar-stat { min-width:0; height:34px; display:grid; place-items:center; padding:3px 7px; border:1px solid color-mix(in srgb, var(--wb-border) 72%, var(--wb-accent2) 28%); background:linear-gradient(180deg, color-mix(in srgb, var(--wb-panel) 84%, var(--wb-accent2) 16%), color-mix(in srgb, var(--wb-soft) 82%, var(--wb-panel) 18%)); color:var(--wb-text); font-size:12px; font-weight:900; line-height:1.1; text-align:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; box-shadow:inset 0 1px 0 rgba(255,255,255,.42); }
       .wb-popstar-stat.target-met { color:#fff; border-color:#16a34a; background:linear-gradient(135deg,#16a34a,#22c55e); box-shadow:0 0 16px rgba(34,197,94,.38), inset 0 1px 0 rgba(255,255,255,.46); }
       .wb-popstar-stage { position:relative; width:var(--wb-popstar-size, min(560px, 100%, 100cqh)); height:var(--wb-popstar-size, min(560px, 100%, 100cqh)); max-width:100%; max-height:100%; aspect-ratio:1 / 1; border:2px solid color-mix(in srgb, var(--wb-accent2) 44%, var(--wb-border) 56%); background:radial-gradient(circle at 22% 18%, rgba(255,255,255,.55), transparent 18%), linear-gradient(180deg,#dff5ff,#fbe7f5 64%,#fff4d9); box-shadow:inset 0 0 0 6px rgba(255,255,255,.24), 0 12px 28px rgba(79,141,247,.15); overflow:hidden; contain:layout size; touch-action:none; box-sizing:border-box; }
@@ -5003,6 +5067,7 @@ export async function initWanbanXiaowu() {
       specialLanguageEnabled:src.specialLanguageEnabled !== undefined ? src.specialLanguageEnabled : cfg.specialLanguageEnabled,
       specialLanguage:src.specialLanguage || cfg.specialLanguage,
       breakLimitPrompt:src.breakLimitPrompt || cfg.breakLimitPrompt || '',
+      userName:src.userName || cfg.userName || '{{user}}',
       userPersona:src.userPersona || cfg.userPersona || '',
       charDescMode:src.charDescMode || cfg.charDescMode || 'auto',
       manualCharPersona:src.manualCharPersona || cfg.manualCharPersona || '',
@@ -5045,6 +5110,7 @@ export async function initWanbanXiaowu() {
         specialLanguageEnabled:!!merged.specialLanguageEnabled,
         specialLanguage:merged.specialLanguage || cfg.specialLanguage,
         breakLimitPrompt:merged.breakLimitPrompt || '',
+        userName:merged.userName || cfg.userName || '{{user}}',
         userPersona:merged.userPersona || '',
         charDescMode:merged.charDescMode || 'auto',
         manualCharPersona:merged.manualCharPersona || '',
@@ -5069,7 +5135,7 @@ export async function initWanbanXiaowu() {
   function petFullEnsureCaretaker(opt) {
     const data = petFullData();
     let c = data.caretakers.find(x => x.name === opt.name);
-    const fields = ['worldIndex','worldText','injectUserDesc','injectCharDesc','injectChat','specialLanguageEnabled','specialLanguage','breakLimitPrompt','userPersona','charDescMode','manualCharPersona','charName','charDescriptionSnapshot','summaryId','summarySnapshot','selectedWorldEntries','selectedWorldPresetName'];
+    const fields = ['worldIndex','worldText','lazyWorldInject','userDescSource','worldAutoMountMode','injectUserDesc','injectCharDesc','injectChat','specialLanguageEnabled','specialLanguage','breakLimitPrompt','userName','userPersona','charDescMode','manualCharPersona','charName','charDescriptionSnapshot','summaryId','summarySnapshot','selectedWorldEntries','selectedWorldPresetName'];
     if (!c) {
       c = { id:'petc_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), name:opt.name, avatarUrl:opt.avatarUrl || '', activePetId:'', pets:[], createdAt:Date.now() };
       fields.forEach(k => { if (opt[k] !== undefined) c[k] = opt[k]; });
@@ -5596,21 +5662,23 @@ export async function initWanbanXiaowu() {
     if (auto) state.petAction = auto;
     return state;
   }
-  function petApplyGameReward(gameMeta, result, durationMs) {
+  function petApplyGameReward(gameMeta, result, durationMs, recordBroken) {
     let state = applyPetVisitAndDecay(petTestState());
     if (state.ended) return;
     const mode = gameMeta && gameMeta.mode;
     const outcome = resultOutcome(result);
     const growthAdd = mode === 'double' && outcome !== 'draw' && outcome !== 'finished'
-      ? (outcome === 'user_win' ? 4 : 2)
-      : (Number(durationMs || 0) >= 3600000 ? 4 : 2);
+      ? (outcome === 'user_win' ? 6 : 4)
+      : (Number(durationMs || 0) >= 3600000 ? 6 : 4);
+    const recordBonus = recordBroken ? 5 : 0;
     const today = todayKey();
     const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
     day.play = Number(day.play || 0) + 1;
+    if (recordBonus) day.record = Number(day.record || 0) + recordBonus;
     day.snapshot = petSnapshotData(state);
     if (state.stage !== 'egg') state.happiness = Math.min(100, Number(state.happiness || 0) + 5);
     const beforeGrowth = Number(state.growth || 0);
-    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + growthAdd);
+    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + growthAdd + recordBonus);
     const added = Math.max(0, Number(state.growth || 0) - beforeGrowth);
     day.growth = Number(day.growth || 0) + added;
     petToastGrowth((gameMeta && gameMeta.name ? gameMeta.name : '小游戏') + '陪玩', added);
@@ -5630,15 +5698,17 @@ export async function initWanbanXiaowu() {
     state.sideTriggered = Array.from(triggered);
     savePetTestState(updatePetPendingStories(state, petTestInfoCache || { side_story:[] }));
   }
-  function petApplyDesktopBallReward(amount) {
+  function petApplyDesktopBallReward(amount, recordBroken) {
     let state = applyPetVisitAndDecay(petTestState());
     if (state.ended) return state;
     const today = todayKey();
     const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
     day.play = Number(day.play || 0) + 1;
+    const recordBonus = recordBroken ? 5 : 0;
+    if (recordBonus) day.record = Number(day.record || 0) + recordBonus;
     if (state.stage !== 'egg') state.happiness = Math.min(100, Number(state.happiness || 0) + 5);
     const beforeGrowth = Number(state.growth || 0);
-    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + Math.max(1, Number(amount || 1)));
+    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + Math.max(1, Number(amount || 1)) + 2 + recordBonus);
     const added = Math.max(0, Number(state.growth || 0) - beforeGrowth);
     day.growth = Number(day.growth || 0) + added;
     petToastGrowth('桌宠玩球', added);
@@ -5953,9 +6023,10 @@ export async function initWanbanXiaowu() {
       cancelAnimationFrame(raf);
       ball.remove();
       card.remove();
-      if (score > record) setSettings({ petBallRecord:score });
+      const recordBroken = score > record;
+      if (recordBroken) setSettings({ petBallRecord:score });
       if (score > 3) {
-        petApplyDesktopBallReward(1);
+        petApplyDesktopBallReward(1, recordBroken);
       }
       petSetState(score <= 3 ? 'sad' : 'happy', '', { root:el, persistent:true, temporary:true, animate:true, suppressSpeech:true });
     };
@@ -6303,6 +6374,10 @@ export async function initWanbanXiaowu() {
       if (vp && !shell.dataset.vpBound) { vp.addEventListener('resize', () => { syncMobileShellViewport(); scheduleFitGameSurface(); }); vp.addEventListener('scroll', () => { syncMobileShellViewport(); scheduleFitGameSurface(); }); shell.dataset.vpBound = '1'; }
       win.addEventListener('resize', scheduleFitGameSurface);
       win.addEventListener('orientationchange', () => { setTimeout(syncMobileShellViewport, 120); setTimeout(scheduleFitGameSurface, 160); });
+      if (!shell.dataset.visibilityBound) {
+        doc.addEventListener('visibilitychange', () => { if (doc.hidden) pauseGameForInactiveSurface(); });
+        shell.dataset.visibilityBound = '1';
+      }
     }
     let p = qs('#' + POPUP_ID, doc);
     if (!p) {
@@ -6320,6 +6395,7 @@ export async function initWanbanXiaowu() {
     render();
   }
   function closePopupShell() {
+    pauseGameForInactiveSurface();
     const doc = getHostDocument();
     const shell = qs('#' + SHELL_ID, doc);
     if (shell) { shell.classList.remove('wb-shell-visible'); shell.style.display = 'none'; }
@@ -7384,6 +7460,8 @@ export async function initWanbanXiaowu() {
       '戳戳次数：' + (day.poke || 0),
       '遛弯/桌宠计时段：' + (day.outing || 0),
       '玩游戏次数：' + (day.play || 0),
+      '游戏时长额外成长：' + (day.playTime || 0),
+      '破纪录额外成长：' + (day.record || 0),
       '成长值：' + petGrowthPercent(state) + '%',
       state.stage === 'egg' ? '蛋形态：无饱食度和开心值。' : ('饱食度：' + Math.round(state.fullness || 0) + '；开心值：' + Math.round(state.happiness || 0))
     ].join('\n');
@@ -7506,7 +7584,7 @@ export async function initWanbanXiaowu() {
   }
   function petDayHasAutoLogRecord(day) {
     if (!day || day.adopted) return false;
-    return ['feed','pet','poke','outing','play','growth','cheat'].some(k => Number(day[k] || 0) > 0)
+    return ['feed','pet','poke','outing','play','playTime','growth','cheat'].some(k => Number(day[k] || 0) > 0)
       || !!day.visited
       || !!day.snapshot;
   }
@@ -8464,7 +8542,7 @@ export async function initWanbanXiaowu() {
         const day = row.day || {};
         if (day.adopted) return '<div class="wb-pet-record-entry compact">' + petSnapshotHTMLForInfo(day.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(petDateCN(row.date)) + '</div><div class="wb-pet-record-title">第' + row.ctx.petIndex + '只 · 收养了' + esc(petDisplayName(row.ctx.info, day.snapshot ? petSnapshotState(day.snapshot) : row.ctx.state)) + '</div></div></div>';
         const add = petDayGrowthTotal(day);
-        const tags = [['喂食', day.feed], ['抚摸', day.pet], ['遛弯', day.outing], ['游戏', day.play]].filter(x => Number(x[1] || 0) > 0).map(x => '<span class="wb-pet-record-tag">' + x[0] + x[1] + '</span>').join('');
+        const tags = [['喂食', day.feed], ['抚摸', day.pet], ['遛弯', day.outing], ['游戏', day.play], ['游戏时长+', day.playTime], ['破纪录+', day.record]].filter(x => Number(x[1] || 0) > 0).map(x => '<span class="wb-pet-record-tag">' + x[0] + x[1] + '</span>').join('');
         return '<div class="wb-pet-record-entry compact">' + petSnapshotHTMLForInfo(day.snapshot || row.ctx.state, row.ctx.info) + '<div class="wb-pet-record-main"><div class="wb-pet-record-date">' + esc(petDateCN(row.date)) + ' · +' + add + '</div><div class="wb-pet-record-title">第' + row.ctx.petIndex + '只 · ' + esc(petDisplayName(row.ctx.info, day.snapshot ? petSnapshotState(day.snapshot) : row.ctx.state)) + '</div><div class="wb-pet-record-tags">' + (tags || '<span class="wb-pet-record-tag">无互动</span>') + '</div></div></div>';
       }).join('') || '<div class="wb-api-status">暂无成长记录</div>';
       mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head(y + '年' + (m + 1) + '月') + '<div class="wb-pet-cal-fixed"><div class="wb-actions"><button class="wb-btn" id="wb-pet-cal-prev">上一月</button><button class="wb-btn" id="wb-pet-cal-home">返回目录</button><button class="wb-btn" id="wb-pet-cal-next">下一月</button></div><div class="wb-pet-calendar" style="margin:6px 0 0;">' + cells.join('') + '</div></div><div class="wb-pet-scroll wb-pet-cal-scroll"><div class="wb-pet-card-list">' + rows + '</div></div></div>';
@@ -8696,20 +8774,21 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-world-preset">' + injOptions + '</select><button class="wb-btn" id="wb-load-world-preset">载入</button><button class="wb-btn" id="wb-del-world-preset">删</button></div>'
       + '<button class="wb-btn" id="wb-injection-details-toggle" type="button">展开详细配置</button>'
       + '<div id="wb-injection-details" style="display:none;gap:10px;">'
-	      + '<div class="wb-field"><label><input type="checkbox" id="wb-inject-user-desc" ' + (cfg.injectUserDesc !== false ? 'checked' : '') + '> 用户设定描述</label><textarea class="wb-textarea" id="wb-user-persona" placeholder="填写 user 的设定、性格、关系、偏好；留空则尝试读取当前 persona...">' + esc(cfg.userPersona) + '</textarea></div>'
+      + '<label class="wb-switch"><input id="wb-lazy-world-inject" type="checkbox" ' + (cfg.lazyWorldInject ? 'checked' : '') + '>懒人模式 <span class="wb-muted" style="font-size:11px;">（当前角色卡全部信息）</span></label>'
+	      + '<label class="wb-switch"><input type="checkbox" id="wb-inject-user-desc" ' + (cfg.injectUserDesc !== false ? 'checked' : '') + '> 用户设定描述</label>'
+      + '<div class="wb-field"><div class="wb-preset-row"><label style="flex:1;">用户来源</label><select class="wb-select" id="wb-user-desc-source"><option value="auto">自动导入当前User人设</option><option value="manual">手动添加</option></select></div><textarea class="wb-textarea" id="wb-user-persona" placeholder="填写 user 的设定、性格、关系、偏好；自动模式会读取当前 persona...">' + esc(cfg.userPersona) + '</textarea></div>'
       + '<label class="wb-switch"><input id="wb-inject-char-desc" type="checkbox" ' + (cfg.injectCharDesc !== false ? 'checked' : '') + '>角色描述</label>'
-      + '<div class="wb-field"><label>角色描述来源</label><select class="wb-select" id="wb-char-desc-mode"><option value="auto">自动导入当前角色卡</option><option value="manual">手动添加</option></select></div>'
+      + '<div class="wb-field"><div class="wb-preset-row"><label style="flex:1;">角色描述来源</label><select class="wb-select" id="wb-char-desc-mode"><option value="auto">自动导入当前角色卡</option><option value="manual">手动添加</option></select></div></div>'
       + '<div class="wb-field"><label>角色姓名（可选）</label><input class="wb-input" id="wb-char-name" placeholder="留空则读取当前角色卡姓名" value="' + esc(cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : '') + '"></div>'
       + '<div class="wb-field" id="wb-manual-char-wrap"><label>手动角色描述（自动保存）</label><textarea class="wb-textarea" id="wb-manual-char-persona" placeholder="手动填写当前角色的性格、说话方式、关系设定...">' + esc(cfg.manualCharPersona || '') + '</textarea></div>'
       + '<div class="wb-api-status wb-char-desc-preview" id="wb-char-desc-preview">' + esc(charPreview) + '</div>'
       + '<div class="wb-field"><label>世界观头像 URL（可选）</label><input class="wb-input" id="wb-avatar-url" placeholder="输入 URL 会优先作为头像；留空后点击保存头像会读取当前角色卡头像" value="' + esc(cfg.avatarUrl || '') + '"><div class="wb-actions"><button class="wb-btn" id="wb-save-current-avatar">保存头像</button><button class="wb-btn" id="wb-clear-avatar">清除世界观头像</button></div></div>'
       + '<label class="wb-switch"><input id="wb-special-language-enabled" type="checkbox" ' + (cfg.specialLanguageEnabled ? 'checked' : '') + '>特殊语言要求</label>'
-      + '<div class="wb-field" id="wb-special-language-wrap" style="' + (cfg.specialLanguageEnabled ? '' : 'display:none;') + '"><label>使用语言</label><select class="wb-select" id="wb-special-language">' + languageOptions + '</select></div>'
+      + '<div class="wb-field" id="wb-special-language-wrap" style="' + (cfg.specialLanguageEnabled ? '' : 'display:none;') + '"><div class="wb-preset-row"><label style="flex:1;">使用语言</label><select class="wb-select" id="wb-special-language">' + languageOptions + '</select></div></div>'
       + '<label class="wb-switch"><input id="wb-inject-chat" type="checkbox" ' + (cfg.injectChat ? 'checked' : '') + '>注入最新聊天记录</label>'
       + '<label class="wb-switch"><input id="wb-intimacy-mode" type="checkbox" ' + (cfg.intimacyMode ? 'checked' : '') + '>NSFW模式</label>'
-      + '<div class="wb-muted">开启后根据角色性格特征，允许角色之间更暧昧、亲近、露骨的色情化表达。</div>'
       + '<div class="wb-field"><label>前置提示词 / 破限词（自动保存）</label><textarea class="wb-textarea" id="wb-break-limit-prompt" style="min-height:88px;" placeholder="可粘贴希望置于生成提示词最前面的风格补充；不会覆盖安全限制。">' + esc(cfg.breakLimitPrompt || '') + '</textarea></div>'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span class="wb-muted">当前挂载的世界书</span><button class="wb-btn" id="wb-refresh-worldbook">刷新挂载条目</button></div>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span class="wb-muted">当前挂载的世界书</span><div class="wb-actions" style="gap:6px;"><button class="wb-btn" id="wb-world-auto-mount-btn" type="button">自动挂载</button><select class="wb-select" id="wb-world-auto-mount" style="min-width:128px;display:none;"><option value="">请选择灯色</option><option value="blue">蓝灯</option><option value="bluegreen">蓝灯+绿灯</option></select><button class="wb-btn" id="wb-refresh-worldbook">刷新全部条目</button></div></div><div class="wb-muted" id="wb-mounted-worldbook-names">未自动挂载。</div>'
       + '<div class="wb-worldbook-list" id="wb-worldbook-list"><span class="wb-muted">点击刷新以载入当前挂载的世界书条目...</span></div>'
       + '<div class="wb-section-title" style="font-size:12px;margin-top:4px;">导入大总结</div>'
       + '<div class="wb-preset-row"><select class="wb-select" id="wb-summary-select">' + sumOptions + '</select><button class="wb-btn" id="wb-manage-summary">管理/导入</button></div>'
@@ -8734,12 +8813,16 @@ export async function initWanbanXiaowu() {
 	    const fontSelect = qs('#wb-font-select'); if (fontSelect) fontSelect.value = selectedFontConfig(cfg) ? cfg.selectedFont : '';
 	    const langSelect = qs('#wb-special-language'); if (langSelect) langSelect.value = specialLanguageOptions().includes(cfg.specialLanguage) ? cfg.specialLanguage : '粤语';
     const charMode = qs('#wb-char-desc-mode'); if (charMode) charMode.value = cfg.charDescMode === 'manual' ? 'manual' : 'auto';
+    const userSource = qs('#wb-user-desc-source'); if (userSource) userSource.value = cfg.userDescSource === 'auto' ? 'auto' : 'manual';
+    const autoMount = qs('#wb-world-auto-mount'); if (autoMount) autoMount.value = ['blue','bluegreen'].includes(cfg.worldAutoMountMode) ? cfg.worldAutoMountMode : '';
+    setWorldAutoMountControlText();
     const manualWrap = qs('#wb-manual-char-wrap'); if (manualWrap) manualWrap.style.display = cfg.charDescMode === 'manual' ? '' : 'none';
     qs('#wb-summary-select').value = cfg.summaryId || '';
     bindUpdatePanelEvents();
     populateModelSelect(cfg.apiModel);
     updateApiStatusUI();
     restoreSelectedWorldEntries();
+    updateMountedWorldbookNames();
     qs('#wb-companion-toggle').onchange = () => {
       const toggle = qs('#wb-companion-toggle');
       const sub = qs('#wb-companion-suboptions');
@@ -8803,7 +8886,12 @@ export async function initWanbanXiaowu() {
       details.style.display = open ? 'grid' : 'none';
       injectionDetailsToggle.textContent = open ? '收起详细配置' : '展开详细配置';
     };
-    qs('#wb-refresh-worldbook').onclick = refreshWorldbookList;
+    const refreshWorldbook = qs('#wb-refresh-worldbook'); if (refreshWorldbook) refreshWorldbook.onclick = refreshWorldbookList;
+    const lazyWorldInject = qs('#wb-lazy-world-inject'); if (lazyWorldInject) lazyWorldInject.onchange = async () => { autoSaveInjectionSettingsFromUI(); if (lazyWorldInject.checked) await applyLazyWorldInject(); };
+    const userDescSource = qs('#wb-user-desc-source'); if (userDescSource) userDescSource.onchange = () => { if (userDescSource.value === 'auto') { const persona = readCurrentUserPersonaFromST(); const input = qs('#wb-user-persona'); if (input) input.value = formatAutoUserPersona(persona); toast(persona ? '已自动导入当前User人设' : '未读取到当前User人设，可手动补充'); } autoSaveInjectionSettingsFromUI(); };
+    const worldAutoMountBtn = qs('#wb-world-auto-mount-btn'); if (worldAutoMountBtn) worldAutoMountBtn.onclick = openWorldAutoMountModal;
+    const worldAutoMount = qs('#wb-world-auto-mount'); if (worldAutoMount) worldAutoMount.onchange = async () => { await applyWorldAutoMount(worldAutoMount.value || '', true); };
+    if (worldAutoMount && worldAutoMount.value) setTimeout(() => applyWorldAutoMount(worldAutoMount.value, false), 0);
     ['#wb-inject-user-desc','#wb-inject-char-desc','#wb-char-desc-mode','#wb-special-language-enabled','#wb-special-language','#wb-inject-chat','#wb-intimacy-mode','#wb-summary-select'].forEach(sel => { const el = qs(sel); if (el) el.onchange = () => { const pv = qs('#wb-summary-preview'); if (pv) pv.textContent = summaryPreview(qs('#wb-summary-select').value); const wrap = qs('#wb-manual-char-wrap'); if (wrap && qs('#wb-char-desc-mode')) wrap.style.display = qs('#wb-char-desc-mode').value === 'manual' ? '' : 'none'; const langWrap = qs('#wb-special-language-wrap'); if (langWrap && qs('#wb-special-language-enabled')) langWrap.style.display = qs('#wb-special-language-enabled').checked ? '' : 'none'; autoSaveInjectionSettingsFromUI(); const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(settings()); }; });
     const up = qs('#wb-user-persona'); if (up) up.oninput = debounceAutoSaveInjection;
     const mp = qs('#wb-manual-char-persona'); if (mp) mp.oninput = () => { const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(Object.assign({}, settings(), { charDescMode: 'manual', manualCharPersona: mp.value.trim(), injectCharDesc: true })); debounceAutoSaveInjection(); };
@@ -8869,6 +8957,7 @@ export async function initWanbanXiaowu() {
   function autoSaveInjectionSettingsFromUI() {
     if (!qs('#wb-inject-user-desc')) return;
     setSettings({
+      lazyWorldInject: !!(qs('#wb-lazy-world-inject') && qs('#wb-lazy-world-inject').checked),
       injectUserDesc: qs('#wb-inject-user-desc').checked,
       injectCharDesc: qs('#wb-inject-char-desc').checked,
       injectChat: qs('#wb-inject-chat').checked,
@@ -8876,12 +8965,14 @@ export async function initWanbanXiaowu() {
       specialLanguage: qs('#wb-special-language') ? qs('#wb-special-language').value : '粤语',
       intimacyMode: !!(qs('#wb-intimacy-mode') && qs('#wb-intimacy-mode').checked),
       breakLimitPrompt: qs('#wb-break-limit-prompt') ? qs('#wb-break-limit-prompt').value.trim() : '',
+      userDescSource: qs('#wb-user-desc-source') ? (qs('#wb-user-desc-source').value === 'auto' ? 'auto' : 'manual') : 'manual',
       userPersona: qs('#wb-user-persona').value.trim(),
       charDescMode: qs('#wb-char-desc-mode') ? qs('#wb-char-desc-mode').value : 'auto',
       manualCharPersona: qs('#wb-manual-char-persona') ? qs('#wb-manual-char-persona').value.trim() : '',
       charName: (qs('#wb-char-name') && qs('#wb-char-name').value.trim()) || '{{char}}',
       avatarUrl: qs('#wb-avatar-url') ? qs('#wb-avatar-url').value.trim() : '',
       summaryId: qs('#wb-summary-select').value || '',
+      worldAutoMountMode: qs('#wb-world-auto-mount') ? (qs('#wb-world-auto-mount').value || '') : '',
       selectedWorldEntries: selectedWorldEntriesFromUI(),
       selectedWorldPresetName: selectedWorldPresetNameFromUI()
     });
@@ -9083,12 +9174,87 @@ export async function initWanbanXiaowu() {
     list.innerHTML = '';
     entries.forEach(e => { const b = getHostDocument().createElement('button'); b.type='button'; b.className='wb-tag' + (activeAll ? ' active' : ''); b.textContent=e.label||'世界书条目'; b.dataset.label=e.label||'世界书条目'; b.dataset.content=e.content||''; b.dataset.wbName=e.wbName||''; b.dataset.uid=e.uid||''; b.title=(e.content||'').slice(0,160); b.onclick=()=>{ b.classList.toggle('active'); autoSaveInjectionSettingsFromUI(); }; list.appendChild(b); });
   }
+  function setWorldAutoMountControlText() {
+    const btn = qs('#wb-world-auto-mount-btn');
+    const sel = qs('#wb-world-auto-mount');
+    const mode = sel?.value || '';
+    if (btn) {
+      btn.textContent = mode ? ('自动挂载：' + (mode === 'blue' ? '蓝灯' : '蓝灯+绿灯')) : '自动挂载';
+      btn.className = 'wb-btn' + (mode ? ' primary' : '');
+    }
+    if (sel) sel.style.display = 'none';
+  }
+  function openWorldAutoMountModal() {
+    const doc = getHostDocument();
+    const old = qs('#wb-world-auto-mount-mask', doc); if (old) old.remove();
+    const mask = doc.createElement('div'); mask.className = modalMaskClass(); mask.id = 'wb-world-auto-mount-mask';
+    const mode = qs('#wb-world-auto-mount')?.value || '';
+    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">自动挂载世界书</div><div class="wb-api-status" style="margin-bottom:12px;">选择后会从当前角色世界书和已挂载世界书中，按灯色自动选中条目；需要手动刷新时请先关闭自动挂载。</div><div class="wb-actions"><button class="wb-btn ' + (mode === 'blue' ? 'primary' : '') + '" id="wb-auto-blue" style="flex:1;">蓝灯</button><button class="wb-btn ' + (mode === 'bluegreen' ? 'primary' : '') + '" id="wb-auto-bluegreen" style="flex:1;">蓝灯+绿灯</button></div><div class="wb-actions" style="margin-top:10px;"><button class="wb-btn" id="wb-auto-off" style="flex:1;">关闭自动挂载</button><button class="wb-btn" id="wb-auto-cancel">取消</button></div></div>';
+    appendModalMask(mask);
+    qs('#wb-auto-blue', mask).onclick = async () => { mask.remove(); await applyWorldAutoMount('blue', true); };
+    qs('#wb-auto-bluegreen', mask).onclick = async () => { mask.remove(); await applyWorldAutoMount('bluegreen', true); };
+    qs('#wb-auto-off', mask).onclick = async () => { mask.remove(); await applyWorldAutoMount('', true); };
+    qs('#wb-auto-cancel', mask).onclick = () => mask.remove();
+  }
+  function updateMountedWorldbookNames() {
+    const el = qs('#wb-mounted-worldbook-names');
+    if (!el) return;
+    const names = getCurrentWorldBookNames();
+    const sel = qs('#wb-world-auto-mount');
+    const mode = sel ? (sel.value || '') : (settings().worldAutoMountMode || '');
+    el.textContent = names.length ? ('已发现：' + names.join('、') + (mode ? ('（自动挂载：' + (mode === 'blue' ? '蓝灯' : '蓝灯+绿灯') + '）') : '')) : '未发现当前角色卡或聊天挂载的世界书。';
+  }
+  async function updateMountedWorldbookNamesAsync() {
+    const el = qs('#wb-mounted-worldbook-names');
+    if (!el) return;
+    const names = await getCurrentWorldBookNamesAsync();
+    const sel = qs('#wb-world-auto-mount');
+    const mode = sel ? (sel.value || '') : (settings().worldAutoMountMode || '');
+    el.textContent = names.length ? ('已发现：' + names.join('、') + (mode ? ('（自动挂载：' + (mode === 'blue' ? '蓝灯' : '蓝灯+绿灯') + '）') : '')) : '未发现当前角色卡或聊天挂载的世界书。';
+  }
   async function refreshWorldbookList() {
+    let manualMode = false;
+    const auto = qs('#wb-world-auto-mount');
+    if (auto && auto.value) {
+      auto.value = '';
+      setWorldAutoMountControlText();
+      manualMode = true;
+    }
     const list = qs('#wb-worldbook-list'); if (list) list.innerHTML = '<span class="wb-muted">正在读取挂载条目...</span>';
     try {
-      const out = await getActiveWorldbookEntries();
-      renderWorldbookTags(out, false); toast(out.length ? ('已载入 ' + out.length + ' 个世界书条目') : '当前未发现可读取的世界书条目');
+      const out = await getWorldbookEntriesByMode('');
+      renderWorldbookTags(out, false); await updateMountedWorldbookNamesAsync(); autoSaveInjectionSettingsFromUI(); toast(manualMode ? '进入手动挂载世界书模式' : (out.length ? ('已刷新 ' + out.length + ' 个世界书条目，可自行选择') : '当前未发现可读取的世界书条目'));
     } catch(e) { if (list) list.innerHTML = '<span class="wb-muted">读取失败：当前环境未暴露世界书接口</span>'; toast('世界书读取失败'); }
+  }
+  async function applyWorldAutoMount(mode, announce) {
+    const auto = qs('#wb-world-auto-mount');
+    if (auto) auto.value = mode || '';
+    setWorldAutoMountControlText();
+    updateMountedWorldbookNames();
+    if (!mode) { autoSaveInjectionSettingsFromUI(); if (announce) toast('已关闭自动挂载，可自由选择世界书条目'); return; }
+    const list = qs('#wb-worldbook-list'); if (list) list.innerHTML = '<span class="wb-muted">正在自动挂载世界书...</span>';
+    try {
+      const out = await getWorldbookEntriesByMode(mode);
+      renderWorldbookTags(out, true);
+      await updateMountedWorldbookNamesAsync();
+      autoSaveInjectionSettingsFromUI();
+      if (announce) toast(out.length ? ('已自动挂载 ' + out.length + ' 个世界书条目') : '当前没有符合灯色的世界书条目');
+    } catch(e) { if (list) list.innerHTML = '<span class="wb-muted">自动挂载失败</span>'; toast('自动挂载失败'); }
+  }
+  async function applyLazyWorldInject() {
+    const persona = readCurrentUserPersonaFromST();
+    const userSource = qs('#wb-user-desc-source'); if (userSource) userSource.value = 'auto';
+    const up = qs('#wb-user-persona'); if (up && persona) up.value = persona;
+    const iu = qs('#wb-inject-user-desc'); if (iu) iu.checked = true;
+    const ic = qs('#wb-inject-char-desc'); if (ic) ic.checked = true;
+    const cm = qs('#wb-char-desc-mode'); if (cm) cm.value = 'auto';
+    const mw = qs('#wb-manual-char-wrap'); if (mw) mw.style.display = 'none';
+    const cn = qs('#wb-char-name'); if (cn && !cn.value.trim()) cn.value = companionName();
+    const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(Object.assign({}, settings(), { injectCharDesc:true, charDescMode:'auto', charName:cn?.value || '{{char}}' }));
+    const auto = qs('#wb-world-auto-mount'); if (auto) auto.value = 'bluegreen';
+    await applyWorldAutoMount('bluegreen', false);
+    autoSaveInjectionSettingsFromUI();
+    toast('懒人模式已自动导入当前配置');
   }
   function getHostContext() {
     try { const w = getHostWindow(); return w.SillyTavern && w.SillyTavern.getContext ? w.SillyTavern.getContext() : null; }
@@ -9098,16 +9264,100 @@ export async function initWanbanXiaowu() {
     try { const w = getHostWindow(); return w.TavernHelper || window.TavernHelper || null; }
     catch(e) { return window.TavernHelper || null; }
   }
-  async function readLorebookEntries(name) {
+  function readCurrentUserPersonaFromST() {
+    const ctx = getHostContext() || {};
+    const w = getHostWindow();
+    const pu = w.power_user || window.power_user || ctx.powerUserSettings || {};
+    const currentAvatar = w.user_avatar || window.user_avatar || ctx.user_avatar || ctx.userAvatar || pu.user_avatar || '';
+    const keys = [currentAvatar, ctx.user_avatar, ctx.userAvatar, pu.user_avatar, ctx.name1].filter(Boolean).map(x => String(x).trim());
+    const stores = [pu.persona_descriptions, ctx.powerUserSettings?.persona_descriptions].filter(Boolean);
+    const readFromStores = lookupKeys => {
+      for (const store of stores) {
+        if (Array.isArray(store)) {
+          for (const item of store) {
+            const itemKeys = [item?.avatar, item?.name, item?.key, item?.id, item?.filename].filter(Boolean).map(x => String(x).trim());
+            if (itemKeys.some(k => lookupKeys.includes(k))) {
+              const text = item.description || item.persona_description || item.content || item.value || '';
+              if (String(text).trim()) return String(text).trim();
+            }
+          }
+        } else if (store && typeof store === 'object') {
+          for (const key of lookupKeys) {
+            const direct = store[key] ?? store[String(key).replace(/^.*[\\/]/, '')];
+            const text = typeof direct === 'string' ? direct : (direct?.description || direct?.persona_description || direct?.content || direct?.value || '');
+            if (String(text).trim()) return String(text).trim();
+          }
+        }
+      }
+      return '';
+    };
+    const fromStore = readFromStores(keys);
+    if (fromStore) return fromStore;
+    const cached = pu.persona_description || ctx.powerUserSettings?.persona_description || ctx.personaDescription || ctx.persona || ctx.user_desc || '';
+    if (String(cached).trim()) return String(cached).trim();
+    const selectors = ['#persona_description','#personaDescription','#user_persona','#user-persona','textarea[name="persona_description"]','textarea[id*="persona"]','textarea[id*="Persona"]','[id*="persona"] textarea','[id*="Persona"] textarea'];
+    for (const selector of selectors) {
+      const el = [...getHostDocument().querySelectorAll(selector)].find(node => !node.closest('#' + POPUP_ID) && !node.disabled && node.offsetParent !== null);
+      const value = el ? (el.value || el.textContent || '').trim() : '';
+      if (value) return value;
+    }
+    return '';
+  }
+  function readCurrentUserNameFromST() {
+    const ctx = getHostContext() || {};
+    const w = getHostWindow();
+    const pu = w.power_user || window.power_user || ctx.powerUserSettings || {};
+    const name = ctx.name1 || w.name1 || window.name1 || pu.name1 || pu.user_name || ctx.userName || '';
+    return String(name || '').trim();
+  }
+  function formatAutoUserPersona(persona) {
+    const userName = readCurrentUserNameFromST() || '{{user}}';
+    const text = String(persona || '').trim();
+    if (/^user姓名：/i.test(text)) return text;
+    return 'user姓名：' + userName + (text ? '\n' + text : '');
+  }
+  async function readLorebookEntries(name, preferRawApi) {
     const th = getTavernHelper();
-    if (!th || !name) return [];
+    if (!name) return [];
     let entries = [];
-    if (th.getLorebookEntries) entries = await th.getLorebookEntries(name);
-    else if (th.getWorldbook) {
+    const readFromApi = async () => {
+      const ctx = getHostContext();
+      const headers = ctx?.getRequestHeaders ? ctx.getRequestHeaders() : { 'Content-Type':'application/json' };
+      const res = await fetch('/api/worldinfo/get', { method:'POST', headers, body:JSON.stringify({ name }) });
+      if (!res.ok) return [];
+      const wb = await res.json();
+      return Array.isArray(wb?.entries) ? wb.entries : Object.values(wb?.entries || {});
+    };
+    if (preferRawApi) {
+      try { entries = await readFromApi(); }
+      catch(e) { entries = []; }
+      if (entries && entries.length) return entries;
+    }
+    if (th && th.getLorebookEntries) entries = await th.getLorebookEntries(name);
+    else if (th && th.getWorldbook) {
       const wb = await th.getWorldbook(name);
       entries = Array.isArray(wb?.entries) ? wb.entries : Object.values(wb?.entries || {});
+    } else {
+      entries = await readFromApi();
     }
     return Array.isArray(entries) ? entries : Object.values(entries || {});
+  }
+  function worldEntryFlag(entry, key) {
+    const snake = key.replace(/[A-Z]/g, m => '_' + m.toLowerCase());
+    const raw = entry?.[key] ?? entry?.extensions?.[key] ?? entry?.extensions?.[snake] ?? entry?.originalData?.[key] ?? entry?.originalData?.extensions?.[key] ?? entry?.originalData?.extensions?.[snake];
+    return raw === true || raw === 'true' || raw === 1 || raw === '1';
+  }
+  function worldEntryLight(entry) {
+    if (worldEntryFlag(entry, 'constant')) return 'blue';
+    if (worldEntryFlag(entry, 'vectorized')) return 'chain';
+    return 'green';
+  }
+  function worldEntryAllowed(entry, mode) {
+    if (!mode) return true;
+    if (worldEntryFlag(entry, 'disable') || entry?.enabled === false || entry?.enabled === 'false') return false;
+    if (mode === 'blue') return worldEntryLight(entry) === 'blue';
+    if (mode === 'bluegreen') return worldEntryLight(entry) !== 'chain';
+    return true;
   }
   function normalizeWorldNames(value) {
     const out = [];
@@ -9115,31 +9365,108 @@ export async function initWanbanXiaowu() {
       if (!v) return;
       if (Array.isArray(v)) v.forEach(walk);
       else if (typeof v === 'string') out.push(v);
-      else if (typeof v === 'object') Object.keys(v).forEach(k => { if (v[k]) out.push(k); });
+      else if (typeof v === 'object') {
+        ['globalSelect','selected_world_info','selectedWorldInfo','world_info','worldInfo','extraBooks'].forEach(k => walk(v[k]));
+        Object.keys(v).forEach(k => {
+          if (['globalSelect','selected_world_info','selectedWorldInfo','world_info','worldInfo','extraBooks'].includes(k)) return;
+          if (v[k] === true) out.push(k);
+          else if (typeof v[k] === 'string' || Array.isArray(v[k])) walk(v[k]);
+        });
+      }
     };
     walk(value);
-    return out.filter(Boolean);
+    return out.map(x => String(x).trim()).filter(x => x && x !== 'None' && x !== '--- None ---' && !x.startsWith('--'));
+  }
+  function addWorldName(list, value) {
+    normalizeWorldNames(value).forEach(name => { if (name && !list.includes(name)) list.push(name); });
+  }
+  function getMountedWorldNamesFromDom() {
+    const names = [];
+    const doc = getHostDocument();
+    // SillyTavern stores the real book name in option text; option value is often just an index.
+    qsa('#world_info option:selected, #world_info option:checked', doc).forEach(opt => addWorldName(names, opt.textContent || opt.label || opt.value));
+    qsa('.character_world_info_selector option:selected, .character_extra_world_info_selector option:selected', doc).forEach(opt => addWorldName(names, opt.textContent || opt.label || opt.value));
+    try {
+      const $ = getHostWindow().jQuery || getHostWindow().$ || window.jQuery || window.$;
+      if ($) {
+        $('#world_info option:selected').each((_, opt) => addWorldName(names, opt.textContent || opt.label || opt.value));
+        $('.character_world_info_selector option:selected, .character_extra_world_info_selector option:selected').each((_, opt) => addWorldName(names, opt.textContent || opt.label || opt.value));
+      }
+    } catch(e) {}
+    return names;
+  }
+  async function getMountedWorldNamesFromModule() {
+    try {
+      const mod = await import('/scripts/world-info.js');
+      const names = [];
+      addWorldName(names, mod.selected_world_info || []);
+      const wi = mod.getWorldInfoSettings ? mod.getWorldInfoSettings()?.world_info : (mod.world_info || {});
+      addWorldName(names, wi?.globalSelect || []);
+      const ctx = getHostContext();
+      const char = ctx?.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : null;
+      if (char) {
+        addWorldName(names, char.data?.extensions?.world);
+        const fileName = String(char.avatar || '').replace(/\.[^/.]+$/, '');
+        const extraCharLore = Array.isArray(wi?.charLore) ? wi.charLore.find(e => e?.name === fileName) : null;
+        addWorldName(names, extraCharLore?.extraBooks || []);
+      }
+      return names;
+    } catch(e) { return []; }
   }
   async function getActiveWorldbookEntries() {
+    return getWorldbookEntriesByMode('');
+  }
+  function getCurrentWorldBookNames() {
+    const names = [];
+    const add = v => addWorldName(names, v);
+    try {
+      const ctx = getHostContext();
+      if (!ctx) return names;
+      add(getMountedWorldNamesFromDom());
+      const char = ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx.character || null);
+      const charData = char?.data || char || {};
+      add([charData?.extensions?.world, charData?.world, charData?.character_book?.name]);
+      const avatar = charData?.avatar || char?.avatar;
+      const charLore = ctx.worldInfoSettings?.charLore || getHostWindow().world_info?.charLore || window.world_info?.charLore;
+      if (avatar && Array.isArray(charLore)) {
+        const fileName = String(avatar).replace(/\.[^.]+$/, '');
+        const found = charLore.find(e => e?.name === fileName);
+        add(found?.extraBooks || []);
+      }
+      const chatMeta = ctx.chatMetadata || {};
+      const wiSettings = ctx.worldInfoSettings || getHostWindow().world_info || window.world_info || {};
+      add([chatMeta.world_info, chatMeta.worldInfo, chatMeta.world, ctx.world_names, ctx.worldInfo, ctx.globalWorldInfo, wiSettings]);
+    } catch(e) { console.warn('[玩伴小屋] getCurrentWorldBookNames failed:', e); }
+    return names;
+  }
+  async function getCurrentWorldBookNamesAsync() {
+    const names = getCurrentWorldBookNames();
+    addWorldName(names, await getMountedWorldNamesFromModule());
+    return names;
+  }
+  async function getWorldbookEntriesByMode(mode) {
     const results = [];
     const checked = new Set();
-    const pushEntry = (source, e, i) => results.push({
-      label: '[' + source + '] ' + (e.comment || e.name || (Array.isArray(e.key) ? e.key[0] : e.key) || e.uid || ('条目' + (i + 1))),
-      content: e.content || '', wbName: source, uid: e.uid || e.id
-    });
+    const seen = new Set();
+    const pushEntry = (source, e, i) => {
+      if (!worldEntryAllowed(e, mode)) return;
+      const content = String(e.content || '').trim();
+      const labelCore = e.comment || e.name || (Array.isArray(e.key) ? e.key[0] : e.key) || e.uid || e.id || ('条目' + (i + 1));
+      const uid = e.uid ?? e.id ?? '';
+      const dedupeKey = content ? ('c:' + content.replace(/\s+/g, ' ').slice(0, 500)) : ('k:' + source + ':' + uid + ':' + labelCore);
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      results.push({ label: '[' + source + '] ' + labelCore, content, wbName: source, uid });
+    };
     try {
       const ctx = getHostContext();
       if (!ctx) return results;
       const char = ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx.character || null);
       const charData = char?.data || char || {};
-      const charWorlds = normalizeWorldNames([charData?.extensions?.world, charData?.world, charData?.character_book?.name]);
-      const chatMeta = ctx.chatMetadata || {};
-      const metaWorlds = normalizeWorldNames([chatMeta.world_info, chatMeta.worldInfo, chatMeta.world, ctx.world_names]);
-      const globalWorlds = normalizeWorldNames([ctx.worldInfo, ctx.globalWorldInfo]);
-      for (const name of [...charWorlds, ...metaWorlds, ...globalWorlds]) {
+      for (const name of await getCurrentWorldBookNamesAsync()) {
         if (!name || checked.has(name)) continue;
         checked.add(name);
-        try { (await readLorebookEntries(name)).forEach((e, i) => pushEntry(name, e, i)); }
+        try { (await readLorebookEntries(name, true)).forEach((e, i) => pushEntry(name, e, i)); }
         catch(e) { console.warn('[玩伴小屋] 世界书加载失败:', name, e); }
       }
       const inlineBook = charData?.character_book;
@@ -9149,9 +9476,15 @@ export async function initWanbanXiaowu() {
   }
   function currentUserDescription(cfg) {
     if (cfg.injectUserDesc === false) return '不注入';
-    if (cfg.userPersona && cfg.userPersona.trim()) return cfg.userPersona.trim();
+    if (cfg.userDescSource !== 'auto' && cfg.userPersona && cfg.userPersona.trim()) return cfg.userPersona.trim();
+    if (cfg.userDescSource === 'auto') {
+      const imported = readCurrentUserPersonaFromST();
+      if (imported) return formatAutoUserPersona(imported);
+      if (cfg.userPersona && cfg.userPersona.trim()) return formatAutoUserPersona(cfg.userPersona.trim());
+    }
     const ctx = getHostContext();
-    return (ctx && (ctx.personaDescription || ctx.persona || ctx.user_desc)) || '未填写';
+    const text = (ctx && (ctx.personaDescription || ctx.persona || ctx.user_desc)) || (cfg.userPersona && cfg.userPersona.trim()) || '未填写';
+    return text;
   }
   function currentCharDescription(cfg) {
     if (cfg.injectCharDesc === false) return '不注入';
@@ -9380,6 +9713,7 @@ export async function initWanbanXiaowu() {
     const baseCfg = Object.assign(settings(), { charName, injectCharDesc: qs('#wb-inject-char-desc') ? qs('#wb-inject-char-desc').checked : true, charDescriptionSnapshot: '' });
     return {
       name,
+      lazyWorldInject: !!(qs('#wb-lazy-world-inject') && qs('#wb-lazy-world-inject').checked),
       injectUserDesc: qs('#wb-inject-user-desc').checked,
       injectCharDesc: qs('#wb-inject-char-desc').checked,
       injectChat: qs('#wb-inject-chat').checked,
@@ -9387,6 +9721,7 @@ export async function initWanbanXiaowu() {
       specialLanguage: qs('#wb-special-language') ? qs('#wb-special-language').value : '粤语',
       intimacyMode: !!(qs('#wb-intimacy-mode') && qs('#wb-intimacy-mode').checked),
       breakLimitPrompt: qs('#wb-break-limit-prompt') ? qs('#wb-break-limit-prompt').value.trim() : '',
+      userDescSource: qs('#wb-user-desc-source') ? (qs('#wb-user-desc-source').value === 'auto' ? 'auto' : 'manual') : 'manual',
       userPersona: qs('#wb-user-persona').value.trim(),
       charDescMode: qs('#wb-char-desc-mode') ? qs('#wb-char-desc-mode').value : 'auto',
       manualCharPersona: qs('#wb-manual-char-persona') ? qs('#wb-manual-char-persona').value.trim() : '',
@@ -9395,6 +9730,7 @@ export async function initWanbanXiaowu() {
       avatarUrl: qs('#wb-avatar-url') ? qs('#wb-avatar-url').value.trim() : '',
       summaryId,
       summarySnapshot: summarySnapshotFromId(summaryId),
+      worldAutoMountMode: qs('#wb-world-auto-mount') ? (qs('#wb-world-auto-mount').value || '') : '',
       selectedWorldKeys: selected.map(x => ({ label:x.label, wbName:x.wbName || '', uid:x.uid || '' })),
       selectedWorldEntries: selected.map(x => ({ label:x.label || '', content:x.content || '', wbName:x.wbName || '', uid:x.uid || '' }))
     };
@@ -9403,6 +9739,7 @@ export async function initWanbanXiaowu() {
     if (!pr) return false;
     const matched = (pr.selectedWorldEntries || []).map(x => ({ label:x.label || '', content:x.content || '', wbName:x.wbName || '', uid:x.uid || '' }));
     setSettings({
+      lazyWorldInject: !!pr.lazyWorldInject,
       injectUserDesc: pr.injectUserDesc !== false,
       injectCharDesc: pr.injectCharDesc !== false,
       injectChat: !!pr.injectChat,
@@ -9410,6 +9747,8 @@ export async function initWanbanXiaowu() {
       specialLanguage: specialLanguageOptions().includes(pr.specialLanguage) ? pr.specialLanguage : '粤语',
       intimacyMode: !!pr.intimacyMode,
       breakLimitPrompt: pr.breakLimitPrompt || '',
+      userDescSource: pr.userDescSource === 'auto' ? 'auto' : 'manual',
+      userName: pr.userName || '{{user}}',
       userPersona: pr.userPersona || '',
       charDescMode: pr.charDescMode || 'auto',
       manualCharPersona: pr.manualCharPersona || '',
@@ -9418,6 +9757,7 @@ export async function initWanbanXiaowu() {
       avatarUrl: pr.avatarUrl || '',
       summaryId: pr.summaryId || '',
       summarySnapshot: pr.summarySnapshot || null,
+      worldAutoMountMode: ['blue','bluegreen'].includes(pr.worldAutoMountMode) ? pr.worldAutoMountMode : '',
       selectedWorldEntries: matched
     });
     refreshGameCompanionPanel();
@@ -9483,6 +9823,7 @@ export async function initWanbanXiaowu() {
       if (!gameStarted || !currentGame) return;
       gamePaused = false;
       gameActiveStartedAt = Date.now();
+      startGameDurationRewardTimer();
       hideGamePauseOverlay();
       const btn = qs('#wb-pause'); if (btn) btn.textContent = '暂停';
     };
@@ -10508,7 +10849,7 @@ export async function initWanbanXiaowu() {
   }
   function closeSummaryModal(mask) { if (mask) mask.remove(); const ed = qs('#wb-summary-editor-mask', getHostDocument()); if (ed) ed.remove(); }
   function saveSettingsFromUI() {
-    setSettings({ injectUserDesc: qs('#wb-inject-user-desc').checked, injectCharDesc: qs('#wb-inject-char-desc').checked, injectChat: qs('#wb-inject-chat').checked, userPersona: qs('#wb-user-persona').value.trim(), charName: (qs('#wb-char-name') && qs('#wb-char-name').value.trim()) || '{{char}}', avatarUrl: qs('#wb-avatar-url') ? qs('#wb-avatar-url').value.trim() : '', summaryId: qs('#wb-summary-select').value || '', selectedWorldEntries: selectedWorldEntriesFromUI(), selectedWorldPresetName: selectedWorldPresetNameFromUI() });
+    autoSaveInjectionSettingsFromUI();
     toast('注入设置已保存'); render();
   }
   function saveWorldPresetFromUI() {
@@ -10527,6 +10868,9 @@ export async function initWanbanXiaowu() {
     showConfirm('恢复当前角色卡默认', '确定将当前世界观注入设置恢复为“' + name + '”的角色卡默认内容吗？已保存的角色和世界观预设不会被删除，前置提示词 / 破限词会保留。', () => {
       const keepBreak = qs('#wb-break-limit-prompt') ? qs('#wb-break-limit-prompt').value.trim() : (settings().breakLimitPrompt || '');
       setSettings({
+        lazyWorldInject: false,
+        userDescSource: 'manual',
+        userName: '{{user}}',
         injectCharDesc: true,
         charDescMode: 'auto',
         manualCharPersona: '',
@@ -10535,6 +10879,7 @@ export async function initWanbanXiaowu() {
         avatarUrl: '',
         summaryId: '',
         summarySnapshot: null,
+        worldAutoMountMode: '',
         selectedWorldEntries: [],
         selectedWorldPresetName: '',
         specialLanguageEnabled: false,
@@ -10549,6 +10894,7 @@ export async function initWanbanXiaowu() {
     const idx = parseInt(qs('#wb-world-preset').value, 10);
     const pr = worldPresets()[idx];
     if (!pr) { setSettings({ selectedWorldPresetName: '' }); return; }
+    const lazy = qs('#wb-lazy-world-inject'); if (lazy) lazy.checked = !!pr.lazyWorldInject;
     qs('#wb-inject-user-desc').checked = pr.injectUserDesc !== false;
     qs('#wb-inject-char-desc').checked = pr.injectCharDesc !== false;
     qs('#wb-inject-chat').checked = !!pr.injectChat;
@@ -10557,6 +10903,7 @@ export async function initWanbanXiaowu() {
     const slw = qs('#wb-special-language-wrap'); if (slw && sle) slw.style.display = sle.checked ? '' : 'none';
     const im = qs('#wb-intimacy-mode'); if (im) im.checked = !!pr.intimacyMode;
     const bp = qs('#wb-break-limit-prompt'); if (bp) bp.value = pr.breakLimitPrompt || '';
+    const uds = qs('#wb-user-desc-source'); if (uds) uds.value = pr.userDescSource === 'auto' ? 'auto' : 'manual';
     qs('#wb-user-persona').value = pr.userPersona || '';
     const cm2 = qs('#wb-char-desc-mode'); if (cm2) cm2.value = pr.charDescMode === 'manual' ? 'manual' : 'auto';
     const mp2 = qs('#wb-manual-char-persona'); if (mp2) mp2.value = pr.manualCharPersona || '';
@@ -10567,7 +10914,11 @@ export async function initWanbanXiaowu() {
     const pv = qs('#wb-summary-preview'); if (pv) pv.textContent = pr.summarySnapshot ? ('[' + (pr.summarySnapshot.name || '大总结') + '] ' + String(pr.summarySnapshot.content || '').replace(/\s+/g, ' ').slice(0, 140)) : summaryPreview(pr.summaryId || '');
     const matched = (pr.selectedWorldEntries || []).map(x => ({ label:x.label || '', content:x.content || '', wbName:x.wbName || '', uid:x.uid || '' }));
     renderWorldbookTags(matched, true);
+    const wam = qs('#wb-world-auto-mount'); if (wam) wam.value = ['blue','bluegreen'].includes(pr.worldAutoMountMode) ? pr.worldAutoMountMode : '';
+    setWorldAutoMountControlText();
+    updateMountedWorldbookNames();
     setSettings({
+      lazyWorldInject: !!(qs('#wb-lazy-world-inject') && qs('#wb-lazy-world-inject').checked),
       injectUserDesc: qs('#wb-inject-user-desc').checked,
       injectCharDesc: qs('#wb-inject-char-desc').checked,
       injectChat: qs('#wb-inject-chat').checked,
@@ -10575,6 +10926,7 @@ export async function initWanbanXiaowu() {
       specialLanguage: qs('#wb-special-language') ? qs('#wb-special-language').value : '粤语',
       intimacyMode: !!(qs('#wb-intimacy-mode') && qs('#wb-intimacy-mode').checked),
       breakLimitPrompt: qs('#wb-break-limit-prompt') ? qs('#wb-break-limit-prompt').value.trim() : '',
+      userDescSource: qs('#wb-user-desc-source') ? (qs('#wb-user-desc-source').value === 'auto' ? 'auto' : 'manual') : 'manual',
       userPersona: qs('#wb-user-persona').value.trim(),
       charDescMode: qs('#wb-char-desc-mode') ? qs('#wb-char-desc-mode').value : 'auto',
       manualCharPersona: qs('#wb-manual-char-persona') ? qs('#wb-manual-char-persona').value.trim() : '',
@@ -10583,9 +10935,11 @@ export async function initWanbanXiaowu() {
       avatarUrl: qs('#wb-avatar-url') ? qs('#wb-avatar-url').value.trim() : '',
       summaryId: qs('#wb-summary-select').value || '',
       summarySnapshot: pr.summarySnapshot || null,
+      worldAutoMountMode: qs('#wb-world-auto-mount') ? (qs('#wb-world-auto-mount').value || '') : '',
       selectedWorldEntries: matched,
       selectedWorldPresetName: normalizePresetName(pr.name || qs('#wb-char-name')?.value || companionName())
     });
+    if (qs('#wb-world-auto-mount') && qs('#wb-world-auto-mount').value) await applyWorldAutoMount(qs('#wb-world-auto-mount').value, false);
     applyRoleToAllGames(normalizePresetName(pr.name || qs('#wb-char-name')?.value || companionName()));
     const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(settings());
     toast('角色和世界观已按保存快照载入');
@@ -10603,7 +10957,7 @@ export async function initWanbanXiaowu() {
     const g = GAME_META[id]; const cfg = settings(); const body = qs('#wb-body'); body.className = 'wb-body wb-game-mode';
     const lineTools = cfg.companion ? '<div class="wb-line-tools"><select class="wb-select" id="wb-line-preset-select"></select><button class="wb-btn primary" id="wb-generate-lines">生成</button></div>' : '';
     const wordBankTools = id === 'wordguess' ? '<select class="wb-select" id="wb-word-bank-source-inline" title="我说你猜题库"><option value="role">角色题库</option><option value="default">默认题库</option></select>' : '';
-    const pauseBtn = g.mode === 'double' ? '' : '<button class="wb-btn" id="wb-pause">暂停</button>';
+    const pauseBtn = '<button class="wb-btn" id="wb-pause">暂停</button>';
     const companionPanel = cfg.companion ? '<div class="wb-panel wb-side-companion">' + companionHTML() + '</div>' : '';
     const dockSide = companionDockSide(cfg);
     const layoutClass = cfg.companion ? ('companion-pc-' + (dockSide === 'start' ? 'left' : 'right') + ' companion-mobile-' + (dockSide === 'start' ? 'top' : 'bottom')) : 'no-companion';
@@ -10656,7 +11010,9 @@ export async function initWanbanXiaowu() {
     gamePaused = false;
     firstMoverAwaitingUserAction = !!(needsFirstMoverChoice(id) && savedState && savedState.firstMover && !storedState && !savedState.userActed);
     gameAccumulatedMs = Math.max(0, Number(resumeState?.durationMs || 0));
+    gamePetRewardNextMs = Math.max(nextPetGameRewardThreshold(gameAccumulatedMs), Number(resumeState?.petRewardNextMs || 0) || 0);
     gameActiveStartedAt = Date.now();
+    startGameDurationRewardTimer();
     hideGamePauseOverlay();
     currentRoundRecord = false;
     currentRoundLineEvents = Array.isArray(resumeState?.lineEvents) ? resumeState.lineEvents.slice(-120) : [];
@@ -11033,6 +11389,7 @@ function showGameRecords(game, page) {
     const g = GAME_META[game] || { name: '游戏', unit: '分' };
     if (g.mode === 'double' && inferred === 'ta_win' && !result) addTaWin(game);
     const rec = recordGameResult(game, title, scoreText, inferred, meta);
+    clearGameDurationRewardTimer();
     const outcome = resultOutcome(inferred);
     let special = '';
     if (g.mode === 'double') { special = doubleSpecialTheater(game, outcome, scoreText, meta); const streak = game === 'bombnumber' ? 0 : doubleStreak(game, outcome, rec.companion); if ((!special || game === 'gomoku') && outcome === 'user_win' && streak >= 3) special = 'win_streak3'; if ((!special || game === 'gomoku') && outcome === 'ta_win' && streak >= 3) special = 'lose_streak3'; }
@@ -11690,7 +12047,7 @@ function showGameRecords(game, page) {
     let bubbles = Array.isArray(state?.bubbles) ? state.bubbles.map(b => Object.assign({}, b)) : [];
     let falling = Array.isArray(state?.falling) ? state.falling : [];
     let popping = [];
-    let score = Number(state?.score || 0), shots = Number(state?.shots || 0), pushes = Number(state?.pushes || 0), shotsSincePush = Number(state?.shotsSincePush ?? (Number(state?.shots || 0) % Math.max(5, 10 - Math.floor(Number(state?.pushes || 0) / 3)))), bombs = Math.max(0, Math.min(5, Number(state?.bombs == null ? 5 : state.bombs)));
+    let score = Number(state?.score || 0), shots = Number(state?.shots || 0), pushes = Number(state?.pushes || 0), shotsSincePush = Number(state?.shotsSincePush ?? (Number(state?.shots || 0) % Math.max(5, 10 - Math.floor(Number(state?.pushes || 0) / 2)))), bombs = Math.max(0, Math.min(5, Number(state?.bombs == null ? 5 : state.bombs)));
     let current = state?.current || '', next = state?.next || '', armedBomb = !!state?.armedBomb;
     let flying = null, aiming = false, resolving = false, aimAngle = 0, over = false, raf = 0, lastT = 0;
     let seen = Object.assign({ aim:false, dangerTick:0, scoreMilestone:Math.floor(score/1000) }, state?.seen || {});
@@ -11702,9 +12059,10 @@ function showGameRecords(game, page) {
     const rowParity = r => Math.abs(r - pushes) % 2;
     const baseCenter = (r,col) => ({ x:boardPad + (rowParity(r) ? D / 2 : 0) + col * D + R, y:boardPad + r * rowH + R });
     const center = (r,col,b) => baseCenter(r,col);
+    const hitDistance = () => D * .86;
     const liveColors = () => { const a = [...new Set(bubbles.filter(b => !b.dead).map(b => b.color))]; return a.length ? a : colors.slice(); };
     const rand = arr => arr[Math.floor(Math.random() * arr.length)];
-    const randomColor = () => rand(liveColors());
+    const randomColor = () => rand(colors);
     function seed() {
       bubbles = [];
       for (let r=0; r<ROWS_INIT; r++) for (let col=0; col<cap(r); col++) bubbles.push({ r, c:col, color:rand(colors) });
@@ -11853,10 +12211,10 @@ function showGameRecords(game, page) {
       else finishTurn();
     }
     function pushInterval() {
-      return Math.max(5, 10 - Math.floor(pushes / 3));
+      return Math.max(5, 10 - Math.floor(pushes / 2));
     }
     function pushDown() {
-      const pool = liveColors();
+      const pool = colors;
       pushes++; details.pushes = pushes;
       shotsSincePush = 0;
       bubbles.forEach(b => { b.r++; delete b.xOffset; });
@@ -11907,7 +12265,7 @@ function showGameRecords(game, page) {
         if (x >= W - boardPad - R) { x = W - boardPad - R; vx *= -1; }
         if (i % 6 === 0) pts.push({x,y});
         if (y <= boardPad + R) break;
-        if (bubbles.some(b => { const p=center(b.r,b.c,b); return Math.hypot(p.x-x,p.y-y) <= D * .72; })) break;
+        if (bubbles.some(b => { const p=center(b.r,b.c,b); return Math.hypot(p.x-x,p.y-y) <= hitDistance(); })) break;
       }
       return pts;
     }
@@ -11934,12 +12292,16 @@ function showGameRecords(game, page) {
       if (over || currentGame !== 'paopao') return;
       if (!gamePaused && flying) {
         const sp = Math.max(560, D * 20), step = sp * dt / 1000;
-        flying.x += flying.vx * step; flying.y += flying.vy * step;
-        if (flying.x <= boardPad + R) { flying.x = boardPad + R; flying.vx *= -1; }
-        if (flying.x >= W - boardPad - R) { flying.x = W - boardPad - R; flying.vx *= -1; }
-        const hitTop = flying.y <= boardPad + R;
-        const hitBubble = bubbles.find(b => { const p=center(b.r,b.c,b); return Math.hypot(p.x-flying.x,p.y-flying.y) <= D * .72; });
-        if (hitTop || hitBubble) resolveAt(nearestSlot(flying.x, flying.y, hitBubble), flying.color, flying.bomb);
+        const maxSubStep = Math.max(2, D * .16);
+        for (let left = step; flying && left > 0; left -= maxSubStep) {
+          const part = Math.min(maxSubStep, left);
+          flying.x += flying.vx * part; flying.y += flying.vy * part;
+          if (flying.x <= boardPad + R) { flying.x = boardPad + R; flying.vx *= -1; }
+          if (flying.x >= W - boardPad - R) { flying.x = W - boardPad - R; flying.vx *= -1; }
+          const hitTop = flying.y <= boardPad + R;
+          const hitBubble = bubbles.find(b => { const p=center(b.r,b.c,b); return Math.hypot(p.x-flying.x,p.y-flying.y) <= hitDistance(); });
+          if (hitTop || hitBubble) resolveAt(nearestSlot(flying.x, flying.y, hitBubble), flying.color, flying.bomb);
+        }
       }
       falling.forEach(f => { f.vy += .22; f.y += f.vy; });
       falling = falling.filter(f => f.y < H + D);
@@ -13710,12 +14072,12 @@ function showGameRecords(game, page) {
       { id:'purple', hex:'#a66bff' }
     ];
     box.innerHTML = '<div class="wb-popstar-panel">'
-      + '<div class="wb-popstar-top"><div class="wb-popstar-stat" id="wb-popstar-level"></div><div class="wb-popstar-stat" id="wb-popstar-score"></div><div class="wb-popstar-stat" id="wb-popstar-target"></div><div class="wb-popstar-stat" id="wb-popstar-left"></div></div>'
+      + '<div class="wb-popstar-top"><div class="wb-popstar-stat" id="wb-popstar-level"></div><div class="wb-popstar-stat" id="wb-popstar-score"></div><div class="wb-popstar-stat" id="wb-popstar-target"></div><div class="wb-popstar-stat" id="wb-popstar-moves"></div><div class="wb-popstar-stat" id="wb-popstar-left"></div></div>'
       + '<div class="wb-popstar-stage" id="wb-popstar-stage"><div class="wb-popstar-board" id="wb-popstar-board"></div></div>'
       + '<div class="wb-actions wb-popstar-actions"><button type="button" class="wb-btn" id="wb-popstar-shuffle">打乱 <span class="wb-popstar-badge" id="wb-popstar-shuffle-left">3</span></button><button type="button" class="wb-btn" id="wb-popstar-single">单消 <span class="wb-popstar-badge" id="wb-popstar-single-left">3</span></button></div>'
       + '</div>';
     const panel = qs('.wb-popstar-panel', box), stage = qs('#wb-popstar-stage', box), boardEl = qs('#wb-popstar-board', box);
-    const levelEl = qs('#wb-popstar-level', box), scoreEl = qs('#wb-popstar-score', box), targetEl = qs('#wb-popstar-target', box), leftEl = qs('#wb-popstar-left', box);
+    const levelEl = qs('#wb-popstar-level', box), scoreEl = qs('#wb-popstar-score', box), targetEl = qs('#wb-popstar-target', box), movesEl = qs('#wb-popstar-moves', box), leftEl = qs('#wb-popstar-left', box);
     const shuffleBtn = qs('#wb-popstar-shuffle', box), singleBtn = qs('#wb-popstar-single', box);
     const shuffleLeftEl = qs('#wb-popstar-shuffle-left', box), singleLeftEl = qs('#wb-popstar-single-left', box);
     const lowFx = isMobileHost() || ((getHostWindow().innerWidth || 800) <= 768);
@@ -13737,12 +14099,14 @@ function showGameRecords(game, page) {
     } else {
       getHostWindow().addEventListener('resize', fitPopStarStage, { passive:true });
     }
-    const targetScores = [1000, 2500, 4500, 7000, 9000, 11500, 13530];
-    const levelTarget = lv => lv <= targetScores.length ? targetScores[lv - 1] : targetScores[targetScores.length - 1] + (lv - targetScores.length) * 2500;
+    const targetScores = [1200, 3000, 5600, 8200, 11200, 14600, 18400];
+    const levelTarget = lv => lv <= targetScores.length ? targetScores[lv - 1] : targetScores[targetScores.length - 1] + (lv - targetScores.length) * (3600 + Math.max(0, lv - targetScores.length - 1) * 250);
+    const moveLimit = lv => Math.max(20, 25 - Math.floor(lv / 3));
     const starPath = 'M50 8 L61 35 L90 36 L67 54 L75 84 L50 67 L25 84 L33 54 L10 36 L39 35 Z';
     let nextId = Number(state?.nextId || 1);
     let level = Math.max(1, Number(state?.level || 1));
     let score = Math.max(0, Number(state?.score || 0));
+    let movesLeft = Number.isFinite(Number(state?.movesLeft)) ? Math.max(0, Number(state.movesLeft)) : moveLimit(level);
     let shuffleLeft = Math.max(0, Math.min(3, Number(state?.shuffleLeft == null ? 3 : state.shuffleLeft)));
     let singleLeft = Math.max(0, Math.min(3, Number(state?.singleLeft == null ? 3 : state.singleLeft)));
     let toolMode = state?.toolMode === 'single' ? 'single' : '';
@@ -13753,7 +14117,7 @@ function showGameRecords(game, page) {
     let details = Object.assign({
       level:1, score:0, removedTotal:0, highClears:{ '5':0, '6':0, '7':0, '8plus':0 },
       clutchCount:0, highStreak:0, highComboCount:0, maxHighStreak:0, remainingCounts:{}, shuffleUsed:0, singleUsed:0,
-      toolUsedAtLowRemains:false, godMove:false, clutch:false, completed:false, remainingAtEnd:0
+      toolUsedAtLowRemains:false, godMove:false, clutch:false, completed:false, remainingAtEnd:0, moveLimits:{}, unusedMoveBonusTotal:0, bigBonusTotal:0
     }, state?.details || {});
     ensurePlayableBoard();
     drawUI();
@@ -13775,7 +14139,7 @@ function showGameRecords(game, page) {
     }
     function save(){
       if(over) return;
-      saveProgress('popstar', { board, level, score, shuffleLeft, singleLeft, toolMode, seen, targetMetThisLevel, nextId, details });
+      saveProgress('popstar', { board, level, score, movesLeft, shuffleLeft, singleLeft, toolMode, seen, targetMetThisLevel, nextId, details });
     }
     function makeCell(color){ return { id:'ps' + (nextId++), color }; }
     function makeBoard(){
@@ -13816,8 +14180,10 @@ function showGameRecords(game, page) {
       return false;
     }
     function remainingCount(){ return board.flat().filter(Boolean).length; }
-    function scoreFor(n){ return n * n * 5; }
-    function remainingBonus(left){ return left < 20 ? (20 - left) * 100 : 0; }
+    function bigClearBonus(n){ return n >= 16 ? 600 : (n >= 12 ? 300 : (n >= 8 ? 100 : 0)); }
+    function scoreFor(n){ return n * n * 5 + bigClearBonus(n); }
+    function remainingBonus(left){ return left === 0 ? 1000 : (left <= 5 ? 500 : (left <= 10 ? 200 : 0)); }
+    function unusedMoveBonus(noMoves){ return noMoves && movesLeft > 0 ? movesLeft * 80 : 0; }
     function centerOf(items){
       const rect = stage.getBoundingClientRect();
       const avgR = items.reduce((s,x)=>s+x.r,0) / Math.max(1, items.length);
@@ -13887,14 +14253,16 @@ function showGameRecords(game, page) {
       levelEl.textContent = '第 ' + level + ' 关';
       scoreEl.textContent = '分数 ' + score;
       targetEl.textContent = '目标 ' + target;
+      const needPerMove = score >= target ? 0 : Math.ceil((target - score) / Math.max(1, movesLeft));
+      movesEl.textContent = score >= target ? ('步数 ' + movesLeft + '｜已达') : ('步数 ' + movesLeft + '｜需' + needPerMove + '/步');
       leftEl.textContent = '剩余 ' + left;
       targetEl.classList.toggle('target-met', score >= target);
       const toolbarScore = qs('#wb-score');
       if(toolbarScore) toolbarScore.classList.toggle('target-met', score >= target);
       shuffleLeftEl.textContent = shuffleLeft;
       singleLeftEl.textContent = singleLeft;
-      if(shuffleBtn){ shuffleBtn.disabled = busy || over || shuffleLeft <= 0 || left <= 1; shuffleBtn.classList.toggle('primary', toolMode === 'shuffle'); }
-      if(singleBtn){ singleBtn.disabled = busy || over || singleLeft <= 0 || left <= 0; singleBtn.classList.toggle('primary', toolMode === 'single'); }
+      if(shuffleBtn){ shuffleBtn.disabled = busy || over || shuffleLeft <= 0 || left <= 1 || movesLeft <= 0; shuffleBtn.classList.toggle('primary', toolMode === 'shuffle'); }
+      if(singleBtn){ singleBtn.disabled = busy || over || singleLeft <= 0 || left <= 0 || movesLeft <= 0; singleBtn.classList.toggle('primary', toolMode === 'single'); }
       setScore('popstar', score);
     }
     function markTargetMet(){
@@ -13945,15 +14313,17 @@ function showGameRecords(game, page) {
       if(crossedOnThisMove && noMoves) details.clutch = true;
       renderBoard();
       drawUI();
-      if(noMoves) setTimeout(() => finishLevel(), 520);
+      if(noMoves || movesLeft <= 0) setTimeout(() => finishLevel(noMoves ? 'nomoves' : 'steps'), 520);
       else save();
     }
     function clickCell(r,c){
       if(gamePaused || busy || over) return;
+      if(movesLeft <= 0) { finishLevel('steps'); return; }
       const cell = cellAt(r,c);
       if(!cell) return;
       if(toolMode === 'single'){
         busy = true;
+        movesLeft = Math.max(0, movesLeft - 1);
         singleLeft--;
         details.singleUsed = (details.singleUsed || 0) + 1;
         if(remainingCount() <= 20) details.toolUsedAtLowRemains = true;
@@ -13974,7 +14344,10 @@ function showGameRecords(game, page) {
       busy = true;
       const beforeScore = score;
       const points = scoreFor(group.length);
+      const bigBonus = bigClearBonus(group.length);
       score += points;
+      movesLeft = Math.max(0, movesLeft - 1);
+      if(bigBonus) details.bigBonusTotal = (details.bigBonusTotal || 0) + bigBonus;
       updateStatsForClear(group.length);
       if(!seen['first_' + level]){ seen['first_' + level] = 1; speak('popstar','first_clear'); }
       if(group.length === 2) speak('popstar','small_clear');
@@ -13991,10 +14364,12 @@ function showGameRecords(game, page) {
     }
     function shuffleBoard(){
       if(gamePaused || busy || over || shuffleLeft <= 0) return;
+      if(movesLeft <= 0) { finishLevel('steps'); return; }
       const slots = [];
       for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c]) slots.push({ r,c });
       if(slots.length <= 1) return;
       busy = true;
+      movesLeft = Math.max(0, movesLeft - 1);
       shuffleLeft--;
       details.shuffleUsed = (details.shuffleUsed || 0) + 1;
       if(remainingCount() <= 20) details.toolUsedAtLowRemains = true;
@@ -14010,17 +14385,19 @@ function showGameRecords(game, page) {
       setTimeout(() => {
         busy = false;
         renderBoard();
-        if(!hasMoves(board)) finishLevel();
+        if(!hasMoves(board) || movesLeft <= 0) finishLevel(!hasMoves(board) ? 'nomoves' : 'steps');
         else { drawUI(); save(); }
       }, 280);
     }
-    async function finishLevel(){
+    async function finishLevel(reason){
       if(over || busy) return;
       busy = true;
-      const left = remainingCount(), bonus = remainingBonus(left), target = levelTarget(level), pass = score + bonus >= target;
+      const left = remainingCount(), noMoves = !hasMoves(board), bonus = remainingBonus(left), moveBonus = unusedMoveBonus(noMoves), target = levelTarget(level), pass = score + bonus + moveBonus >= target;
       details.remainingCounts[left] = (details.remainingCounts[left] || 0) + 1;
       details.remainingAtEnd = left;
-      showSettle('本关结算', '剩余 ' + left + ' 个，奖励 +' + bonus);
+      details.moveLimits[level] = moveLimit(level);
+      details.unusedMoveBonusTotal = (details.unusedMoveBonusTotal || 0) + moveBonus;
+      showSettle(reason === 'steps' ? '步数用完' : '本关结算', '剩余 ' + left + ' 个，奖励 +' + bonus + (moveBonus ? '，余步 +' + moveBonus : ''));
       const cells = [];
       for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c]) cells.push({ r,c,cell:board[r][c] });
       for(let i=0;i<cells.length;i++){
@@ -14031,9 +14408,9 @@ function showGameRecords(game, page) {
         }
         if(i % 3 === 0) await delay(42);
       }
-      if(bonus){
-        score += bonus;
-        addScorePop('+' + bonus, stage.clientWidth / 2, stage.clientHeight / 2);
+      if(bonus || moveBonus){
+        score += bonus + moveBonus;
+        addScorePop('+' + (bonus + moveBonus), stage.clientWidth / 2, stage.clientHeight / 2);
       }
       details.score = score;
       details.level = level;
@@ -14046,6 +14423,7 @@ function showGameRecords(game, page) {
       if(pass){
         speak('popstar','level_clear');
         level++;
+        movesLeft = moveLimit(level);
         targetMetThisLevel = false;
         board = makeBoard();
         ensurePlayableBoard();
@@ -14061,7 +14439,7 @@ function showGameRecords(game, page) {
       details.level = level;
       details.completed = false;
       speak('popstar','gameover');
-      showGameOver('popstar','游戏结束','本局分数：' + score + '分，第' + level + '关，目标' + target + '，剩余' + left + '个', null, { completed:false, level, score, maxHighStreak:details.maxHighStreak || 0, clutch:!!details.clutch, godMove:!!details.godMove, details });
+      showGameOver('popstar','游戏结束','本局分数：' + score + '分，第' + level + '关，目标' + target + '，剩余' + left + '个，步数' + movesLeft + '步', null, { completed:false, level, score, maxHighStreak:details.maxHighStreak || 0, clutch:!!details.clutch, godMove:!!details.godMove, details });
     }
     function showSettle(title, text){
       clearSettle();
@@ -14075,7 +14453,7 @@ function showGameRecords(game, page) {
     function delay(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
     qs('#wb-popstar-shuffle', box).onclick = shuffleBoard;
     qs('#wb-popstar-single', box).onclick = () => {
-      if(gamePaused || busy || over || singleLeft <= 0) return;
+      if(gamePaused || busy || over || singleLeft <= 0 || movesLeft <= 0) return;
       toolMode = toolMode === 'single' ? '' : 'single';
       drawUI();
       toast(toolMode === 'single' ? '选择一个星星单独消除' : '已取消单消');
