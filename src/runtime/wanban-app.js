@@ -166,6 +166,7 @@ export async function initWanbanXiaowu() {
   const FARM_BUTTON_URL = GAME_ICON_BASE + 'farm.png';
   const OLDMAID_CARD_URL = GAME_ICON_BASE + 'oldmaid-card.jpg';
   const OLDMAID_BACK_URL = GAME_ICON_BASE + 'oldmaid-back.jpg';
+  const SPIDER_BACK_URL = GAME_ICON_BASE + 'spider-card.png';
   const MEMORY_CARD_URL = GAME_ICON_BASE + 'memory-card.jpg';
   const PLANK_STAND_URL = GAME_ICON_BASE + 'plank-stand.png';
   const PLANK_WALK_URL = GAME_ICON_BASE + 'plank-walk.png';
@@ -187,6 +188,8 @@ export async function initWanbanXiaowu() {
     popstar: { id: 'popstar', name: '消灭星星', mode: 'single', unit: '分', icon: '星', iconImage: GAME_ICON_BASE + 'star.png' },
     paopao: { id: 'paopao', name: '泡泡龙', mode: 'single', unit: '分', icon: '泡', iconImage: GAME_ICON_BASE + 'paoapao.png' },
     game1010: { id: 'game1010', name: '1010!', mode: 'single', unit: '分', icon: '1010', iconImage: GAME_ICON_BASE + '1010.png' },
+    turkey: { id: 'turkey', name: '土耳其方块', mode: 'single', unit: '分', icon: '土', iconImage: GAME_ICON_BASE + 'turkey.png' },
+    spider: { id: 'spider', name: '无尽蜘蛛纸牌', mode: 'single', unit: '分', icon: '蛛', iconImage: GAME_ICON_BASE + 'spider.png' },
     ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: GAME_ICON_BASE + 'ludo.jpg' },
     guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: GAME_ICON_BASE + 'guessnumber.jpg' },
     wordguess: { id: 'wordguess', name: '我说你猜', mode: 'double', unit: '胜', icon: '谜', iconImage: GAME_ICON_BASE + 'wordguess.jpg' },
@@ -273,6 +276,8 @@ export async function initWanbanXiaowu() {
     popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5，8/12/16个以上大块会有额外奖励。每关步数为25-Math.floor(关卡/3)，最少20步；消除、打乱、单消都会消耗1步。无可消除组合或步数用完时本关结算，剩余10个以内有少量奖励；如果无可消除组合且还剩步数，会按未用步数奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。',
     paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
+    turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
+    spider: '经典蜘蛛纸牌的无尽模式。十列牌堆，默认黑桃与红桃两种花色；卡牌可按点数递减叠放，不同花色可以临时混放，但只有同花色严格递减的连续牌组能整体移动。同花色K到A完整序列会自动收起到下方收藏区。牌库无限，每隔若干有效移动自动发一排；存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '进入时可选择普通模式或无尽模式。普通模式任意方向先连成五子获胜；无尽模式双方各30颗棋子，连五后回收自己的五子并吃掉对方一子，直到一方棋子被吃完或双方无可用棋子。',
     territory: '在点阵之间画边，规则类似围方格。谁画下一个小方格的第4条边，谁就占领该格并继续行动。所有边画完后，占领格子多的一方获胜。',
@@ -355,6 +360,8 @@ export async function initWanbanXiaowu() {
     popstar: { start:'消灭星星开局，10×10彩色星星棋盘已生成。', first_clear:'当前关第一次消除星星。', small_clear:'玩家只消除了2个星星。', high_clear:'玩家一次消除4个及以上星星，获得较高分数。', level_clear:'玩家通过当前关。', record:'消灭星星刷新历史最高分。', cheat:'玩家使用打乱或单消道具。', target_met:'玩家当前累计分数首次达到本关通关分数。', gameover:'消灭星星没有可消除组合且分数未达到本关目标。', random:'观看消灭星星时的碎碎念。' },
     paopao: { start:'泡泡龙开局，顶部已有5行泡泡，玩家准备瞄准发射。', aim:'玩家按住并拖动，虚线轨迹正在根据墙壁反弹预测落点。', clear:'玩家成功消除同色泡泡。', clear_5:'玩家一次性消除超过5个泡泡。', drop:'失去顶部连接的泡泡悬空掉落。', danger:'泡泡群快要接近红色警戒线。', score_1000:'泡泡龙本局分数每增加1000分时触发。', bomb:'玩家使用炸弹泡泡，炸掉落点周围3格泡泡。', record:'泡泡龙刷新历史最高分。', gameover:'泡泡越过红色警戒线，泡泡龙本局结束。', random:'观看泡泡龙时的待机碎碎念。' },
     game1010: { start:'1010!开局，10×10棋盘为空，底部出现3个不可旋转方块。', place:'玩家成功放置一个候补方块。', clear:'玩家消除了一行或一列，30%概率触发。', clear_3:'玩家一次性消除超过3行/列。', score_1000:'1010!本局分数每增加1000分时触发。', tool:'玩家使用重新生成或小锤子道具。', low_space:'棋盘剩余空格少于5个，局面接近死局。', record:'1010!刷新历史最高分。', gameover:'没有任何剩余候补方块可以放入棋盘，且道具已经用完，1010!结束。', random:'观看1010!方块拼图时的碎碎念。' },
+    turkey: { start:'土耳其方块开局，底部四行横向方块已经出现。', first_clear:'玩家第一次消除完整横行。', clear_2:'玩家同时消除2行。', clear_3:'玩家同时消除3行及以上。', chain_3:'同一次移动连锁达到第3轮。', combo_5:'连续5次普通移动都产生消除。', score_1000:'土耳其方块分数首次达到1000。', score_5000:'土耳其方块分数首次达到5000。', record:'土耳其方块刷新历史最高分。', top_3:'当前最高方块进入顶部3行。', top_row:'顶行已经被占用。', no_clear_8:'连续8次普通移动没有消除。', thunder:'玩家使用云雷道具。', stardust:'玩家使用星尘收集器。', hammer:'玩家使用小锤粉碎机。', danger_tool:'顶部危险时使用道具并成功存活。', gameover:'方块被推到棋盘顶部之外，土耳其方块结束。', random:'观看土耳其方块时的待机碎碎念。' },
+    spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已发好，玩家开始整理黑桃与红桃。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'自动发牌倒计数剩余3步。', deal:'新的一排牌自动或主动发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
     tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'{{char}}阻挡了玩家即将连线的一步。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'{{char}}在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
     gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，{{char}}知道自己这把基本必输了。', ai_block:'{{char}}阻挡玩家形成强威胁。', ai_threat:'{{char}}形成强威胁，玩家需要防守。', user_capture:'五子棋无尽模式，玩家吃掉{{char}}一颗棋子并用自己的棋子替换该位置。', char_capture:'五子棋无尽模式，{{char}}吃掉玩家一颗棋子并用自己的棋子替换该位置。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'{{char}}五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
     territory: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', edge:'玩家画下一条边。', no_safe_edge:'场面没有普通边了，之后每条边都可能送分。', capture:'玩家围住某个方格最后一条边并占领得分。', chain:'玩家连续占领多个方格。', ta_capture:'{{char}}围住某个方格并占领得分。', user_turn:'{{char}}的回合结束，轮到玩家。', danger:'玩家选择可能送给{{char}}得分机会的边。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'所有边画完后玩家得分更高。', user_lose:'所有边画完后{{char}}得分更高。', draw:'所有边画完后双方平分。', random:'和user玩电子围地盘时的碎碎念。' },
@@ -557,7 +564,7 @@ export async function initWanbanXiaowu() {
   }
   function scores() {
     const loaded = safeObject(loadJSON(STORAGE_SCORES, {}));
-    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, uyangle: 0, screw: 0, popstar: 0, paopao: 0, game1010: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 } };
+    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, uyangle: 0, screw: 0, popstar: 0, paopao: 0, game1010: 0, turkey: 0, spider: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 } };
     ['ludo','guessnumber','wordguess','tictactoe','gomoku','territory','oldmaid','reversi','bombnumber','connect4d','draughts'].forEach(k => { if (typeof loaded[k] === 'number') loaded[k] = { user: loaded[k], ta: 0 }; });
     return Object.assign(base, loaded);
   }
@@ -868,6 +875,7 @@ export async function initWanbanXiaowu() {
     if (game === 'popstar') return !!state.score || Number(state.level || 1) > 1 || !!(state.board && state.board.some(row => row && row.some(Boolean)));
     if (game === 'paopao') return !!state.score || !!state.shots || !!(state.bubbles && state.bubbles.length); 
     if (game === 'game1010') return !!state.score || !!(state.grid && state.grid.some(row => row && row.some(Boolean))) || !!(state.pieces && state.pieces.some(p => p && !p.used));
+    if (game === 'turkey') return !!state.score || !!state.moves || !!(state.blocks && state.blocks.length);
     if (game === 'minesweeper') return !!state.started || !!(state.cells && state.cells.some(c => c && (c.open || c.mark)));
     if (game === 'snake') return !!state.score;
     if (game === 'game2048') return !!state.score || (Array.isArray(state.board) && state.board.filter(Boolean).length > 2);
@@ -1033,6 +1041,8 @@ export async function initWanbanXiaowu() {
     if (game === 'popstar') return ['时间','用时','分数','关卡','剩余','陪伴者','日志','操作'];
     if (game === 'paopao') return ['时间','用时','分数','发射','下压','陪伴者','日志','操作'];
     if (game === 'game1010') return ['时间','用时','分数','消除','放置','陪伴者','日志','操作'];
+    if (game === 'turkey') return ['时间','用时','分数','消除','移动','陪伴者','日志','操作'];
+    if (game === 'spider') return ['时间','用时','分数','完成','发牌','陪伴者','日志','操作'];
     if (game === 'wordguess') return ['时间','用时','猜中题数','陪伴者','日志','操作'];
     if (isRoundCountGame(game)) return ['时间','用时','胜负','回合数','陪伴者','日志','操作'];
     if ((GAME_META[game] || {}).mode === 'double') return ['时间','用时','胜负','陪伴者','日志','操作'];
@@ -1049,6 +1059,8 @@ export async function initWanbanXiaowu() {
     if (game === 'popstar') return base.concat([singleRecordPoints(r), String(r?.details?.level || extractNumber(r?.scoreText || '', /第\s*(\d+)\s*关/, 1)), String(r?.details?.remainingAtEnd ?? extractNumber(r?.scoreText || '', /剩余\s*(\d+)\s*个/, 0)), recordCompanionDisplay(r)]);
     if (game === 'paopao') return base.concat([singleRecordPoints(r), String(r?.details?.shots || extractNumber(r?.scoreText || '', /发射\s*(\d+)\s*次/, 0)), String(r?.details?.pushes || extractNumber(r?.scoreText || '', /下压\s*(\d+)\s*行/, 0)), recordCompanionDisplay(r)]);
     if (game === 'game1010') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || extractNumber(r?.scoreText || '', /消除\s*(\d+)\s*行列/, 0)), String(r?.details?.placements || extractNumber(r?.scoreText || '', /放置\s*(\d+)\s*块/, 0)), recordCompanionDisplay(r)]);
+    if (game === 'turkey') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || 0), String(r?.details?.moves || 0), recordCompanionDisplay(r)]);
+    if (game === 'spider') return base.concat([singleRecordPoints(r), String(r?.details?.completed ?? extractNumber(r?.scoreText || '', /完成\s*(\d+)\s*副/, 0)), String(r?.details?.deals || 0), recordCompanionDisplay(r)]);
     if (game === 'wordguess') return base.concat([wordGuessHits(r), recordCompanionDisplay(r)]);
     if (isRoundCountGame(game)) return base.concat([userOutcomeText(r.result), recordRoundCount(r), recordCompanionDisplay(r)]);
     if ((GAME_META[game] || {}).mode === 'double') return base.concat([userOutcomeText(r.result), recordCompanionDisplay(r)]);
@@ -1072,6 +1084,8 @@ export async function initWanbanXiaowu() {
     if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5，并对8个以上大块追加奖励；每关有步数限制，消除和使用道具都会消耗步数；无可消除组合或步数用完后按剩余方块和未用步数结算，累计分数达到关卡目标进入下一关。';
     if (game === 'paopao') return '字段说明：泡泡龙是交错网格射击生存游戏；发射表示本局射出的泡泡数量；下压表示顶部新增行并整体下移的次数，下压间隔会从10发逐步缩短到5发。';
     if (game === 'game1010') return '字段说明：1010!是10×10方块拼图；放置表示成功落下的候补方块数量，消除表示累计清掉的行/列数量。';
+    if (game === 'turkey') return '字段说明：土耳其方块是8×10横向滑块无尽消除游戏；消除表示累计清掉的完整横行数量；移动表示普通有效拖动次数。';
+    if (game === 'spider') return '字段说明：无尽蜘蛛纸牌是十列整理游戏；完成表示收起的同花色K到A完整牌组数量；发牌表示主动或自动向十列新增一排牌的次数。';
     if (game === 'wordguess') return '字段说明：猜中题数只表示user猜中的题数。';
     if ((GAME_META[game] || {}).mode === 'double') return '字段说明：胜负是user的胜负，胜表示user赢，负表示' + role + '赢。';
     return '字段说明：结果是user本局获得的分数。';
@@ -1119,6 +1133,8 @@ export async function initWanbanXiaowu() {
     if (game === 'popstar') return '最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；大块额外奖励：' + (d.bigBonusTotal || 0) + '分；余步奖励：' + (d.unusedMoveBonusTotal || 0) + '分；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '。';
     if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次。';
     if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
+    if (game === 'turkey') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；累计消除：' + (d.clearedLines || 0) + '行；有效移动：' + (d.moves || 0) + '次；最大同时消除：' + (d.maxClear || 0) + '行；最大连锁：' + (d.maxChain || 0) + '轮；最大连续回合连击：' + (d.maxCombo || 0) + '；云雷/星尘/粉碎机：' + (d.thunderUsed || 0) + '/' + (d.stardustUsed || 0) + '/' + (d.hammerUsed || 0) + '次；无道具达到3000：' + (d.noTool3000 ? '是' : '否') + '。';
+    if (game === 'spider') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；完成牌组：' + (d.completed || 0) + '副；黑桃：' + (d.spades || 0) + '副；红桃：' + (d.hearts || 0) + '副；最大连锁：' + (d.maxChain || 0) + '副；发牌次数：' + (d.deals || 0) + '次；有效移动：' + (d.moves || 0) + '次；撤销：' + (d.undo || 0) + '次；消除：' + (d.eliminate || 0) + '次；清空列次数：' + (d.emptyCols || 0) + '次；同屏最多空列：' + (d.maxEmptyCols || 0) + '列；命悬一线次数：' + (d.clutch || 0) + '次；糟糕发牌连续/累计记录：' + (d.badDeals || 0) + '/' + (d.badDealsTotal || 0) + '次；游戏时间灯：' + (rec.durationMs >= 20*60000 ? '长时间游玩' : rec.durationMs >= 10*60000 ? '中等时长' : '短时游玩') + '。';
     if (game === 'ludo') return cheatText + 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user飞行次数：' + (d.userFlights || 0) + '次；' + (rec.companion || '{{char}}') + '飞行次数：' + (d.charFlights || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
     if (game === 'guessnumber') return '每次猜测：\n' + ((d.guesses || []).map((x,i) => (i+1) + '. 猜“' + x.guess + '”：数字对' + x.nums + '个，位置对' + x.pos + '个').join('\n') || '无');
     if (game === 'wordguess') return '每题记录：\n' + ((d.rounds || []).map((r,i) => (i+1) + '. 题目：' + r.word + '；5条提示：' + (r.clues || []).join(' / ') + '；user猜过：' + ((r.guesses || []).join('、') || '无') + '；第几条提示猜中：' + (r.winClueIndex || '未猜中')).join('\n') || '无');
@@ -1305,6 +1321,26 @@ export async function initWanbanXiaowu() {
         'game1010_clutch：命悬一线小剧场。1010!超过3次剩5个以下空格，重点写棋盘几乎堵死但又被user续住。',
         'normal：普通小剧场。没有命中特殊条件时，根据分数、消除行列、放置数量和道具使用自然复盘。'
       ].join('\n');
+      if (game === 'turkey') return [
+        'super_good：超厉害小剧场。同一轮检测中同时消除至少4行。',
+        'turkey_hot：手感正热。连续5次普通移动都产生消除。',
+        'turkey_endure：毅力小剧场。单局完成100次有效移动。',
+        'turkey_minimal：极简主义。不使用任何道具达到3000分。',
+        'turkey_clutch：绝地反击。顶部危险时靠消除或道具成功续住。',
+        'bad_luck：超级倒霉。连续5个新行中至少4行没有长度1且占用不少。',
+        'turkey_tools：工具齐全。同一局使用过三种不同道具。',
+        'record：破纪录小剧场。刷新当前游戏历史最高分。'
+      ].join('\n');
+      if (game === 'spider') return [
+        'spider_chain_master：连锁大师。同一次结算收起至少5副完整牌。',
+        'spider_four_empty：四面通风。同一时刻至少有4个空列。',
+        'spider_clear_table：牌桌清空。清空全部十列后继续无尽发牌。',
+        'super_good：超厉害小剧场。单局完成50副牌。',
+        'spider_clutch：命悬一线。任意一列达到30张后仍继续整理。',
+        'bad_luck：超级倒霉。连续三次发牌都属于无可移动发牌。',
+        'record：破纪录小剧场。刷新当前游戏历史最高分。',
+        'normal：普通小剧场。根据黑桃/红桃收集数量、发牌次数、连续收集数量和游戏时间自然复盘。'
+      ].join('\n');
       return [
         'record：刷新当前游戏历史记录。',
         'super_good：超级厉害小剧场。2048合成超过2048的特别大数字；俄罗斯方块消除10行以上；合成大西瓜合成2个最终西瓜；贪吃蛇达到200分以上。',
@@ -1421,6 +1457,19 @@ export async function initWanbanXiaowu() {
     if (game === 'game1010' && (meta.maxClear || meta.details?.maxClear || 0) > 4) candidates.push('game1010_strategy');
     if (game === 'game1010' && (meta.toolExhaustLose || meta.details?.toolExhaustLose)) candidates.push('game1010_bad_luck');
     if (game === 'game1010' && (meta.lowSpaceCount || meta.details?.lowSpaceCount || 0) > 3) candidates.push('game1010_clutch');
+    if (game === 'turkey' && (meta.maxClear || meta.details?.maxClear || 0) >= 4) candidates.push('super_good');
+    if (game === 'turkey' && (meta.maxCombo || meta.details?.maxCombo || 0) >= 5) candidates.push('turkey_hot');
+    if (game === 'turkey' && (meta.moves || meta.details?.moves || 0) >= 100) candidates.push('turkey_endure');
+    if (game === 'turkey' && (meta.noTool3000 || meta.details?.noTool3000)) candidates.push('turkey_minimal');
+    if (game === 'turkey' && (meta.clutch || meta.details?.clutch)) candidates.push('turkey_clutch');
+    if (game === 'turkey' && (meta.badLuck || meta.details?.badLuck)) candidates.push('bad_luck');
+    if (game === 'turkey' && (meta.toolsAll || meta.details?.toolsAll)) candidates.push('turkey_tools');
+    if (game === 'spider' && (meta.maxChain || meta.details?.maxChain || 0) >= 5) candidates.push('spider_chain_master');
+    if (game === 'spider' && (meta.maxEmptyCols || meta.details?.maxEmptyCols || 0) >= 4) candidates.push('spider_four_empty');
+    if (game === 'spider' && (meta.clearTable || meta.details?.clearTable)) candidates.push('spider_clear_table');
+    if (game === 'spider' && (meta.completed || meta.details?.completed || 0) >= 50) candidates.push('super_good');
+    if (game === 'spider' && (meta.clutch || meta.details?.clutch || 0) > 0) candidates.push('spider_clutch');
+    if (game === 'spider' && (meta.badDeals || meta.details?.badDeals || 0) >= 3) candidates.push('bad_luck');
     if (durationMs <= 15000 && ((game === 'tetris' && score < 200) || (game === 'snake' && score < 30) || ((game === 'jump' || game === 'plank') && score < 3) || (game === 'watermelon' && score < 120) || (game === 'game2048' && score < 128))) candidates.push('super_bad');
     if (durationMs >= 1200000) candidates.push('long_run');
     if (currentRoundRecord) candidates.push('record');
@@ -1515,6 +1564,15 @@ export async function initWanbanXiaowu() {
       ,game1010_strategy: '运筹帷幄小剧场'
       ,game1010_bad_luck: '倒霉小剧场'
       ,game1010_clutch: '命悬一线小剧场'
+      ,turkey_hot: '手感正热'
+      ,turkey_endure: '毅力小剧场'
+      ,turkey_minimal: '极简主义'
+      ,turkey_clutch: '绝地反击'
+      ,turkey_tools: '工具齐全'
+      ,spider_chain_master: '连锁大师小剧场'
+      ,spider_four_empty: '四面通风小剧场'
+      ,spider_clear_table: '牌桌清空小剧场'
+      ,spider_clutch: '命悬一线小剧场'
       ,flight_show: '飞行小剧场'
     }[special] || '特殊角色互动小剧场').replace(/{{char}}/g, displayCharName());
   }
@@ -2442,10 +2500,17 @@ export async function initWanbanXiaowu() {
       .wb-layout.companion-pc-left .wb-side-companion { grid-column:1; grid-row:1; }
       .wb-layout.companion-pc-right .wb-game-main { grid-column:1; grid-row:1; }
       .wb-layout.companion-pc-right .wb-side-companion { grid-column:2; grid-row:1; }
+      .wb-layout.game-layout-spider .wb-game-main,
+      .wb-layout.game-layout-spider .wb-board-wrap,
+      .wb-layout.game-layout-spider .wb-spider { position:relative; z-index:3; }
+      .wb-layout.game-layout-spider .wb-side-companion { position:relative; z-index:1; }
       .wb-panel { background:var(--wb-panel); border:1px solid var(--wb-border); border-radius:0; padding:12px; min-height:0; }
       .wb-body.wb-game-mode > .wb-layout > .wb-panel:first-child { display:flex; flex-direction:column; overflow:hidden; }
       .wb-body.wb-game-mode > .wb-layout > .wb-panel:last-child { overflow:hidden; display:flex; flex-direction:column; }
       .wb-toolbar { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+      .wb-layout.no-companion .wb-toolbar { flex-wrap:nowrap; }
+      .wb-layout.no-companion .wb-stat { flex:1 1 auto; min-width:0; flex-wrap:nowrap; overflow:hidden; }
+      .wb-layout.no-companion .wb-toolbar > .wb-actions { flex:0 0 auto; margin-left:auto; flex-wrap:nowrap; justify-content:flex-end; }
       .wb-stat { display:flex; gap:6px; flex-wrap:wrap; }
       .wb-pill { background:var(--wb-soft); border:1px solid var(--wb-border); border-radius:0; padding:5px 9px; font-size:12px; font-weight:700; }
       #wb-score.target-met { color:#fff; border-color:#16a34a; background:linear-gradient(135deg,#16a34a,#22c55e); box-shadow:0 0 16px rgba(34,197,94,.35); }
@@ -2569,6 +2634,104 @@ export async function initWanbanXiaowu() {
       .wb-oldmaid-card.joker.big { box-shadow:none; }
       .wb-oldmaid-card.joker img { width:100%; height:100%; display:block; object-fit:fill; object-position:center; pointer-events:none; }
       .wb-oldmaid-log { min-height:34px; max-height:64px; overflow:auto; padding:7px 9px; border:1px solid var(--wb-border); color:var(--wb-muted); background:var(--wb-panel); font-size:12px; line-height:1.45; }
+      .wb-turkey { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:4px; overflow:hidden; --tk-cell:32px; }
+      .wb-turkey-top { display:grid; gap:3px; border-bottom:1px solid color-mix(in srgb,var(--wb-border) 72%,transparent 28%); padding-bottom:2px; }
+      .wb-turkey-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; }
+      .wb-turkey-stat { text-align:center; border:0; border-right:1px solid color-mix(in srgb,var(--wb-border) 70%,transparent 30%); background:transparent; padding:2px 3px; border-radius:0; line-height:1.02; }
+      .wb-turkey-stat:last-child { border-right:0; }
+      .wb-turkey-stat small { display:block; font-size:9px; color:var(--wb-muted); font-weight:800; }
+      .wb-turkey-stat b { font-size:13px; color:var(--wb-text); }
+      .wb-turkey-danger { display:none; }
+      .wb-turkey-danger-bar { flex:1; height:12px; display:grid; grid-template-columns:repeat(10,1fr); gap:2px; }
+      .wb-turkey-danger-bar span { border:1px solid rgba(80,103,125,.18); background:rgba(255,255,255,.45); border-radius:2px; }
+      .wb-turkey-danger-bar.safe span.on { background:#86efac; } .wb-turkey-danger-bar.warn span.on { background:#fde68a; } .wb-turkey-danger-bar.danger span.on { background:#fdba74; } .wb-turkey-danger-bar.critical span.on { background:#fb7185; animation:wbTurkeyPulse .7s ease-in-out infinite alternate; }
+      .wb-turkey-hint { min-height:14px; text-align:center; font-size:11px; font-weight:900; color:var(--wb-accent); }
+      .wb-turkey-board { position:relative; width:min(calc(100cqw - 16px), calc((100cqh - 94px) * .8), 330px, 100%); max-height:calc(100cqh - 94px); aspect-ratio:8/10; justify-self:center; align-self:center; border:1px solid color-mix(in srgb,var(--wb-border) 76%,#5fd1c8 24%); background:linear-gradient(180deg,rgba(255,255,255,.62),rgba(238,246,255,.48)); overflow:hidden; touch-action:none; box-shadow:inset 0 0 0 1px rgba(255,255,255,.5); }
+      .wb-turkey-board::before { content:''; position:absolute; inset:0; background-image:linear-gradient(to right,rgba(80,103,125,.18) 1px,transparent 1px),linear-gradient(to bottom,rgba(80,103,125,.18) 1px,transparent 1px); background-size:12.5% 10%; pointer-events:none; z-index:1; }
+      .wb-turkey-block { position:absolute; height:calc(var(--tk-cell) - 4px); border-radius:calc(var(--tk-cell) * .18); background:var(--c); border:1px solid rgba(255,255,255,.76); box-shadow:inset 0 3px 0 rgba(255,255,255,.22), inset 0 -5px 9px rgba(0,0,0,.10), 0 3px 8px rgba(15,23,42,.16); z-index:2; display:grid; place-items:center; transition:left .13s ease, top .18s ease, transform .13s ease, opacity .18s ease; }
+      .wb-turkey-block::before,.wb-turkey-block::after { content:none; }
+      .wb-turkey-face { position:relative; z-index:1; max-width:calc(100% - 4px); color:rgba(31,41,55,.66); font-weight:1000; font-size:clamp(8px, calc(var(--tk-cell) * .28), 13px); line-height:1; letter-spacing:-.4px; white-space:nowrap; text-shadow:0 1px 0 rgba(255,255,255,.30); transform:translateY(-1px); overflow:hidden; }
+      .wb-turkey-block.sel { transform:translateY(-2px); outline:2px solid rgba(255,255,255,.9); z-index:4; }
+      .wb-turkey-block.dim { filter:grayscale(.8) brightness(.7); opacity:.55; }
+      .wb-turkey-block.clear { transform:scale(.76); opacity:0; }
+      .wb-turkey-block.shatter { animation:wbTurkeyShatter .34s ease-in forwards; filter:saturate(1.2) brightness(1.08); }
+      .wb-turkey-preview { position:absolute; height:calc(var(--tk-cell) - 4px); border-radius:calc(var(--tk-cell) * .18); border:2px solid #22c55e; background:rgba(34,197,94,.14); z-index:3; pointer-events:none; }
+      .wb-turkey-preview.bad { border-color:#ef4444; background:rgba(239,68,68,.12); }
+      .wb-turkey-rowflash { position:absolute; left:0; width:100%; height:var(--tk-cell); background:rgba(255,255,255,.48); z-index:5; pointer-events:none; animation:wbTurkeyFlash .18s ease; }
+      .wb-turkey-particle { position:absolute; width:6px; height:6px; border-radius:50%; background:var(--c); z-index:6; pointer-events:none; animation:wbTurkeyParticle .42s ease-out forwards; }
+      .wb-turkey-combo { position:absolute; left:50%; top:45%; transform:translate(-50%,-50%); z-index:8; font-weight:1000; font-size:28px; color:#fff; text-shadow:0 2px 8px rgba(15,23,42,.55); animation:wbTurkeyCombo .8s ease forwards; pointer-events:none; }
+      .wb-turkey-tools { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; height:30px; align-items:center; }
+      .wb-turkey-tool { position:relative; min-height:28px; height:28px; border:1px solid var(--wb-border); border-radius:7px; padding:2px 5px; font-size:11px; background:linear-gradient(180deg,#fff,#eef6f3); color:var(--wb-text); font-weight:900; display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; }
+      .wb-turkey-tool.active { outline:2px solid var(--wb-gold); }
+      .wb-turkey-tool:disabled { opacity:.45; filter:grayscale(.8); }
+      .wb-turkey-tool .badge { position:static; display:inline-grid; place-items:center; min-width:15px; height:15px; border-radius:999px; background:color-mix(in srgb,var(--wb-accent) 72%,var(--wb-panel) 28%); color:var(--wb-on-accent,#fff); border:1px solid color-mix(in srgb,var(--wb-border) 55%,var(--wb-accent) 45%); font-size:9px; line-height:1; }
+      @keyframes wbTurkeyPulse { to { filter:brightness(1.22); box-shadow:0 0 8px rgba(239,68,68,.5); } }
+      @keyframes wbTurkeyFlash { 50% { opacity:.35; } }
+      @keyframes wbTurkeyParticle { to { transform:translate(var(--dx),var(--dy)) scale(.2); opacity:0; } }
+      @keyframes wbTurkeyShatter { 0%{transform:scale(1);opacity:1} 45%{transform:scale(1.06) rotate(.6deg);opacity:.9} 100%{transform:scale(.35) rotate(-4deg);opacity:0} }
+      @keyframes wbTurkeyCombo { 0%{opacity:0;transform:translate(-50%,-35%) scale(.8)} 25%,75%{opacity:1;transform:translate(-50%,-50%) scale(1)} 100%{opacity:0;transform:translate(-50%,-68%) scale(.9)} }
+      .wb-spider { --sp-card-w:clamp(23px,8vw,44px); --sp-card-h:calc(var(--sp-card-w) * 1.38); --sp-col-gap:2px; width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:4px; overflow:hidden; position:relative; }
+      .wb-spider-top { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; align-items:center; padding:0 2px; border-bottom:1px solid color-mix(in srgb,var(--wb-border) 72%,transparent 28%); }
+      .wb-spider-stat { min-width:0; padding:2px 3px; text-align:center; line-height:1.02; background:transparent; border:0; border-right:1px solid color-mix(in srgb,var(--wb-border) 70%,transparent 30%); }
+      .wb-spider-stat:last-child { border-right:0; }
+      .wb-spider-stat small { display:block; font-size:9px; color:var(--wb-muted); font-weight:800; }
+      .wb-spider-stat b { display:block; margin-top:1px; font-size:13px; color:var(--wb-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .wb-spider-deckbar { display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:42px; padding:4px 6px; border-bottom:1px solid color-mix(in srgb,var(--wb-border) 70%,transparent 30%); }
+      .wb-spider-pilebox { height:34px; min-width:48px; display:flex; align-items:center; justify-content:center; border:0; background:transparent; box-shadow:none; padding:2px 3px; }
+      .wb-spider-deckside { display:flex; align-items:center; gap:5px; flex:0 0 auto; }
+      .wb-spider-deckpile { position:relative; width:42px; height:28px; flex:0 0 42px; }
+      .wb-spider-deckpile span { position:absolute; width:20px; height:28px; border:1px solid #26344f; background:url('${SPIDER_BACK_URL}') center / 100% 100% no-repeat,#243858; box-shadow:0 1px 4px rgba(15,23,42,.22); }
+      .wb-spider-deckpile span:nth-child(1){ left:0; top:2px; } .wb-spider-deckpile span:nth-child(2){ left:7px; top:1px; } .wb-spider-deckpile span:nth-child(3){ left:14px; top:0; }
+      .wb-spider-deckpile.dealt span:nth-child(3) { opacity:0; transform:translateY(-4px); transition:.18s ease; }
+      .wb-spider-collectpile { width:clamp(36px,22vw,132px); height:32px; flex:0 1 132px; color:#243449; display:flex; align-items:center; overflow:hidden; padding-left:2px; }
+      .wb-spider-collectpile.empty { opacity:.38; }
+      .wb-spider-collect-card { position:relative; flex:0 0 22px; width:22px; height:30px; margin-left:-7px; border:1px solid #aeb9c8; background:#fffdf8; color:#172033; font-weight:900; box-shadow:0 1px 4px rgba(15,23,42,.14); overflow:hidden; }
+      .wb-spider-collect-card:first-child { margin-left:0; }
+      .wb-spider-collect-card.red { color:#d94b55; border-color:#e89aa3; }
+      .wb-spider-collect-card .corner,.wb-spider-collect-fly .corner { position:absolute; left:2px; top:2px; font-size:8px; line-height:.95; letter-spacing:-.5px; }
+      .wb-spider-collect-card .pip,.wb-spider-collect-fly .pip { position:absolute; inset:0; display:grid; place-items:center; font-size:14px; opacity:.86; }
+      .wb-spider-collect-card .rank-bottom,.wb-spider-collect-fly .rank-bottom { position:absolute; right:2px; bottom:2px; font-size:7px; transform:rotate(180deg); line-height:.95; }
+      .wb-spider-collect-fly { position:fixed; width:26px; height:36px; border:1px solid #aeb9c8; background:#fffdf8; color:#172033; z-index:1000004; pointer-events:none; font-weight:900; box-shadow:0 4px 14px rgba(15,23,42,.22); animation:wbSpiderCollectFly .32s ease-in forwards; overflow:hidden; }
+      .wb-spider-collect-fly.red { color:#d94b55; border-color:#e89aa3; }
+      .wb-spider-countdown { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:4px 10px; border:1px solid rgba(15,118,110,.28); background:linear-gradient(180deg,rgba(240,253,250,.92),rgba(204,251,241,.46)); box-shadow:inset 0 1px 0 rgba(255,255,255,.62),0 2px 8px rgba(15,118,110,.08); font-weight:900; color:#0f766e; line-height:1.1; }
+      .wb-spider-countdown.warn { color:#d97706; }
+      .wb-spider-countdown.danger { color:#ea580c; animation:wbSpiderPulse .7s ease-in-out infinite alternate; }
+      .wb-spider-deck { min-width:54px; height:34px; border:1px solid #60708c; border-radius:5px; background:#fff7df; color:#273449; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:900; box-shadow:0 2px 7px rgba(37,59,99,.13); cursor:pointer; }
+      .wb-spider-deck::before { content:'☞'; font-size:16px; line-height:1; }
+      .wb-spider-deck.blocked { opacity:.55; filter:saturate(.72); }
+      .wb-spider-board { min-height:0; display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:var(--sp-col-gap); align-items:start; overflow:hidden; padding:3px 2px 5px; border:1px solid color-mix(in srgb,var(--wb-border) 65%,#a8c8c4 35%); border-radius:10px; background:linear-gradient(180deg,rgba(236,250,246,.70),rgba(255,248,236,.72)); touch-action:pan-y; }
+      .wb-spider-col { position:relative; min-height:calc(var(--sp-card-h) + 12px); border:1px solid rgba(81,119,118,.18); border-radius:4px; padding:1px; transition:border-color .15s,box-shadow .15s,background .15s; }
+      .wb-spider-col.legal { border-color:#22c55e; box-shadow:0 0 0 2px rgba(34,197,94,.22); background:rgba(220,252,231,.28); }
+      .wb-spider-col.illegal { border-color:#ef4444; box-shadow:0 0 0 2px rgba(239,68,68,.2); }
+      .wb-spider-col.empty-warn { border-color:#f59e0b; box-shadow:0 0 0 2px rgba(245,158,11,.2); }
+      .wb-spider-col.overflow { border-color:#ef4444; box-shadow:0 0 0 2px rgba(239,68,68,.28); animation:wbSpiderShake .25s linear; }
+      .wb-spider-card { position:absolute; left:50%; width:var(--sp-card-w); height:var(--sp-card-h); margin-left:calc(var(--sp-card-w) / -2); border:1px solid #aeb9c8; border-radius:1px; background:#fffdf8; color:#172033; font-weight:900; box-shadow:0 1px 4px rgba(15,23,42,.15); user-select:none; touch-action:none; box-sizing:border-box; transition:transform .14s,box-shadow .14s,border-color .14s,opacity .14s; z-index:1; overflow:hidden; }
+      .wb-spider-card.red { color:#d94b55; border-color:#e89aa3; }
+      .wb-spider-card.back { background:url('${SPIDER_BACK_URL}') center / 100% 100% no-repeat,#243858; color:transparent; border-color:#20324f; box-shadow:0 1px 4px rgba(15,23,42,.18); }
+      .wb-spider-card .corner { position:absolute; left:2px; top:2px; font-size:clamp(8px,1.7cqw,12px); line-height:.95; letter-spacing:-.5px; }
+      .wb-spider-card .pip { position:absolute; inset:0; display:grid; place-items:center; font-size:clamp(14px,2.8cqw,22px); opacity:.86; }
+      .wb-spider-card .rank-bottom { position:absolute; right:2px; bottom:2px; font-size:clamp(7px,1.55cqw,10px); transform:rotate(180deg); line-height:.95; }
+      .wb-spider-card.selected { transform:translateY(-8px); border-color:#f0b429; box-shadow:0 0 0 2px rgba(251,191,36,.5),0 6px 14px rgba(15,23,42,.22); z-index:30; }
+      .wb-spider-card.eliminate-choice { box-shadow:0 0 0 2px rgba(239,68,68,.35),0 5px 14px rgba(239,68,68,.18); }
+      .wb-spider-card.hint-card { border-color:#3b82f6; box-shadow:0 0 0 2px rgba(59,130,246,.42),0 5px 14px rgba(59,130,246,.18); z-index:25; }
+      .wb-spider-card.moving { opacity:.35; }
+      .wb-spider-card.bad { animation:wbSpiderShake .22s linear; }
+      .wb-spider-stack.ghost { position:fixed; pointer-events:none; z-index:99999; width:var(--sp-card-w); height:var(--sp-card-h); }
+      .wb-spider-drag-card { position:absolute; left:0; width:var(--sp-card-w); height:var(--sp-card-h); border:1px solid #aeb9c8; border-radius:1px; background:#fffdf8; box-shadow:0 8px 20px rgba(15,23,42,.24); color:#172033; font-weight:900; padding:3px; box-sizing:border-box; display:grid; grid-template-rows:auto 1fr auto; overflow:hidden; }
+      .wb-spider-drag-card.red { color:#d94b55; border-color:#e89aa3; }
+      .wb-spider-done { display:none; }
+      .wb-spider-tools { height:34px; display:flex; align-items:center; justify-content:center; gap:14px; padding:1px 0 0; }
+      .wb-spider-tool { width:66px; min-width:66px; height:30px; padding:0 6px; border:1px solid var(--wb-border); border-radius:6px; background:linear-gradient(180deg,#fff,#eef6f3); color:var(--wb-text); font-weight:900; box-shadow:0 3px 10px rgba(15,23,42,.10); position:relative; display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; }
+      .wb-spider-tool.active { border-color:#ef4444; box-shadow:0 0 0 2px rgba(239,68,68,.22); }
+      .wb-spider-tool.hint-on { border-color:#3b82f6; box-shadow:0 0 0 2px rgba(59,130,246,.24); }
+      .wb-spider-tool .left { position:static; display:inline-grid; place-items:center; min-width:16px; height:16px; border-radius:999px; background:color-mix(in srgb,var(--wb-accent) 72%,var(--wb-panel) 28%); color:var(--wb-on-accent,#fff); border:1px solid color-mix(in srgb,var(--wb-border) 55%,var(--wb-accent) 45%); font-size:10px; line-height:1; }
+      .wb-spider-fly { position:fixed; width:26px; height:36px; border:1px solid #20324f; border-radius:1px; background:url('${SPIDER_BACK_URL}') center / 100% 100% no-repeat,#243858; z-index:1000004; pointer-events:none; animation:wbSpiderFly .34s ease-in-out forwards; }
+      .wb-spider-toast { position:absolute; left:50%; top:44%; transform:translate(-50%,-50%); padding:8px 13px; border-radius:999px; background:rgba(17,24,39,.84); color:#fff; font-weight:900; pointer-events:none; z-index:50; animation:wbSpiderFloat 1.4s ease forwards; }
+      @keyframes wbSpiderPulse { from { box-shadow:0 0 0 rgba(234,88,12,0); } to { box-shadow:0 0 16px rgba(234,88,12,.45); } }
+      @keyframes wbSpiderShake { 0%,100% { transform:translateX(0); } 25% { transform:translateX(-3px); } 75% { transform:translateX(3px); } }
+      @keyframes wbSpiderFly { to { transform:translate(var(--sp-fly-x),var(--sp-fly-y)) scale(.86); opacity:.16; } }
+      @keyframes wbSpiderCollectFly { to { transform:translate(var(--sp-fly-x),var(--sp-fly-y)) scale(.72); opacity:.10; } }
+      @keyframes wbSpiderFloat { 0% { opacity:0; transform:translate(-50%,-40%); } 18%,78% { opacity:1; transform:translate(-50%,-50%); } 100% { opacity:0; transform:translate(-50%,-65%); } }
       .wb-text-segments { white-space:normal; line-height:1.75; }
       .wb-text-seg { margin:0 0 12px; }
       .wb-text-seg:last-child { margin-bottom:0; }
@@ -4296,6 +4459,12 @@ export async function initWanbanXiaowu() {
         .wb-body.wb-game-mode > .wb-layout.no-companion > .wb-panel:first-child { max-height:none; padding:4px; }
         .wb-board-wrap { flex:1 1 0; height:auto; min-height:0; padding:4px; overflow:hidden; }
         .wb-toolbar { flex-shrink:0; display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-rows:auto auto; gap:3px 5px; margin-bottom:3px; align-items:center; padding:3px; border:1px solid color-mix(in srgb, var(--wb-border) 70%, transparent 30%); border-radius:2px; background:color-mix(in srgb, var(--wb-soft) 72%, var(--wb-panel) 28%); }
+        .wb-layout.no-companion .wb-toolbar { grid-template-columns:auto minmax(0,1fr) auto; grid-template-rows:auto; gap:4px; width:100%; box-sizing:border-box; }
+        .wb-layout.no-companion .wb-stat { grid-column:2; grid-row:1; min-width:0; flex:1 1 auto; flex-wrap:nowrap; overflow:hidden; }
+        .wb-layout.no-companion .wb-toolbar > .wb-actions { grid-column:3; grid-row:1; width:auto; min-width:0; flex:0 0 auto; display:flex; flex-wrap:nowrap; gap:4px; overflow:visible; padding-bottom:0; justify-content:flex-end; margin-left:auto; }
+        .wb-layout.no-companion .wb-toolbar > .wb-actions .wb-line-tools,
+        .wb-layout.no-companion .wb-toolbar > .wb-actions #wb-generate-lines { display:none; }
+        .wb-layout.no-companion #wb-back { grid-column:1; grid-row:1; }
         .wb-stat { grid-column:2; grid-row:1; min-width:0; gap:6px; flex-wrap:nowrap; overflow:hidden; align-items:center; }
         .wb-stat .wb-pill { border:0; background:transparent; box-shadow:none; padding:0; font-size:12px; line-height:1.2; }
         .wb-stat .wb-pill:first-child { font-size:13px; font-weight:900; color:var(--wb-text); max-width:56%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:3px; }
@@ -9851,6 +10020,8 @@ export async function initWanbanXiaowu() {
       if (game === 'popstar') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','popstar_clutch'], ['score','popstar_godmove'], ['score','long_run']];
       if (game === 'paopao') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','paopao_clutch'], ['score','paopao_drop'], ['score','paopao_bomb_fail'], ['score','long_run']];
       if (game === 'game1010') return [['score','normal'], ['score','record'], ['score','game1010_strategy'], ['score','game1010_bad_luck'], ['score','game1010_clutch'], ['score','long_run']];
+      if (game === 'turkey') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','turkey_hot'], ['score','turkey_endure'], ['score','turkey_minimal'], ['score','turkey_clutch'], ['score','bad_luck'], ['score','turkey_tools'], ['score','long_run']];
+      if (game === 'spider') return [['score','normal'], ['score','record'], ['score','spider_chain_master'], ['score','spider_four_empty'], ['score','spider_clear_table'], ['score','spider_clutch'], ['score','super_good'], ['score','bad_luck'], ['score','long_run']];
       const jobs = [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run']];
       return jobs;
     }
@@ -10960,7 +11131,7 @@ export async function initWanbanXiaowu() {
     const pauseBtn = '<button class="wb-btn" id="wb-pause">暂停</button>';
     const companionPanel = cfg.companion ? '<div class="wb-panel wb-side-companion">' + companionHTML() + '</div>' : '';
     const dockSide = companionDockSide(cfg);
-    const layoutClass = cfg.companion ? ('companion-pc-' + (dockSide === 'start' ? 'left' : 'right') + ' companion-mobile-' + (dockSide === 'start' ? 'top' : 'bottom')) : 'no-companion';
+    const layoutClass = (cfg.companion ? ('companion-pc-' + (dockSide === 'start' ? 'left' : 'right') + ' companion-mobile-' + (dockSide === 'start' ? 'top' : 'bottom')) : 'no-companion') + ' game-layout-' + id;
     body.innerHTML = '<div class="wb-layout ' + layoutClass + '"><div class="wb-panel wb-game-main"><div class="wb-toolbar"><button class="wb-btn" id="wb-back">返回</button><div class="wb-stat"><span class="wb-pill wb-title-row"><span class="wb-game-title-text">' + esc(g.name) + '</span><button class="wb-rule-btn" id="wb-game-rules" title="游戏介绍" aria-label="游戏介绍" type="button">💡</button></span><span class="wb-pill" id="wb-score">本局：0</span><span class="wb-pill" id="wb-high">' + esc(scoreDisplay(id)) + '</span></div><div class="wb-actions">' + wordBankTools + lineTools + '<button class="wb-btn" id="wb-game-records">记录</button>' + pauseBtn + '<button class="wb-btn" id="wb-restart">重开</button></div></div><div class="wb-board-wrap wb-gamebox-' + esc(id) + '" id="wb-gamebox"><div class="wb-start-cover"><div>准备开始</div><button class="wb-btn primary" id="wb-start-cover-btn">开始游戏</button></div></div></div>' + companionPanel + '</div>';
     primeMessageNotifyBaseline();
     gameStarted = false; gamePaused = true;
@@ -11035,6 +11206,8 @@ export async function initWanbanXiaowu() {
     if (id === 'popstar') startPopStar(resumeState);
     if (id === 'paopao') startPaopao(resumeState);
     if (id === 'game1010') startGame1010(resumeState);
+    if (id === 'turkey') startTurkey(resumeState);
+    if (id === 'spider') startSpider(resumeState);
     if (id === 'game2048') start2048(resumeState);
     if (id === 'watermelon') startWatermelon(resumeState);
     if (id === 'memory') startMemory(resumeState);
@@ -11781,6 +11954,428 @@ function showGameRecords(game, page) {
       if (value > old) { sc[game] = value; saveJSON(STORAGE_SCORES, sc); if (!currentRoundRecord && old > 0 && DEFAULT_LINES[game] && DEFAULT_LINES[game].record) { currentRoundRecord = true; speak(game, 'record'); } }
     }
     const s = qs('#wb-score'); if (s) s.textContent = '本局：' + value;
+  }
+
+  function startTurkey(state) {
+    const box = qs('#wb-gamebox');
+    const W=8,H=10,COLORS=['#FF7B7B','#FFD66B','#5FD1C8','#6CA8FF','#B28DFF'];
+    const delay=ms=>new Promise(r=>setTimeout(r,ms));
+    const rid=()=> 'tk_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7);
+    const detailBase=()=>({ score:0, moves:0, clearedLines:0, maxClear:0, maxChain:0, maxCombo:0, noClearStreak:0, thunderUsed:0, stardustUsed:0, hammerUsed:0, toolsUsed:{}, noTool3000:false, clutch:false, badLuck:false, toolsAll:false, badRows:[] });
+    let st;
+    function rowBlocks(row, opts={}){
+      const top=highestRowFromBlocks(st?.blocks||[]), maxOcc=top<=2?5:7, needOne=opts.needOne || top<=1 || (st?.noOneRows||0)>=4;
+      for(let tries=0;tries<80;tries++){
+        const occ=Math.max(4, Math.min(maxOcc, 4+Math.floor(Math.random()*4))); let lengths=[]; let left=occ;
+        if(needOne){ lengths.push(1); left--; }
+        while(left>0 && lengths.length<4){ const maxLen=(st&&st.fourRows>=2)?Math.min(3,left):Math.min(4,left); const l=Math.min(left,1+Math.floor(Math.random()*maxLen)); lengths.push(l); left-=l; }
+        if(left>0) continue; if(lengths.length<2 || lengths.length>4) continue;
+        lengths=shuffleArray(lengths); const cells=Array(W).fill(0), blocks=[];
+        for(const len of lengths){ let starts=[]; for(let c=0;c<=W-len;c++){ let ok=true; for(let k=0;k<len;k++) if(cells[c+k]) ok=false; if(ok) starts.push(c); } if(!starts.length) break; const col=starts[Math.floor(Math.random()*starts.length)]; for(let k=0;k<len;k++) cells[col+k]=1; blocks.push({id:rid(),row,col,len,color:COLORS[Math.floor(Math.random()*COLORS.length)],split:false}); }
+        const used=cells.filter(Boolean).length; if(blocks.length===lengths.length && used>=1 && used<=7 && used<8 && (!needOne || blocks.some(b=>b.len===1))) return blocks;
+      }
+      return [{id:rid(),row,col:Math.floor(Math.random()*W),len:1,color:COLORS[Math.floor(Math.random()*COLORS.length)],split:false},{id:rid(),row,col:Math.floor(Math.random()*6),len:2,color:COLORS[Math.floor(Math.random()*COLORS.length)],split:false}];
+    }
+    function initial(){ let blocks=[], ones=0; for(let r=6;r<10;r++){ const bs=rowBlocks(r,{needOne:ones<2}); bs.forEach(b=>{ if(b.len===1) ones++; blocks.push(b); }); } return { blocks, score:0, moves:0, combo:0, tools:{thunder:3,stardust:3,hammer:3}, noOneRows:0, fourRows:0, details:detailBase(), seen:{}, over:false }; }
+    st=state&&Array.isArray(state.blocks)?Object.assign(initial(),state):initial(); st.tools=Object.assign({thunder:3,stardust:3,hammer:3},st.tools||{}); st.details=Object.assign(detailBase(),st.details||{}); st.seen=st.seen||{};
+    let busy=false, over=false, selectedTool='', drag=null;
+    box.innerHTML='<div class="wb-turkey"><div class="wb-turkey-top"><div class="wb-turkey-stats"><div class="wb-turkey-stat"><small>分数</small><b id="tk-score">0</b></div><div class="wb-turkey-stat"><small>消除</small><b id="tk-lines">0</b></div><div class="wb-turkey-stat"><small>连击</small><b id="tk-combo">0</b></div><div class="wb-turkey-stat"><small>移动</small><b id="tk-moves">0</b></div></div><div class="wb-turkey-danger"><div class="wb-turkey-danger-bar" id="tk-danger"></div><span id="tk-danger-text">安全</span></div><div class="wb-turkey-hint" id="tk-hint"></div></div><div class="wb-turkey-board" id="tk-board"></div><div class="wb-turkey-tools"><button class="wb-turkey-tool" data-tool="thunder">☁ 云雷<span class="badge" id="tk-thunder">3</span></button><button class="wb-turkey-tool" data-tool="stardust">✦ 星尘<span class="badge" id="tk-stardust">3</span></button><button class="wb-turkey-tool" data-tool="hammer">🔨 粉碎<span class="badge" id="tk-hammer">3</span></button></div></div>';
+    speak('turkey','start'); draw(); save(); setTimeout(draw,50);
+    qsa('.wb-turkey-tool',box).forEach(b=>b.onclick=()=>chooseTool(b.dataset.tool));
+    function save(){ if(!over) saveProgress('turkey', Object.assign({}, st, { selectedTool:'' })); }
+    function grid(ignore){ const g=Array.from({length:H},()=>Array(W).fill(null)); st.blocks.forEach(b=>{ if(b.id===ignore) return; for(let c=b.col;c<b.col+b.len;c++) if(b.row>=0&&b.row<H&&c>=0&&c<W) g[b.row][c]=b; }); return g; }
+    function highestRowFromBlocks(bs){ return bs.length?Math.min(...bs.map(b=>b.row)):H; }
+    function highest(){ return highestRowFromBlocks(st.blocks); }
+    function canAt(b,col){ if(col<0||col+b.len>W) return false; const g=grid(b.id); for(let c=col;c<col+b.len;c++) if(g[b.row]?.[c]) return false; return true; }
+    function faceFor(b){ const faces=['-v-','^v^','owo','-u-','>v<','^_^','ouo','-ᴗ-','>u<','uvu']; const n=String(b.id||'').split('').reduce((a,ch)=>a+ch.charCodeAt(0),0); return faces[n%faces.length]; }
+    function chooseTool(t){ if(busy||over||gamePaused) return; if((st.tools[t]||0)<=0) return; selectedTool=selectedTool===t?'':t; draw(); }
+    function toolHint(){ return selectedTool==='thunder'?'选择一个方块释放云雷':selectedTool==='stardust'?'选择一种颜色':selectedTool==='hammer'?'选择一个长度大于1的方块':''; }
+    async function useTool(block){ if(!selectedTool||busy||over) return; if(selectedTool==='hammer'&&block.len<=1){ flash(block.id); return; } const danger=highest()<=2; busy=true; const t=selectedTool; selectedTool=''; st.tools[t]--; st.details.toolsUsed[t]=true; if(t==='thunder'){ st.details.thunderUsed++; speak('turkey','thunder'); const cx=block.col+Math.floor(block.len/2), cy=block.row; const doomed=st.blocks.filter(b=>{ for(let c=b.col;c<b.col+b.len;c++) if(Math.abs(c-cx)<=1&&Math.abs(b.row-cy)<=1) return true; return false; }); await animateThunder(doomed); st.blocks=st.blocks.filter(b=>!doomed.some(x=>x.id===b.id)); }
+      if(t==='stardust'){ st.details.stardustUsed++; speak('turkey','stardust'); st.blocks=st.blocks.filter(b=>b.color!==block.color); }
+      if(t==='hammer'){ st.details.hammerUsed++; speak('turkey','hammer'); st.blocks=st.blocks.filter(b=>b.id!==block.id); for(let c=0;c<block.len;c++) st.blocks.push({id:rid(),row:block.row,col:block.col+c,len:1,color:block.color,split:true}); }
+      st.details.toolsAll=['thunder','stardust','hammer'].every(x=>st.details.toolsUsed[x]); await settle(false); if(danger&&!over){ st.details.clutch=true; speak('turkey','danger_tool'); } draw(); save(); busy=false; }
+    async function animateThunder(blocks){
+      if(!blocks || !blocks.length) return;
+      blocks.forEach(b=>{ const el=qs('.wb-turkey-block[data-id="'+b.id+'"]'); if(el) el.classList.add('shatter'); });
+      const board=qs('#tk-board'), rect=board&&board.getBoundingClientRect(), cell=rect ? rect.width/W : 32;
+      if(board) blocks.forEach(b=>{ for(let i=0;i<Math.max(4,b.len*3);i++){ const pt=getHostDocument().createElement('i'); pt.className='wb-turkey-particle'; pt.style.left=((b.col+Math.random()*b.len)*cell)+'px'; pt.style.top=((b.row+Math.random())*cell)+'px'; pt.style.setProperty('--c', b.color); pt.style.setProperty('--dx',(Math.random()*70-35)+'px'); pt.style.setProperty('--dy',(Math.random()*60-30)+'px'); board.appendChild(pt); setTimeout(()=>pt.remove(),460); } });
+      await delay(340);
+    }
+    function gravity(){ let moved=false, any=true; while(any){ any=false; const bs=st.blocks.slice().sort((a,b)=>b.row-a.row); for(const b of bs){ if(b.row>=H-1) continue; const g=grid(b.id); let ok=true; for(let c=b.col;c<b.col+b.len;c++) if(g[b.row+1]?.[c]) ok=false; if(ok){ b.row++; moved=any=true; } } } return moved; }
+    function fullRows(){ const g=grid(); const rows=[]; for(let r=0;r<H;r++) if(g[r].every(Boolean)) rows.push(r); return rows; }
+    async function settle(countCombo){ let chain=0,total=0,maxR=0; gravity(); draw(); await delay(120); let rows=fullRows(); while(rows.length){ chain++; maxR=Math.max(maxR,rows.length); flashRows(rows); await delay(180); particleRows(rows); const set=new Set(rows); st.blocks=st.blocks.flatMap(b=>{ if(set.has(b.row)) return []; const overlap=[]; for(let c=b.col;c<b.col+b.len;c++) overlap.push(c); return [b]; }); const base=100*rows.length*rows.length, mult=1+(chain-1)*.5; st.score+=Math.round(base*mult); st.details.clearedLines+=rows.length; total+=rows.length; st.details.maxChain=Math.max(st.details.maxChain,chain); st.details.maxClear=Math.max(st.details.maxClear,rows.length); if(!st.seen.first_clear){st.seen.first_clear=1;speak('turkey','first_clear');} if(rows.length===2)speak('turkey','clear_2'); if(rows.length>=3)speak('turkey','clear_3'); if(chain>=3)speak('turkey','chain_3'); drawClearing(rows); await delay(210); gravity(); draw(); await delay(120); rows=fullRows(); }
+      if(countCombo){ if(total){ st.combo++; st.details.noClearStreak=0; if(st.combo>=2){ st.score+=50*(st.combo-1); showCombo(st.combo); } if(st.combo>=5) speak('turkey','combo_5'); } else { st.combo=0; st.details.noClearStreak++; if(st.details.noClearStreak>=8) speak('turkey','no_clear_8'); } st.details.maxCombo=Math.max(st.details.maxCombo,st.combo); }
+      if(st.score>=1000&&!st.seen.s1000){st.seen.s1000=1;speak('turkey','score_1000');} if(st.score>=5000&&!st.seen.s5000){st.seen.s5000=1;speak('turkey','score_5000');} if(st.score>=3000&&!Object.keys(st.details.toolsUsed||{}).length) st.details.noTool3000=true; return total; }
+    function addRow(){ const topBefore=highest(); st.blocks.forEach(b=>b.row--); const needOne=st.noOneRows>=4 || highest()<=1; const bs=rowBlocks(9,{needOne}); const hasOne=bs.some(b=>b.len===1), occ=bs.reduce((a,b)=>a+b.len,0); st.noOneRows=hasOne?0:(st.noOneRows||0)+1; st.fourRows=bs.some(b=>b.len===4)?((st.fourRows||0)+1):0; const bad=!hasOne&&occ>=6; st.details.badRows=(st.details.badRows||[]).concat(bad?1:0).slice(-5); if(st.details.badRows.length===5&&st.details.badRows.filter(Boolean).length>=4) st.details.badLuck=true; st.blocks.push(...bs); if(st.blocks.some(b=>b.row<0)){ gameOver(); return; } if(topBefore===0&&!over) speak('turkey','top_row'); else if(highest()<=2&&!st.seen.top3){ st.seen.top3=1; speak('turkey','top_3'); } }
+    async function afterMove(wasTop){ const cleared=await settle(true); if(wasTop&&cleared>=2&&!over) st.details.clutch=true; addRow(); draw(); save(); }
+    function gameOver(){ over=true; clearProgress('turkey'); setScore('turkey',Math.max(scores().turkey||0,st.score)); speak('turkey','gameover'); draw(); setTimeout(()=>showGameOver('turkey','游戏结束','本局分数：'+st.score+'分，消除'+st.details.clearedLines+'行',{outcome:'score',score:st.score},{details:Object.assign({},st.details,{score:st.score,moves:st.moves})}),350); }
+    function draw(){ const board=qs('#tk-board'); if(!board) return; const rect=board.getBoundingClientRect(); const cell=(rect.width||320)/W; board.style.setProperty('--tk-cell',cell+'px'); const high=highest(), filled=high>=H?0:H-high, dangerClass=high<=0?'critical':high<=1?'danger':high<=3?'warn':'safe'; qs('#tk-danger').className='wb-turkey-danger-bar '+dangerClass; qs('#tk-danger').innerHTML=Array.from({length:10},(_,i)=>'<span class="'+(i<filled?'on':'')+'"></span>').join(''); qs('#tk-danger-text').textContent=dangerClass==='safe'?'安全':dangerClass==='warn'?'注意':'危险'; qs('#tk-hint').textContent=toolHint(); [['#tk-score',st.score],['#tk-lines',st.details.clearedLines],['#tk-combo',st.combo||0],['#tk-moves',st.moves||0],['#tk-thunder',st.tools.thunder],['#tk-stardust',st.tools.stardust],['#tk-hammer',st.tools.hammer]].forEach(([a,b])=>{const el=qs(a);if(el)el.textContent=b;}); qsa('.wb-turkey-tool',box).forEach(b=>{b.classList.toggle('active',selectedTool===b.dataset.tool); b.disabled=(st.tools[b.dataset.tool]||0)<=0;}); board.innerHTML=st.blocks.map(b=>'<div class="wb-turkey-block '+(selectedTool==='hammer'&&b.len<=1?'dim':'')+'" data-id="'+b.id+'" style="--c:'+b.color+';left:'+(b.col*cell+2)+'px;top:'+(b.row*cell+2)+'px;width:'+(b.len*cell-4)+'px"><span class="wb-turkey-face">'+faceFor(b)+'</span></div>').join(''); qsa('.wb-turkey-block',board).forEach(el=>{el.onclick=e=>{e.stopPropagation(); const b=st.blocks.find(x=>x.id===el.dataset.id); if(selectedTool&&b) useTool(b);}; el.onpointerdown=startDrag;}); }
+    function startDrag(e){ if(busy||over||gamePaused||selectedTool) return; const b=st.blocks.find(x=>x.id===e.currentTarget.dataset.id); if(!b) return; e.preventDefault(); const board=qs('#tk-board'), rect=board.getBoundingClientRect(), cell=rect.width/W; drag={id:b.id,startX:e.clientX,startCol:b.col,col:b.col,cell}; e.currentTarget.classList.add('sel'); getHostDocument().addEventListener('pointermove',moveDrag,{passive:false}); getHostDocument().addEventListener('pointerup',endDrag,{once:true}); }
+    function moveDrag(e){ if(!drag) return; e.preventDefault(); const b=st.blocks.find(x=>x.id===drag.id); if(!b) return; let col=drag.startCol+Math.round((e.clientX-drag.startX)/drag.cell); while(col<drag.col&&canAt(b,col)===false) col++; while(col>drag.col&&canAt(b,col)===false) col--; col=Math.max(0,Math.min(W-b.len,col)); drag.col=canAt(b,col)?col:drag.col; preview(b,drag.col,!canAt(b,col)); }
+    async function endDrag(){ getHostDocument().removeEventListener('pointermove',moveDrag); const d=drag; drag=null; qsa('.wb-turkey-preview').forEach(x=>x.remove()); const b=st.blocks.find(x=>x.id===d?.id); if(!b){draw();return;} if(d.col===b.col||!canAt(b,d.col)){ draw(); return; } busy=true; const wasTop=highest()===0; b.col=d.col; st.moves++; st.details.moves=st.moves; draw(); await delay(130); await afterMove(wasTop); busy=false; }
+    function preview(b,col,bad){ const board=qs('#tk-board'); if(!board) return; qsa('.wb-turkey-preview',board).forEach(x=>x.remove()); const cell=(board.getBoundingClientRect().width||320)/W; const el=getHostDocument().createElement('div'); el.className='wb-turkey-preview'+(bad?' bad':''); el.style.left=(col*cell+2)+'px'; el.style.top=(b.row*cell+2)+'px'; el.style.width=(b.len*cell-4)+'px'; board.appendChild(el); }
+    function flash(id){ const el=qs('.wb-turkey-block[data-id="'+id+'"]'); if(el){el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),180);} }
+    function flashRows(rows){ const board=qs('#tk-board'), cell=(board.getBoundingClientRect().width||320)/W; rows.forEach(r=>{const el=getHostDocument().createElement('div'); el.className='wb-turkey-rowflash'; el.style.top=(r*cell)+'px'; board.appendChild(el); setTimeout(()=>el.remove(),220);}); }
+    function particleRows(rows){ const board=qs('#tk-board'), cell=(board.getBoundingClientRect().width||320)/W; rows.forEach(r=>{for(let i=0;i<10;i++){const el=getHostDocument().createElement('i'); el.className='wb-turkey-particle'; el.style.left=(Math.random()*W*cell)+'px'; el.style.top=(r*cell+Math.random()*cell)+'px'; el.style.setProperty('--c',COLORS[Math.floor(Math.random()*COLORS.length)]); el.style.setProperty('--dx',(Math.random()*60-30)+'px'); el.style.setProperty('--dy',(Math.random()*50-25)+'px'); board.appendChild(el); setTimeout(()=>el.remove(),450);}}); }
+    function drawClearing(rows){ const set=new Set(rows); qsa('.wb-turkey-block').forEach(el=>{const b=st.blocks.find(x=>x.id===el.dataset.id); if(b&&set.has(b.row)) el.classList.add('clear');}); }
+    function showCombo(n){ const board=qs('#tk-board'); if(!board) return; const el=getHostDocument().createElement('div'); el.className='wb-turkey-combo'; el.textContent='COMBO ×'+n; board.appendChild(el); setTimeout(()=>el.remove(),850); }
+  }
+
+  function startSpider(state) {
+    const box = qs('#wb-gamebox');
+    const SUITS = ['S','H'];
+    const SUIT_TXT = { S:'♠', H:'♥' };
+    const RANK_TXT = { 1:'A', 11:'J', 12:'Q', 13:'K' };
+    const MAX_COL = 30;
+    const rankText = r => RANK_TXT[r] || String(r);
+    const suitText = s => SUIT_TXT[s] || s;
+    const faceInner = c => '<div class="corner">'+rankText(c.rank)+suitText(c.suit)+'</div><div class="pip">'+suitText(c.suit)+'</div><div class="rank-bottom">'+rankText(c.rank)+'</div>';
+    const newCard = (suit, rank, face) => ({ id:'sp_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8), suit, rank, face:!!face });
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const makeBatch = () => {
+      const arr = [];
+      SUITS.forEach(suit => { for (let n=0;n<4;n++) for (let r=1;r<=13;r++) arr.push(newCard(suit, r, false)); });
+      return shuffleArray(arr);
+    };
+    const initial = () => {
+      const deck = makeBatch();
+      const cols = Array.from({length:10},()=>[]);
+      const counts = [6,6,6,6,5,5,5,5,5,5];
+      let left = counts.reduce((a,b)=>a+b,0), col = 0;
+      while (left > 0) {
+        if (cols[col].length < counts[col]) { const c = deck.shift(); c.face = cols[col].length === counts[col] - 1; cols[col].push(c); left--; }
+        col = (col + 1) % 10;
+      }
+      return { cols, deck, score:0, level:1, moves:0, completed:[], countdown:16, tools:{undo:1, eliminate:5}, details:{ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, emptied:{}, dealEmptyLock:false, dangerPeak:false };
+    };
+    let st = state && Array.isArray(state.cols) ? Object.assign(initial(), state) : initial();
+    st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false })));
+    st.deck = Array.isArray(st.deck) ? st.deck : makeBatch();
+    st.completed = Array.isArray(st.completed) ? st.completed : [];
+    st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {});
+    st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {});
+    st.emptied = st.emptied || {};
+    let selected = null, busy = false, over = false, drag = null, eliminateMode = false, hintMode = false, lastCountdownWarn = 0;
+    const undoStack = [];
+    box.innerHTML = '<div class="wb-spider" id="wb-spider"><div class="wb-spider-top"><div class="wb-spider-stat"><small>分数</small><b id="sp-score">0</b></div><div class="wb-spider-stat"><small>完成</small><b id="sp-done-count">0副</b></div><div class="wb-spider-stat"><small>移动</small><b id="sp-moves">0</b></div><div class="wb-spider-stat"><small>最高列</small><b id="sp-height">0/30</b></div></div><div class="wb-spider-deckbar"><div style="flex:1;min-width:0;"><div class="wb-spider-countdown" id="sp-countdown">16步后发牌</div><div class="wb-muted" id="sp-deal-hint"></div></div><div class="wb-spider-deckside"><div class="wb-spider-pilebox"><div class="wb-spider-collectpile empty" id="sp-collect-pile"></div></div><div class="wb-spider-pilebox"><div class="wb-spider-deckpile" aria-hidden="true"><span></span><span></span><span></span></div></div><button class="wb-spider-deck" id="sp-deck" type="button">发牌</button></div></div><div class="wb-spider-board" id="sp-board"></div><div class="wb-spider-tools"><button class="wb-spider-tool" id="sp-hint" type="button">提示</button><button class="wb-spider-tool" id="sp-undo" type="button">撤销</button><button class="wb-spider-tool" id="sp-eliminate" type="button">消除 <span class="left" id="sp-eliminate-left">5</span></button></div><div class="wb-spider-done"><div class="wb-spider-done-head"><span id="sp-done-title">已完成牌组</span><span id="sp-done-total">共 0 副</span></div><div class="wb-spider-done-track" id="sp-done-track"></div></div></div>';
+    speak('spider','start');
+    draw(); save();
+    setTimeout(()=>{ if(currentGame === 'spider') draw(); }, 60);
+    qs('#sp-deck').onclick = () => manualDeal();
+    qs('#sp-hint').onclick = () => toggleHint();
+    qs('#sp-undo').onclick = () => undoMove();
+    qs('#sp-eliminate').onclick = () => toggleEliminate();
+    qs('#sp-board').onclick = e => { if (e.target.id === 'sp-board') clearSelection(); };
+    getHostDocument().addEventListener('keydown', spiderKeydown);
+    function spiderKeydown(e){ if(currentGame==='spider' && e.key === 'Escape') clearSelection(); }
+    function save(){ if(!over) saveProgress('spider', Object.assign({}, st, { selected:null })); }
+    function snapshot(){ return JSON.parse(JSON.stringify(Object.assign({}, st, { selected:null }))); }
+    function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length > 80) undoStack.shift(); }
+    function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; }
+    function undoMove(){ if(busy || over || gamePaused || !undoStack.length) return; restoreState(undoStack.pop()); selected=null; eliminateMode=false; hintMode=false; st.score=Math.max(0,Number(st.score||0)-2); st.details.undo=(st.details.undo||0)+1; speak('spider','undo'); showSpiderToast('已撤销，分数-2'); draw(); save(); }
+    function toggleHint(){ if(busy || over || gamePaused) return; selected=null; eliminateMode=false; if(hintMode){ hintMode=false; draw(); return; } st.score=Math.max(0,Number(st.score||0)-2); hintMode=true; showSpiderToast('可移动牌已标蓝，分数-2'); draw(); save(); }
+    function toggleEliminate(){ if(busy || over || gamePaused || (st.tools.eliminate||0)<=0) return; selected=null; hintMode=false; eliminateMode=!eliminateMode; draw(); showSpiderToast(eliminateMode ? '选择同花色连续牌组，再点一次消除' : '取消消除'); }
+    function dealInterval(){ return Math.max(10, 16 - Math.floor((st.completed.length || 0) / 4)); }
+    function ensureDeck(n=30){ while(st.deck.length < n) st.deck.push(...makeBatch()); }
+    function topCard(i){ const c=st.cols[i]; return c[c.length-1]; }
+    function isRun(col, idx){ const arr = st.cols[col]; if (!arr[idx] || !arr[idx].face) return false; for(let i=idx;i<arr.length;i++) if(!arr[i].face) return false; for(let i=idx;i<arr.length-1;i++) if(arr[i].suit !== arr[i+1].suit || arr[i].rank !== arr[i+1].rank + 1) return false; return true; }
+    function canPlace(cards, to){ if(!cards || !cards.length) return false; if(st.cols[to].length + cards.length > MAX_COL) return false; const t = topCard(to); return !t || (t.face && t.rank === cards[0].rank + 1); }
+    function legalTargets(cards, from){ return st.cols.map((_,i)=> i!==from && canPlace(cards, i)); }
+    function isHelpfulMove(col, idx){ if(!isRun(col, idx)) return false; return legalTargets(st.cols[col].slice(idx), col).some(Boolean); }
+    function clearSelection(){ selected=null; draw(); }
+    function selectCard(col, idx){ if(busy || over || gamePaused) return; const arr=st.cols[col], card=arr[idx]; if(!card || !card.face) return; if(selected && selected.col===col && selected.idx===idx){ clearSelection(); return; } if(!isRun(col, idx)){ flashCard(col, idx); return; } hintMode=false; selected = { col, idx, cards: arr.slice(idx).map(c=>Object.assign({}, c)) }; draw(); }
+    async function moveSelected(to){ if(!selected || busy || over || gamePaused) return; if(!canPlace(selected.cards, to)){ flashCol(to); return; } await doMove(selected.col, selected.idx, to); }
+    async function doMove(from, idx, to){
+      busy = true;
+      pushUndo();
+      const moving = st.cols[from].splice(idx);
+      st.cols[to].push(...moving);
+      selected = null;
+      draw();
+      await delay(80);
+      st.moves++; st.details.moves = st.moves;
+      st.score = Math.max(0, Number(st.score||0) - 1);
+      await settle([from, to], true);
+      st.countdown = Math.max(0, Number(st.countdown || dealInterval()) - 1);
+      if(st.countdown === 3 && lastCountdownWarn !== st.moves){ lastCountdownWarn = st.moves; speak('spider','auto_3'); }
+      await maybeAutoDeal();
+      await settle([], false);
+      checkOverflow();
+      await checkClearTable();
+      setScore('spider', st.score);
+      draw(); save(); busy = false;
+    }
+    async function flipIfNeeded(indices){
+      let flipped=false;
+      for(const i of indices){ const c=topCard(i); if(c && !c.face){ c.face=true; st.score += 15; flipped=true; } }
+      if(flipped){ draw(); await delay(180); }
+      return flipped;
+    }
+    function completeAt(col){ const arr=st.cols[col]; if(arr.length < 13) return null; const seq=arr.slice(-13); const suit=seq[0].suit; for(let i=0;i<13;i++){ if(!seq[i].face || seq[i].suit!==suit || seq[i].rank !== 13-i) return null; } return { col, suit, cards:seq };
+    }
+    async function settle(seed, countMove){
+      let chain=0, changed=true, touched = new Set(seed || []);
+      while(changed){
+        changed=false;
+        await flipIfNeeded(Array.from(touched));
+        touched.clear();
+        const found=[];
+        for(let i=0;i<10;i++){ const c=completeAt(i); if(c) found.push(c); }
+        if(found.length){
+          for(const f of found){
+            await animateCollect(f.col, f.suit);
+            st.cols[f.col].splice(-13,13);
+            chain++;
+            const mult = 1 + (chain-1)*0.5;
+            st.score += Math.round(500 * mult);
+            const done = { suit:f.suit, index:st.completed.length+1, level:st.level || 1, score:st.score };
+            st.completed.push(done);
+            st.details.completed = st.completed.length;
+            if(f.suit==='H') st.details.hearts = (st.details.hearts||0)+1; else st.details.spades = (st.details.spades||0)+1;
+            speak('spider', f.suit==='H' ? 'complete_heart' : 'complete_spade');
+            showSpiderToast('完整牌组 +1');
+            touched.add(f.col);
+            draw(); await delay(160);
+            const track=qs('#sp-done-track'); if(track) track.scrollLeft=track.scrollWidth;
+          }
+          changed=true;
+        }
+      }
+      if(chain >= 3) speak('spider','chain_3');
+      if(chain) st.details.maxChain = Math.max(st.details.maxChain || 0, chain);
+      if(st.completed.length && st.completed.length % 10 === 0) { const t=qs('#sp-done-title'); if(t) t.textContent='十副收藏完成'; speak('spider','collection_10'); setTimeout(()=>{ const x=qs('#sp-done-title'); if(x) x.textContent='已完成牌组'; }, 1400); }
+      checkEmptyRewards();
+    }
+    function checkEmptyRewards(){
+      const emptyNow = st.cols.filter(c=>!c.length).length;
+      st.details.maxEmptyCols = Math.max(st.details.maxEmptyCols || 0, emptyNow);
+      st.cols.forEach((c,i)=>{ if(!c.length && !st.emptied[i]){ st.emptied[i]=true; st.score += 50; st.details.emptyCols=(st.details.emptyCols||0)+1; speak('spider','empty_col'); } });
+    }
+    function resetEmptyRewardsAfterDeal(){ st.emptied = {}; }
+    function allFilled(){ return st.cols.every(c=>c.length>0); }
+    async function maybeAutoDeal(){ if(st.countdown > 0) return; if(!allFilled()){ st.dealEmptyLock = true; draw(); return; } await dealRow(true); }
+    async function manualDeal(){ if(busy || over || gamePaused) return; if(!allFilled()){ st.dealEmptyLock=true; draw(); speak('spider','auto_3'); return; } busy=true; pushUndo(); await dealRow(false); await settle([], false); checkOverflow(); await checkClearTable(); draw(); save(); busy=false; }
+    function addDealWant(list, suit, rank, weight, kind){
+      if(!suit || rank < 1 || rank > 13) return;
+      list.push({ suit, rank, weight:Math.max(1, weight || 1), kind:kind || 'soft' });
+    }
+    function runSuffixInfo(col){
+      const arr=st.cols[col] || [];
+      if(!arr.length) return null;
+      let start=arr.length-1;
+      while(start>0 && arr[start-1].face && arr[start].face && arr[start-1].suit===arr[start].suit && arr[start-1].rank===arr[start].rank+1) start--;
+      return { start, len:arr.length-start, head:arr[start], tail:arr[arr.length-1] };
+    }
+    function dealWantsForCol(col){
+      const wants=[];
+      const own=topCard(col);
+      if(own && own.face && own.rank>1){
+        addDealWant(wants, own.suit, own.rank-1, 18, 'direct');
+        SUITS.forEach(s=>addDealWant(wants, s, own.rank-1, s===own.suit ? 8 : 4, 'direct'));
+      }
+      const suffix=runSuffixInfo(col);
+      if(suffix && suffix.tail && suffix.tail.rank>1) addDealWant(wants, suffix.tail.suit, suffix.tail.rank-1, 8 + Math.min(12, suffix.len*2), 'direct');
+      st.cols.forEach((_,i)=>{
+        if(i===col) return;
+        const t=topCard(i);
+        if(!t || !t.face || t.rank<=1) return;
+        SUITS.forEach(s=>addDealWant(wants, s, t.rank-1, s===t.suit ? 11 : 5, 'movable'));
+        const run=runSuffixInfo(i);
+        if(run && run.tail && run.tail.rank>1) addDealWant(wants, run.tail.suit, run.tail.rank-1, 6 + Math.min(10, run.len*2), 'movable');
+      });
+      return wants;
+    }
+    function takeDeckMatch(wants, forceMovable){
+      ensureDeck(80);
+      const filtered=forceMovable ? wants.filter(w=>w.kind==='movable') : wants;
+      const pool=[];
+      filtered.forEach(w=>{
+        for(let i=0;i<Math.min(st.deck.length, 80);i++){
+          const c=st.deck[i];
+          if(c && c.suit===w.suit && c.rank===w.rank) pool.push({ idx:i, weight:w.weight });
+        }
+      });
+      if(!pool.length) return null;
+      let total=pool.reduce((sum,x)=>sum+x.weight,0), roll=Math.random()*total, pick=pool[0];
+      for(const item of pool){ roll-=item.weight; if(roll<=0){ pick=item; break; } }
+      const card=st.deck.splice(pick.idx,1)[0];
+      card.face=true;
+      return card;
+    }
+    function takeRandomDealCard(col){
+      ensureDeck(80);
+      const isTall = (st.cols[col] || []).length > MAX_COL - 13;
+      if(isTall && st.deck[0] && st.deck[0].rank === 13 && Math.random() < .85){
+        const swap = st.deck.findIndex((c,i)=>i>0 && i<80 && c.rank !== 13);
+        if(swap > 0) return st.deck.splice(swap,1)[0];
+      }
+      return st.deck.shift();
+    }
+    function drawDealCardForCol(col, forceMovable){
+      const bad=st.details.badDeals || 0;
+      const assistRate=Math.min(.72, .4 + bad*.18);
+      const wants=dealWantsForCol(col);
+      const smart=(forceMovable || Math.random()<assistRate) ? (takeDeckMatch(wants, forceMovable) || takeDeckMatch(wants, false)) : null;
+      const card=smart || takeRandomDealCard(col);
+      card.face=true;
+      return card;
+    }
+    async function dealRow(auto){
+      ensureDeck(80);
+      let forced=(st.details.badDeals || 0) >= 2 ? 2 : ((st.details.badDeals || 0) >= 1 ? 1 : 0);
+      for(let i=0;i<10;i++){
+        const c=drawDealCardForCol(i, forced>0);
+        if(forced>0) forced--;
+        await animateDealCard(i); st.cols[i].push(c); draw(); await delay(28);
+      }
+      const deckPile = qs('.wb-spider-deckpile');
+      if(deckPile){ deckPile.classList.add('dealt'); await delay(500); deckPile.classList.remove('dealt'); }
+      st.details.deals=(st.details.deals||0)+1; st.countdown = dealInterval(); st.level = Math.max(1, Math.floor(st.completed.length / 4) + 1); st.dealEmptyLock=false; resetEmptyRewardsAfterDeal(); speak('spider','deal');
+      if(!hasAnyMove()){ st.details.badDeals=(st.details.badDeals||0)+1; st.details.badDealsTotal=(st.details.badDealsTotal||0)+1; if((st.details.badDeals||0)>=3) speak('spider','bad_deal'); } else st.details.badDeals=0;
+      draw(); await delay(280);
+    }
+    async function animateDealCard(i){
+      const deck = qs('.wb-spider-deckpile') || qs('#sp-deck'), board = qs('#sp-board');
+      if(!deck || !board) return;
+      const from = deck.getBoundingClientRect();
+      const cols = qsa('.wb-spider-col', board).map(x=>x.getBoundingClientRect());
+      const r = cols[i]; if(!r) return;
+      const fly = getHostDocument().createElement('div');
+      fly.className = 'wb-spider-fly';
+      fly.style.left = (from.left + from.width/2 - 13) + 'px';
+      fly.style.top = (from.top + from.height/2 - 18) + 'px';
+      fly.style.setProperty('--sp-fly-x', (r.left + r.width/2 - from.left - from.width/2) + 'px');
+      fly.style.setProperty('--sp-fly-y', (r.top + Math.min(18, r.height - 20) - from.top - from.height/2) + 'px');
+      getHostDocument().body.appendChild(fly);
+      setTimeout(()=>fly.remove(), 420);
+      await delay(120);
+    }
+    async function animateCollect(col, suit){
+      const target = qs('#sp-collect-pile');
+      if(!target) return;
+      const to = target.getBoundingClientRect();
+      const arr = st.cols[col] || [];
+      for(let idx=arr.length-1; idx>=Math.max(0, arr.length-13); idx--){
+        const c = arr[idx];
+        const el = qs('.wb-spider-card[data-col="'+col+'"][data-idx="'+idx+'"]');
+        if(!c || !el) continue;
+        const from = el.getBoundingClientRect();
+        const fly = getHostDocument().createElement('div');
+        fly.className = 'wb-spider-collect-fly' + (suit === 'H' ? ' red' : '');
+        fly.innerHTML = faceInner(c);
+        fly.style.left = from.left + 'px';
+        fly.style.top = from.top + 'px';
+        fly.style.setProperty('--sp-fly-x', (to.left + to.width/2 - from.left - 13) + 'px');
+        fly.style.setProperty('--sp-fly-y', (to.top + to.height/2 - from.top - 18) + 'px');
+        getHostDocument().body.appendChild(fly);
+        setTimeout(()=>fly.remove(), 380);
+        await delay(38);
+      }
+      await delay(260);
+    }
+    function selectEliminateRun(col, idx){
+      if(busy || over || gamePaused || !eliminateMode || (st.tools.eliminate||0)<=0) return;
+      const arr=st.cols[col], card=arr[idx];
+      if(!card || !card.face){ flashCard(col, idx); return; }
+      if(selected && selected.col===col && idx>=selected.idx) { eliminateSelectedRun(); return; }
+      if(!isRun(col, idx)){ flashCard(col, idx); return; }
+      selected = { col, idx, cards: arr.slice(idx).map(c=>Object.assign({}, c)) };
+      hintMode = false;
+      draw();
+      showSpiderToast('再次点击选中牌组即可消除');
+    }
+    async function eliminateSelectedRun(){
+      if(!selected || busy || over || gamePaused || !eliminateMode || (st.tools.eliminate||0)<=0) return;
+      const col=selected.col, idx=selected.idx;
+      if(!isRun(col, idx)){ selected=null; draw(); flashCol(col); return; }
+      busy=true;
+      pushUndo();
+      const removed=st.cols[col].splice(idx);
+      selected=null;
+      st.tools.eliminate=Math.max(0,(st.tools.eliminate||0)-1);
+      st.details.eliminate=(st.details.eliminate||0)+1;
+      eliminateMode=false;
+      speak('spider','eliminate');
+      showSpiderToast('消除' + removed.length + '张');
+      await settle([col], false); checkOverflow(); await checkClearTable(); draw(); save(); busy=false;
+    }
+    function hasAnyMove(){
+      for(let i=0;i<10;i++) for(let idx=0;idx<st.cols[i].length;idx++) if(isRun(i,idx)){ const cards=st.cols[i].slice(idx); if(legalTargets(cards,i).some(Boolean)) return true; }
+      return false;
+    }
+    function checkOverflow(){
+      const max = Math.max(...st.cols.map(c=>c.length));
+      if(max >= 30) { st.dangerPeak = true; speak('spider','danger'); }
+      if(st.dangerPeak && max <= 24){ st.details.clutch = (st.details.clutch||0)+1; st.dangerPeak = false; }
+      if(max > MAX_COL){
+        over=true; clearProgress('spider'); setScore('spider', Math.max(scores().spider || 0, st.score)); speak('spider','gameover'); draw();
+        setTimeout(()=>showGameOver('spider','牌列溢出','本局分数：' + st.score + '分，完成' + st.completed.length + '副', { outcome:'score', score:st.score }, { details:Object.assign({}, st.details, { score:st.score, completed:st.completed.length }) }), 350);
+      }
+    }
+    async function checkClearTable(){
+      if(over || !st.cols.every(c=>c.length===0)) return;
+      st.details.clearTable = true;
+      st.score += 1000; showSpiderToast('牌桌清空！'); speak('spider','clear_table'); await delay(700); ensureDeck(40);
+      for(let r=0;r<4;r++) for(let i=0;i<10;i++){ const c=st.deck.shift(); c.face = r===3; st.cols[i].push(c); }
+      st.countdown = dealInterval(); resetEmptyRewardsAfterDeal(); draw(); save();
+    }
+    function cardHTML(c, col, idx, top, extra){
+      if(!c.face) return '<div class="wb-spider-card back '+(extra||'')+'" data-col="'+col+'" data-idx="'+idx+'" style="top:'+top+'px"></div>';
+      const red = c.suit === 'H';
+      return '<div class="wb-spider-card '+(red?'red ':'')+(extra||'')+'" data-col="'+col+'" data-idx="'+idx+'" style="top:'+top+'px">'+faceInner(c)+'</div>';
+    }
+    function spacingForBoard(board){
+      const h = Math.max(120, board.clientHeight || 260);
+      const w = Math.max(260, board.clientWidth || 420);
+      const cardW = Math.min(44, Math.max(23, (w - 18) / 10));
+      const cardH = cardW * 1.38;
+      return Math.max(3, Math.min(18, Math.floor((h - cardH - 10) / 29)));
+    }
+    function draw(){
+      const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：' + st.score + '分';
+      const highEl=qs('#wb-high'); if(highEl) highEl.textContent='最高：' + Math.max(scores().spider || 0, st.score) + '分';
+      const maxH=Math.max(...st.cols.map(c=>c.length));
+      const cd=qs('#sp-countdown'); if(cd){ cd.textContent = st.countdown ? (st.countdown + '步后发牌') : '填满空列后发牌'; cd.className='wb-spider-countdown ' + (st.countdown<=1?'danger':st.countdown<=5?'warn':''); }
+      const hint=qs('#sp-deal-hint'); if(hint) hint.textContent = st.dealEmptyLock || !allFilled() ? '请先填满空列' : '';
+      const deck=qs('#sp-deck'); if(deck) deck.className='wb-spider-deck' + (!allFilled() ? ' blocked' : '');
+      const pile=qs('#sp-collect-pile'); if(pile){ const cap=Math.max(1, Math.floor(((pile.clientWidth || 36) + 7) / 16)); const shown=st.completed.slice(0, cap); pile.className='wb-spider-collectpile' + (!shown.length ? ' empty' : ''); pile.innerHTML = shown.length ? shown.map(d=>'<span class="wb-spider-collect-card '+(d.suit==='H'?'red':'')+'" title="第'+d.index+'副">'+faceInner({ rank:1, suit:d.suit })+'</span>').join('') : '<span class="wb-spider-collect-card">'+faceInner({ rank:1, suit:'S' })+'</span>'; }
+      const hintBtn=qs('#sp-hint'); if(hintBtn) hintBtn.className='wb-spider-tool' + (hintMode ? ' hint-on' : '');
+      const elim=qs('#sp-eliminate'); if(elim) elim.className='wb-spider-tool' + (eliminateMode ? ' active' : '');
+      const elimLeft=qs('#sp-eliminate-left'); if(elimLeft) elimLeft.textContent=String(st.tools.eliminate || 0);
+      [['#sp-score',st.score],['#sp-done-count',st.completed.length+'副'],['#sp-moves',st.moves||0],['#sp-height',maxH+'/30'],['#sp-done-total','共 '+st.completed.length+' 副']].forEach(([sel,val])=>{ const el=qs(sel); if(el) el.textContent=val; });
+      const board=qs('#sp-board'); if(board){
+        const legal = selected && !eliminateMode ? legalTargets(selected.cards, selected.col) : [];
+        const gap = spacingForBoard(board);
+        const cardW = Math.min(44, Math.max(23, ((board.clientWidth || 420) - 18) / 10));
+        qs('#wb-spider')?.style.setProperty('--sp-card-w', cardW + 'px');
+        const cardAreaH = (Math.max(maxH, 1) - 1) * gap + cardW * 1.38 + 4;
+        const colH = Math.max(80, Math.min(Math.max(80, board.clientHeight - 8), cardAreaH));
+        board.innerHTML = st.cols.map((col,i)=>{
+          let cls='wb-spider-col' + (legal[i]?' legal':'') + (st.dealEmptyLock&&!col.length?' empty-warn':'') + (col.length>MAX_COL?' overflow':'');
+          const cards=col.map((c,idx)=> cardHTML(c,i,idx,idx*gap, (selected && selected.col===i && idx>=selected.idx ? 'selected ' : '') + (eliminateMode && c.face && isRun(i,idx) ? 'eliminate-choice ' : '') + (hintMode && c.face && isHelpfulMove(i,idx) ? 'hint-card' : ''))).join('');
+          return '<div class="'+cls+'" data-col="'+i+'" style="height:'+colH+'px">'+cards+'</div>';
+        }).join('');
+        qsa('.wb-spider-card', board).forEach(el=>{ el.onclick=e=>{ e.stopPropagation(); const col=+el.dataset.col, idx=+el.dataset.idx; if(eliminateMode) selectEliminateRun(col,idx); else if(selected && selected.col!==col) moveSelected(col); else selectCard(col,idx); }; el.onpointerdown=startDrag; });
+        qsa('.wb-spider-col', board).forEach(el=>{ el.onclick=e=>{ if(e.target!==el) return; const col=+el.dataset.col; if(eliminateMode) flashCol(col); else if(selected) moveSelected(col); }; });
+      }
+      const track=qs('#sp-done-track'); if(track){ track.innerHTML = st.completed.length ? st.completed.map(d=>'<button class="wb-spider-mini '+(d.suit==='H'?'red':'')+'" data-i="'+d.index+'" title="第 '+d.index+' 副\n花色：'+suitText(d.suit)+'\n等级：'+d.level+'\n分数：'+d.score+'"><span class="wb-spider-mini-main"><span>'+suitText(d.suit)+'</span><span>K→A</span><span>第'+d.index+'副</span></span></button>').join('') : '<div class="wb-spider-empty-done">还没有完成牌组</div>'; qsa('.wb-spider-mini', track).forEach(b=>b.onclick=()=>toast(b.title.replace(/\n/g,'；'))); }
+    }
+    function flashCard(col,idx){ draw(); const el=qs('.wb-spider-card[data-col="'+col+'"][data-idx="'+idx+'"]'); if(el){ el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),240); } }
+    function flashCol(col){ const el=qs('.wb-spider-col[data-col="'+col+'"]'); if(el){ el.classList.add('illegal'); setTimeout(()=>el.classList.remove('illegal'),240); } }
+    function showSpiderToast(text){ const root=qs('#wb-spider'); if(!root) return; const el=getHostDocument().createElement('div'); el.className='wb-spider-toast'; el.textContent=text; root.appendChild(el); setTimeout(()=>el.remove(),1500); }
+    function startDrag(e){
+      if(busy || over || gamePaused || eliminateMode || e.button===2 || e.pointerType==='touch') return;
+      const el=e.currentTarget, col=+el.dataset.col, idx=+el.dataset.idx;
+      if(!isRun(col,idx)) return;
+      e.preventDefault(); selectCard(col,idx);
+      const cards=st.cols[col].slice(idx); const ghost=getHostDocument().createElement('div'); ghost.className='wb-spider-stack ghost';
+      ghost.innerHTML=cards.map((c,i)=>'<div class="wb-spider-drag-card '+(c.suit==='H'?'red':'')+'" style="top:'+(i*18)+'px"><div class="corner">'+rankText(c.rank)+suitText(c.suit)+'</div><div class="pip">'+suitText(c.suit)+'</div><div class="rank-bottom">'+rankText(c.rank)+'</div></div>').join('');
+      getHostDocument().body.appendChild(ghost); drag={ from:col, idx, ghost, cards, dx:0, dy:0 };
+      moveDrag(e); getHostDocument().addEventListener('pointermove', moveDrag, { passive:false }); getHostDocument().addEventListener('pointerup', endDrag, { once:true });
+    }
+    function moveDrag(e){ if(!drag) return; e.preventDefault(); drag.ghost.style.left=(e.clientX - 24)+'px'; drag.ghost.style.top=(e.clientY - 20)+'px'; const target=colFromPoint(e.clientX,e.clientY); qsa('.wb-spider-col').forEach(x=>x.classList.remove('legal','illegal')); if(target>=0 && target!==drag.from){ const el=qs('.wb-spider-col[data-col="'+target+'"]'); if(el) el.classList.add(canPlace(drag.cards,target)?'legal':'illegal'); } }
+    async function endDrag(e){ getHostDocument().removeEventListener('pointermove', moveDrag); if(!drag) return; const d=drag; d.ghost.remove(); drag=null; const target=colFromPoint(e.clientX,e.clientY); qsa('.wb-spider-col').forEach(x=>x.classList.remove('legal','illegal')); if(target>=0 && target!==d.from && canPlace(d.cards,target)) await doMove(d.from,d.idx,target); else draw(); }
+    function colFromPoint(x,y){ const el=getHostDocument().elementFromPoint(x,y); const col=el && el.closest ? el.closest('.wb-spider-col') : null; return col ? +col.dataset.col : -1; }
   }
 
   function startGame1010(state) {
