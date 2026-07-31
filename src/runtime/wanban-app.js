@@ -1130,8 +1130,8 @@ export async function initWanbanXiaowu() {
     if (game === 'sudoku') return '分数：' + sudokuRecordPoints(rec) + '；提示次数：' + (d.hints || 0) + '次；修改次数：' + (d.edits || 0) + '次；修改最多的格子修改次数：' + (d.maxEditsOneCell || 0) + '次；全部完成后错误次数：' + (d.finalErrors || 0) + '格。';
     if (game === 'minesweeper') return '结果：' + (d.won ? '成功' : '失败') + '；插旗数量：' + (d.flags || 0) + '；排对的雷：' + (d.correctFlags || 0) + '个；未插旗扫雷数量：' + (d.unflaggedMines || 0) + '个；踩雷时已开格子：' + (d.openedAtBlast || d.openedSafe || 0) + '格；犹豫次数：' + (d.hesitations || 0) + '次；数字试探成功次数：' + (d.chordSuccesses || 0) + '次；不确定试探成功次数：' + (d.riskyChordSuccesses || 0) + '次。';
     if (game === 'screw') return (d.endless ? '模式：无尽模式；收纳盒子：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '个；结算盒子数：' + (d.endlessBoxCount || (3 + (d.addBoxUses || 0))) + '个；基础分：' + (d.endlessBaseScore == null ? '未记录' : d.endlessBaseScore) + '；结算倍率：×' + (d.endlessScoreMultiplier || '未记录') + '；' : '结果：' + (d.completed ? '成功' : '失败') + '；最终进度：' + (d.progress || 0) + '%；打包次数：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '次；') + '候补槽最大占用：' + (d.maxTray || 0) + '格；候补槽填满5个次数：' + (d.trayFullCount || d.trayFourCount || 0) + '次；使用增加盒子次数：' + (d.addBoxUses || 0) + '次；被遮挡螺丝点击次数：' + (d.blocked || 0) + '次；掉落玻璃数量：' + (d.fallen || 0) + '块。';
-    if (game === 'popstar') return '最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；大块额外奖励：' + (d.bigBonusTotal || 0) + '分；余步奖励：' + (d.unusedMoveBonusTotal || 0) + '分；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '。';
-    if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次。';
+    if (game === 'popstar') return '最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；大块额外奖励：' + (d.bigBonusTotal || 0) + '分；余步奖励：' + (d.unusedMoveBonusTotal || 0) + '分；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
+    if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
     if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
     if (game === 'turkey') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；累计消除：' + (d.clearedLines || 0) + '行；有效移动：' + (d.moves || 0) + '次；最大同时消除：' + (d.maxClear || 0) + '行；最大连锁：' + (d.maxChain || 0) + '轮；最大连续回合连击：' + (d.maxCombo || 0) + '；云雷/星尘/粉碎机：' + (d.thunderUsed || 0) + '/' + (d.stardustUsed || 0) + '/' + (d.hammerUsed || 0) + '次；无道具达到3000：' + (d.noTool3000 ? '是' : '否') + '。';
     if (game === 'spider') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；完成牌组：' + (d.completed || 0) + '副；黑桃：' + (d.spades || 0) + '副；红桃：' + (d.hearts || 0) + '副；最大连锁：' + (d.maxChain || 0) + '副；发牌次数：' + (d.deals || 0) + '次；有效移动：' + (d.moves || 0) + '次；撤销：' + (d.undo || 0) + '次；消除：' + (d.eliminate || 0) + '次；清空列次数：' + (d.emptyCols || 0) + '次；同屏最多空列：' + (d.maxEmptyCols || 0) + '列；命悬一线次数：' + (d.clutch || 0) + '次；糟糕发牌连续/累计记录：' + (d.badDeals || 0) + '/' + (d.badDealsTotal || 0) + '次；游戏时间灯：' + (rec.durationMs >= 20*60000 ? '长时间游玩' : rec.durationMs >= 10*60000 ? '中等时长' : '短时游玩') + '。';
@@ -1303,6 +1303,7 @@ export async function initWanbanXiaowu() {
         'super_bad：超菜小剧场。消灭星星在4关以内失败，适合轻松调侃、安慰和复盘。',
         'popstar_clutch：命悬一线小剧场。消除最后一个可消除组合后分数才刚好达标过关，重点写险些失败、最后一手救回来的紧张感。',
         'popstar_godmove：神之一手小剧场。剩余20个以内方块时使用打乱或单消道具，并最终通关，重点写残局靠道具救活。',
+        'popstar_clear_all：竟然全部消除。消灭星星结算时本关剩余0个星星，重点写棋盘被清得干干净净。',
         'record：破纪录小剧场。刷新当前游戏历史最高分。',
         'normal：普通小剧场。没有命中特殊条件时，根据最终关卡、分数和剩余星星自然复盘。'
       ].join('\n');
@@ -1312,6 +1313,7 @@ export async function initWanbanXiaowu() {
         'paopao_drop：泡泡掉下来啦小剧场。泡泡累计5次以上悬空掉落，重点写切断根部后一串泡泡掉下来的爽感。',
         'super_good：超厉害小剧场。泡泡龙连续3次以上单次得分超过50分，表现角色对user连续高收益射击的惊喜。',
         'paopao_bomb_fail：不明所以小剧场。user使用炸弹工具但是只消除了4个以内泡泡，可以轻松调侃这颗炸弹像是在放烟花。',
+        'paopao_clear_all：竟然全部消除。泡泡龙某次射击后把场上所有泡泡全部清空，重点写满屏泡泡掉光/消光后的爽感。',
         'normal：普通小剧场。没有命中特殊条件时，根据分数、下压次数、消除和掉落自然复盘。'
       ].join('\n');
       if (game === 'game1010') return [
@@ -1327,6 +1329,7 @@ export async function initWanbanXiaowu() {
         'turkey_endure：毅力小剧场。单局完成100次有效移动。',
         'turkey_minimal：极简主义。不使用任何道具达到3000分。',
         'turkey_clutch：绝地反击。顶部危险时靠消除或道具成功续住。',
+        'turkey_clear_all：竟然全部消除。消除后棋盘只剩1行或0行，系统刷新成3行继续游戏。',
         'bad_luck：超级倒霉。连续5个新行中至少4行没有长度1且占用不少。',
         'turkey_tools：工具齐全。同一局使用过三种不同道具。',
         'record：破纪录小剧场。刷新当前游戏历史最高分。'
@@ -1450,10 +1453,12 @@ export async function initWanbanXiaowu() {
     if (game === 'popstar' && !meta.completed && (meta.level || meta.details?.level || 1) <= 4) candidates.push('super_bad');
     if (game === 'popstar' && meta.clutch) candidates.push('popstar_clutch');
     if (game === 'popstar' && meta.godMove) candidates.push('popstar_godmove');
+    if (game === 'popstar' && (meta.amazingClear || meta.details?.amazingClear || meta.clearAllCount || meta.details?.clearAllCount || meta.remainingAtEnd === 0 || meta.details?.remainingAtEnd === 0)) candidates.push('popstar_clear_all');
     if (game === 'paopao' && (meta.maxHighStreak || meta.details?.maxHighStreak || 0) >= 3) candidates.push('super_good');
     if (game === 'paopao' && (meta.dangerCount || meta.details?.dangerCount || 0) > 5) candidates.push('paopao_clutch');
     if (game === 'paopao' && (meta.dropTotal || meta.details?.dropTotal || 0) >= 5) candidates.push('paopao_drop');
     if (game === 'paopao' && (meta.bombBad || meta.details?.bombBad)) candidates.push('paopao_bomb_fail');
+    if (game === 'paopao' && (meta.amazingClear || meta.details?.amazingClear || meta.clearAllCount || meta.details?.clearAllCount)) candidates.push('paopao_clear_all');
     if (game === 'game1010' && (meta.maxClear || meta.details?.maxClear || 0) > 4) candidates.push('game1010_strategy');
     if (game === 'game1010' && (meta.toolExhaustLose || meta.details?.toolExhaustLose)) candidates.push('game1010_bad_luck');
     if (game === 'game1010' && (meta.lowSpaceCount || meta.details?.lowSpaceCount || 0) > 3) candidates.push('game1010_clutch');
@@ -1462,6 +1467,7 @@ export async function initWanbanXiaowu() {
     if (game === 'turkey' && (meta.moves || meta.details?.moves || 0) >= 100) candidates.push('turkey_endure');
     if (game === 'turkey' && (meta.noTool3000 || meta.details?.noTool3000)) candidates.push('turkey_minimal');
     if (game === 'turkey' && (meta.clutch || meta.details?.clutch)) candidates.push('turkey_clutch');
+    if (game === 'turkey' && (meta.amazingClear || meta.details?.amazingClear || meta.clearAllCount || meta.details?.clearAllCount)) candidates.push('turkey_clear_all');
     if (game === 'turkey' && (meta.badLuck || meta.details?.badLuck)) candidates.push('bad_luck');
     if (game === 'turkey' && (meta.toolsAll || meta.details?.toolsAll)) candidates.push('turkey_tools');
     if (game === 'spider' && (meta.maxChain || meta.details?.maxChain || 0) >= 5) candidates.push('spider_chain_master');
@@ -1558,9 +1564,11 @@ export async function initWanbanXiaowu() {
       ,screw_fail: '失败小剧场'
       ,popstar_clutch: '命悬一线小剧场'
       ,popstar_godmove: '神之一手小剧场'
+      ,popstar_clear_all: '竟然全部消除'
       ,paopao_clutch: '命悬一线小剧场'
       ,paopao_drop: '泡泡掉下来啦'
       ,paopao_bomb_fail: '不明所以小剧场'
+      ,paopao_clear_all: '竟然全部消除'
       ,game1010_strategy: '运筹帷幄小剧场'
       ,game1010_bad_luck: '倒霉小剧场'
       ,game1010_clutch: '命悬一线小剧场'
@@ -1568,6 +1576,7 @@ export async function initWanbanXiaowu() {
       ,turkey_endure: '毅力小剧场'
       ,turkey_minimal: '极简主义'
       ,turkey_clutch: '绝地反击'
+      ,turkey_clear_all: '竟然全部消除'
       ,turkey_tools: '工具齐全'
       ,spider_chain_master: '连锁大师小剧场'
       ,spider_four_empty: '四面通风小剧场'
@@ -10017,10 +10026,10 @@ export async function initWanbanXiaowu() {
       if (game === 'minesweeper') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','bad_luck'], ['score','minesweeper_regret'], ['score','mine_lucky']];
       if (game === 'uyangle') return [['score','normal'], ['score','super_good'], ['score','uyangle_clutch'], ['score','bad_luck'], ['score','long_run']];
       if (game === 'screw') return [['score','screw_success'], ['score','screw_fail'], ['score','record'], ['score','super_good'], ['score','screw_regret'], ['score','long_run']];
-      if (game === 'popstar') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','popstar_clutch'], ['score','popstar_godmove'], ['score','long_run']];
-      if (game === 'paopao') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','paopao_clutch'], ['score','paopao_drop'], ['score','paopao_bomb_fail'], ['score','long_run']];
+      if (game === 'popstar') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','popstar_clutch'], ['score','popstar_godmove'], ['score','popstar_clear_all'], ['score','long_run']];
+      if (game === 'paopao') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','paopao_clutch'], ['score','paopao_drop'], ['score','paopao_bomb_fail'], ['score','paopao_clear_all'], ['score','long_run']];
       if (game === 'game1010') return [['score','normal'], ['score','record'], ['score','game1010_strategy'], ['score','game1010_bad_luck'], ['score','game1010_clutch'], ['score','long_run']];
-      if (game === 'turkey') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','turkey_hot'], ['score','turkey_endure'], ['score','turkey_minimal'], ['score','turkey_clutch'], ['score','bad_luck'], ['score','turkey_tools'], ['score','long_run']];
+      if (game === 'turkey') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','turkey_hot'], ['score','turkey_endure'], ['score','turkey_minimal'], ['score','turkey_clutch'], ['score','turkey_clear_all'], ['score','bad_luck'], ['score','turkey_tools'], ['score','long_run']];
       if (game === 'spider') return [['score','normal'], ['score','record'], ['score','spider_chain_master'], ['score','spider_four_empty'], ['score','spider_clear_table'], ['score','spider_clutch'], ['score','super_good'], ['score','bad_luck'], ['score','long_run']];
       const jobs = [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run']];
       return jobs;
@@ -10135,6 +10144,8 @@ export async function initWanbanXiaowu() {
       ,screw_fail:'失败小剧场。拧螺丝失败但未达到80%遗憾条件；重点写候补槽或最后几颗螺丝卡住后，{{char}}安慰、轻微调侃并约下一局。'
       ,popstar_clutch:'命悬一线小剧场。消灭星星最后一组消完才刚好达标过关；重点写最后几颗星星、目标分数、分数跳过线的一瞬间。'
       ,popstar_godmove:'神之一手小剧场。消灭星星剩余20个以内使用打乱或单消道具并通关；重点写残局靠道具救活、星星重新连起来的反转。'
+      ,popstar_clear_all:'竟然全部消除小剧场。消灭星星本关结算时剩余0个星星；重点写棋盘被清空、最后几颗星星消失后的惊喜。'
+      ,paopao_clear_all:'竟然全部消除小剧场。泡泡龙一次射击后场上所有泡泡都被消掉或掉落；重点写满屏泡泡清空的爽感和{{char}}的惊讶。'
     };
     const sceneText = jobs.map(([outcome, special]) => {
       const resultText = outcome === 'score' ? '单人分数结算' : formatRecordResultForPrompt(outcome);
@@ -11961,7 +11972,7 @@ function showGameRecords(game, page) {
     const W=8,H=10,COLORS=['#FF7B7B','#FFD66B','#5FD1C8','#6CA8FF','#B28DFF'];
     const delay=ms=>new Promise(r=>setTimeout(r,ms));
     const rid=()=> 'tk_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7);
-    const detailBase=()=>({ score:0, moves:0, clearedLines:0, maxClear:0, maxChain:0, maxCombo:0, noClearStreak:0, thunderUsed:0, stardustUsed:0, hammerUsed:0, toolsUsed:{}, noTool3000:false, clutch:false, badLuck:false, toolsAll:false, badRows:[] });
+    const detailBase=()=>({ score:0, moves:0, clearedLines:0, maxClear:0, maxChain:0, maxCombo:0, noClearStreak:0, thunderUsed:0, stardustUsed:0, hammerUsed:0, toolsUsed:{}, noTool3000:false, clutch:false, amazingClear:false, clearAllCount:0, badLuck:false, toolsAll:false, badRows:[] });
     let st;
     function rowBlocks(row, opts={}){
       const top=highestRowFromBlocks(st?.blocks||[]), maxOcc=top<=2?5:7, needOne=opts.needOne || top<=1 || (st?.noOneRows||0)>=4;
@@ -11993,7 +12004,7 @@ function showGameRecords(game, page) {
     async function useTool(block){ if(!selectedTool||busy||over) return; if(selectedTool==='hammer'&&block.len<=1){ flash(block.id); return; } const danger=highest()<=2; busy=true; const t=selectedTool; selectedTool=''; st.tools[t]--; st.details.toolsUsed[t]=true; if(t==='thunder'){ st.details.thunderUsed++; speak('turkey','thunder'); const cx=block.col+Math.floor(block.len/2), cy=block.row; const doomed=st.blocks.filter(b=>{ for(let c=b.col;c<b.col+b.len;c++) if(Math.abs(c-cx)<=1&&Math.abs(b.row-cy)<=1) return true; return false; }); await animateThunder(doomed); st.blocks=st.blocks.filter(b=>!doomed.some(x=>x.id===b.id)); }
       if(t==='stardust'){ st.details.stardustUsed++; speak('turkey','stardust'); st.blocks=st.blocks.filter(b=>b.color!==block.color); }
       if(t==='hammer'){ st.details.hammerUsed++; speak('turkey','hammer'); st.blocks=st.blocks.filter(b=>b.id!==block.id); for(let c=0;c<block.len;c++) st.blocks.push({id:rid(),row:block.row,col:block.col+c,len:1,color:block.color,split:true}); }
-      st.details.toolsAll=['thunder','stardust','hammer'].every(x=>st.details.toolsUsed[x]); await settle(false); if(danger&&!over){ st.details.clutch=true; speak('turkey','danger_tool'); } draw(); save(); busy=false; }
+      st.details.toolsAll=['thunder','stardust','hammer'].every(x=>st.details.toolsUsed[x]); await settle(false); await refillIfAlmostClear(); if(danger&&!over){ st.details.clutch=true; speak('turkey','danger_tool'); } draw(); save(); busy=false; }
     async function animateThunder(blocks){
       if(!blocks || !blocks.length) return;
       blocks.forEach(b=>{ const el=qs('.wb-turkey-block[data-id="'+b.id+'"]'); if(el) el.classList.add('shatter'); });
@@ -12003,11 +12014,14 @@ function showGameRecords(game, page) {
     }
     function gravity(){ let moved=false, any=true; while(any){ any=false; const bs=st.blocks.slice().sort((a,b)=>b.row-a.row); for(const b of bs){ if(b.row>=H-1) continue; const g=grid(b.id); let ok=true; for(let c=b.col;c<b.col+b.len;c++) if(g[b.row+1]?.[c]) ok=false; if(ok){ b.row++; moved=any=true; } } } return moved; }
     function fullRows(){ const g=grid(); const rows=[]; for(let r=0;r<H;r++) if(g[r].every(Boolean)) rows.push(r); return rows; }
+    function occupiedRows(){ return new Set(st.blocks.map(b=>b.row).filter(r=>r>=0&&r<H)).size; }
     async function settle(countCombo){ let chain=0,total=0,maxR=0; gravity(); draw(); await delay(120); let rows=fullRows(); while(rows.length){ chain++; maxR=Math.max(maxR,rows.length); flashRows(rows); await delay(180); particleRows(rows); const set=new Set(rows); st.blocks=st.blocks.flatMap(b=>{ if(set.has(b.row)) return []; const overlap=[]; for(let c=b.col;c<b.col+b.len;c++) overlap.push(c); return [b]; }); const base=100*rows.length*rows.length, mult=1+(chain-1)*.5; st.score+=Math.round(base*mult); st.details.clearedLines+=rows.length; total+=rows.length; st.details.maxChain=Math.max(st.details.maxChain,chain); st.details.maxClear=Math.max(st.details.maxClear,rows.length); if(!st.seen.first_clear){st.seen.first_clear=1;speak('turkey','first_clear');} if(rows.length===2)speak('turkey','clear_2'); if(rows.length>=3)speak('turkey','clear_3'); if(chain>=3)speak('turkey','chain_3'); drawClearing(rows); await delay(210); gravity(); draw(); await delay(120); rows=fullRows(); }
       if(countCombo){ if(total){ st.combo++; st.details.noClearStreak=0; if(st.combo>=2){ st.score+=50*(st.combo-1); showCombo(st.combo); } if(st.combo>=5) speak('turkey','combo_5'); } else { st.combo=0; st.details.noClearStreak++; if(st.details.noClearStreak>=8) speak('turkey','no_clear_8'); } st.details.maxCombo=Math.max(st.details.maxCombo,st.combo); }
       if(st.score>=1000&&!st.seen.s1000){st.seen.s1000=1;speak('turkey','score_1000');} if(st.score>=5000&&!st.seen.s5000){st.seen.s5000=1;speak('turkey','score_5000');} if(st.score>=3000&&!Object.keys(st.details.toolsUsed||{}).length) st.details.noTool3000=true; return total; }
+    function addGeneratedRow(row){ const bs=rowBlocks(row); const hasOne=bs.some(b=>b.len===1), occ=bs.reduce((a,b)=>a+b.len,0); st.noOneRows=hasOne?0:(st.noOneRows||0)+1; st.fourRows=bs.some(b=>b.len===4)?((st.fourRows||0)+1):0; const bad=!hasOne&&occ>=6; st.details.badRows=(st.details.badRows||[]).concat(bad?1:0).slice(-5); if(st.details.badRows.length===5&&st.details.badRows.filter(Boolean).length>=4) st.details.badLuck=true; st.blocks.push(...bs); }
     function addRow(){ const topBefore=highest(); st.blocks.forEach(b=>b.row--); const needOne=st.noOneRows>=4 || highest()<=1; const bs=rowBlocks(9,{needOne}); const hasOne=bs.some(b=>b.len===1), occ=bs.reduce((a,b)=>a+b.len,0); st.noOneRows=hasOne?0:(st.noOneRows||0)+1; st.fourRows=bs.some(b=>b.len===4)?((st.fourRows||0)+1):0; const bad=!hasOne&&occ>=6; st.details.badRows=(st.details.badRows||[]).concat(bad?1:0).slice(-5); if(st.details.badRows.length===5&&st.details.badRows.filter(Boolean).length>=4) st.details.badLuck=true; st.blocks.push(...bs); if(st.blocks.some(b=>b.row<0)){ gameOver(); return; } if(topBefore===0&&!over) speak('turkey','top_row'); else if(highest()<=2&&!st.seen.top3){ st.seen.top3=1; speak('turkey','top_3'); } }
-    async function afterMove(wasTop){ const cleared=await settle(true); if(wasTop&&cleared>=2&&!over) st.details.clutch=true; addRow(); draw(); if(!over){ await delay(360); await settle(false); } draw(); save(); }
+    async function refillIfAlmostClear(){ if(occupiedRows()>1 || over) return false; gravity(); const rows=Array.from(new Set(st.blocks.map(b=>b.row))).sort((a,b)=>a-b); const keepRows=rows.slice(-1); if(keepRows.length){ st.blocks=st.blocks.filter(b=>b.row===keepRows[0]).map(b=>Object.assign(b,{row:7})); for(let r=8;r<10;r++) addGeneratedRow(r); } else { st.blocks=[]; for(let r=7;r<10;r++) addGeneratedRow(r); } st.score+=300; st.details.amazingClear=true; st.details.clearAllCount=(st.details.clearAllCount||0)+1; showCombo('竟然全部消除 +300'); draw(); await delay(360); await settle(false); return true; }
+    async function afterMove(wasTop){ const cleared=await settle(true); if(wasTop&&cleared>=2&&!over) st.details.clutch=true; const refilled=cleared ? await refillIfAlmostClear() : false; if(!refilled){ addRow(); draw(); if(!over){ await delay(360); await settle(false); await refillIfAlmostClear(); } } draw(); save(); }
     function gameOver(){ over=true; clearProgress('turkey'); setScore('turkey',Math.max(scores().turkey||0,st.score)); speak('turkey','gameover'); draw(); setTimeout(()=>showGameOver('turkey','游戏结束','本局分数：'+st.score+'分，消除'+st.details.clearedLines+'行',{outcome:'score',score:st.score},{details:Object.assign({},st.details,{score:st.score,moves:st.moves})}),350); }
     function draw(){ const board=qs('#tk-board'); if(!board) return; const rect=board.getBoundingClientRect(); const cell=(rect.width||320)/W; board.style.setProperty('--tk-cell',cell+'px'); const high=highest(), filled=high>=H?0:H-high, dangerClass=high<=0?'critical':high<=1?'danger':high<=3?'warn':'safe'; qs('#tk-danger').className='wb-turkey-danger-bar '+dangerClass; qs('#tk-danger').innerHTML=Array.from({length:10},(_,i)=>'<span class="'+(i<filled?'on':'')+'"></span>').join(''); qs('#tk-danger-text').textContent=dangerClass==='safe'?'安全':dangerClass==='warn'?'注意':'危险'; qs('#tk-hint').textContent=toolHint(); [['#tk-score',st.score],['#tk-lines',st.details.clearedLines],['#tk-combo',st.combo||0],['#tk-moves',st.moves||0],['#tk-thunder',st.tools.thunder],['#tk-stardust',st.tools.stardust],['#tk-hammer',st.tools.hammer]].forEach(([a,b])=>{const el=qs(a);if(el)el.textContent=b;}); qsa('.wb-turkey-tool',box).forEach(b=>{b.classList.toggle('active',selectedTool===b.dataset.tool); b.disabled=(st.tools[b.dataset.tool]||0)<=0;}); board.innerHTML=st.blocks.map(b=>'<div class="wb-turkey-block '+(selectedTool==='hammer'&&b.len<=1?'dim':'')+'" data-id="'+b.id+'" style="--c:'+b.color+';left:'+(b.col*cell+2)+'px;top:'+(b.row*cell+2)+'px;width:'+(b.len*cell-4)+'px"><span class="wb-turkey-face">'+faceFor(b)+'</span></div>').join(''); qsa('.wb-turkey-block',board).forEach(el=>{el.onclick=e=>{e.stopPropagation(); const b=st.blocks.find(x=>x.id===el.dataset.id); if(selectedTool&&b) useTool(b);}; el.onpointerdown=startDrag;}); }
     function startDrag(e){ if(busy||over||gamePaused||selectedTool) return; const b=st.blocks.find(x=>x.id===e.currentTarget.dataset.id); if(!b) return; e.preventDefault(); const board=qs('#tk-board'), rect=board.getBoundingClientRect(), cell=rect.width/W; drag={id:b.id,startX:e.clientX,startCol:b.col,col:b.col,cell}; e.currentTarget.classList.add('sel'); getHostDocument().addEventListener('pointermove',moveDrag,{passive:false}); getHostDocument().addEventListener('pointerup',endDrag,{once:true}); }
@@ -12018,7 +12032,7 @@ function showGameRecords(game, page) {
     function flashRows(rows){ const board=qs('#tk-board'), cell=(board.getBoundingClientRect().width||320)/W; rows.forEach(r=>{const el=getHostDocument().createElement('div'); el.className='wb-turkey-rowflash'; el.style.top=(r*cell)+'px'; board.appendChild(el); setTimeout(()=>el.remove(),220);}); }
     function particleRows(rows){ const board=qs('#tk-board'), cell=(board.getBoundingClientRect().width||320)/W; rows.forEach(r=>{for(let i=0;i<10;i++){const el=getHostDocument().createElement('i'); el.className='wb-turkey-particle'; el.style.left=(Math.random()*W*cell)+'px'; el.style.top=(r*cell+Math.random()*cell)+'px'; el.style.setProperty('--c',COLORS[Math.floor(Math.random()*COLORS.length)]); el.style.setProperty('--dx',(Math.random()*60-30)+'px'); el.style.setProperty('--dy',(Math.random()*50-25)+'px'); board.appendChild(el); setTimeout(()=>el.remove(),450);}}); }
     function drawClearing(rows){ const set=new Set(rows); qsa('.wb-turkey-block').forEach(el=>{const b=st.blocks.find(x=>x.id===el.dataset.id); if(b&&set.has(b.row)) el.classList.add('clear');}); }
-    function showCombo(n){ const board=qs('#tk-board'); if(!board) return; const el=getHostDocument().createElement('div'); el.className='wb-turkey-combo'; el.textContent='COMBO ×'+n; board.appendChild(el); setTimeout(()=>el.remove(),850); }
+    function showCombo(n){ const board=qs('#tk-board'); if(!board) return; const el=getHostDocument().createElement('div'); el.className='wb-turkey-combo'; el.textContent=typeof n==='number' ? 'COMBO ×'+n : String(n); board.appendChild(el); setTimeout(()=>el.remove(),850); }
   }
 
   function startSpider(state) {
@@ -12646,7 +12660,7 @@ function showGameRecords(game, page) {
     let current = state?.current || '', next = state?.next || '', armedBomb = !!state?.armedBomb;
     let flying = null, aiming = false, resolving = false, aimAngle = 0, over = false, raf = 0, lastT = 0;
     let seen = Object.assign({ aim:false, dangerTick:0, scoreMilestone:Math.floor(score/1000) }, state?.seen || {});
-    let details = Object.assign({ shots:0, pushes:0, cleared:0, dropTotal:0, dangerCount:0, bombUsed:0, bombBad:false, highStreak:0, maxHighStreak:0 }, state?.details || {});
+    let details = Object.assign({ shots:0, pushes:0, cleared:0, dropTotal:0, dangerCount:0, bombUsed:0, bombBad:false, highStreak:0, maxHighStreak:0, amazingClear:false, clearAllCount:0 }, state?.details || {});
     const cap = row => N;
     const key = (r,col) => r + ':' + col;
     const byKey = () => { const m = new Map(); bubbles.forEach(b => { if (!b.dead) m.set(key(b.r,b.c), b); }); return m; };
@@ -12661,7 +12675,7 @@ function showGameRecords(game, page) {
     function seed() {
       bubbles = [];
       for (let r=0; r<ROWS_INIT; r++) for (let col=0; col<cap(r); col++) bubbles.push({ r, c:col, color:rand(colors) });
-      current = rand(colors); next = rand(colors); score = shots = pushes = shotsSincePush = 0; bombs = 5; armedBomb = false; falling = []; details = { shots:0, pushes:0, cleared:0, dropTotal:0, dangerCount:0, bombUsed:0, bombBad:false, highStreak:0, maxHighStreak:0 }; seen = { aim:false, dangerTick:0, scoreMilestone:0 };
+      current = rand(colors); next = rand(colors); score = shots = pushes = shotsSincePush = 0; bombs = 5; armedBomb = false; falling = []; details = { shots:0, pushes:0, cleared:0, dropTotal:0, dangerCount:0, bombUsed:0, bombBad:false, highStreak:0, maxHighStreak:0, amazingClear:false, clearAllCount:0 }; seen = { aim:false, dangerTick:0, scoreMilestone:0 };
     }
     if (!bubbles.length) seed();
     if (!current) current = randomColor();
@@ -12789,6 +12803,7 @@ function showGameRecords(game, page) {
       if (gained > 50) details.highStreak++; else details.highStreak = 0;
       details.maxHighStreak = Math.max(details.maxHighStreak || 0, details.highStreak || 0);
       updateScore(gained);
+      if((clearCount || dropCount || bombRemoved) && bubbles.length === 0){ details.amazingClear = true; details.clearAllCount = (details.clearAllCount || 0) + 1; toast('竟然全部消除！'); }
       shots++; shotsSincePush++; details.shots = shots;
       const shouldPush = shotsSincePush >= pushInterval();
       const finishTurn = () => {
@@ -14712,7 +14727,7 @@ function showGameRecords(game, page) {
     let details = Object.assign({
       level:1, score:0, removedTotal:0, highClears:{ '5':0, '6':0, '7':0, '8plus':0 },
       clutchCount:0, highStreak:0, highComboCount:0, maxHighStreak:0, remainingCounts:{}, shuffleUsed:0, singleUsed:0,
-      toolUsedAtLowRemains:false, godMove:false, clutch:false, completed:false, remainingAtEnd:0, moveLimits:{}, unusedMoveBonusTotal:0, bigBonusTotal:0
+      toolUsedAtLowRemains:false, godMove:false, clutch:false, amazingClear:false, clearAllCount:0, completed:false, remainingAtEnd:0, moveLimits:{}, unusedMoveBonusTotal:0, bigBonusTotal:0
     }, state?.details || {});
     ensurePlayableBoard();
     drawUI();
@@ -14990,6 +15005,7 @@ function showGameRecords(game, page) {
       const left = remainingCount(), noMoves = !hasMoves(board), bonus = remainingBonus(left), moveBonus = unusedMoveBonus(noMoves), target = levelTarget(level), pass = score + bonus + moveBonus >= target;
       details.remainingCounts[left] = (details.remainingCounts[left] || 0) + 1;
       details.remainingAtEnd = left;
+      if(left === 0){ details.amazingClear = true; details.clearAllCount = (details.clearAllCount || 0) + 1; }
       details.moveLimits[level] = moveLimit(level);
       details.unusedMoveBonusTotal = (details.unusedMoveBonusTotal || 0) + moveBonus;
       showSettle(reason === 'steps' ? '步数用完' : '本关结算', '剩余 ' + left + ' 个，奖励 +' + bonus + (moveBonus ? '，余步 +' + moveBonus : ''));
