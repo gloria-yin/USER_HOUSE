@@ -1715,7 +1715,7 @@ export async function initWanbanXiaowu() {
   }
 	  function themeClass(value) {
 	    const t = value || settings().theme || 'day';
-	    return ({ day:'wb-day', arcade:'wb-arcade', night:'wb-night', spring:'wb-spring', cyber:'wb-cyber', mono:'wb-mono', tavern:'wb-tavern' })[t] || 'wb-day';
+	    return ({ day:'wb-day', arcade:'wb-arcade', night:'wb-night', spring:'wb-spring', cyber:'wb-cyber', mono:'wb-mono', card:'wb-cardtheater', tavern:'wb-tavern' })[t] || 'wb-day';
 	  }
 	  function clearTavernThemeVars(root) {
 	    if (!root) return;
@@ -1809,7 +1809,7 @@ export async function initWanbanXiaowu() {
 		        return false;
 		      }
 		    }
-		    return t === 'night' || t === 'cyber';
+		    return t === 'night' || t === 'cyber' || t === 'card';
 		  }
 	  function canvasThemePalette() {
 	    const t = settings().theme || 'day';
@@ -1823,6 +1823,7 @@ export async function initWanbanXiaowu() {
     if (t === 'arcade') return { top:'#FFFFFF', mid:'#F3FBFF', bottom:'#D8F0FF', pattern:'rgba(43,148,209,.055)', grid:'rgba(43,148,209,.16)', border:'rgba(43,148,209,.28)', text:'#18364D' };
     if (t === 'spring') return { top:'#F4F1D3', mid:'#EAF6D4', bottom:'#D8EDB2', pattern:'rgba(111,168,90,.075)', grid:'rgba(76,59,42,.16)', border:'rgba(111,83,45,.32)', text:'#4C3B2A' };
     if (t === 'cyber') return { top:'#101A1D', mid:'#14201B', bottom:'#0D1512', pattern:'rgba(241,232,91,.07)', grid:'rgba(25,211,197,.18)', border:'rgba(241,232,91,.34)', text:'#F6F5DE' };
+    if (t === 'card') return { top:'#18070A', mid:'#10080A', bottom:'#070304', pattern:'rgba(245,201,104,.06)', grid:'rgba(245,201,104,.16)', border:'rgba(245,201,104,.42)', text:'#F8EFE7' };
     if (t === 'night') return { top:'#1b1020', mid:'#211426', bottom:'#120b17', pattern:'rgba(244,194,215,.04)', grid:'rgba(244,194,215,.12)', border:'rgba(244,194,215,.16)', text:'#f7dce7' };
     return { top:'#fff1f5', mid:'#fde7ee', bottom:'#f8dce7', pattern:'rgba(216,112,147,.045)', grid:'rgba(174,82,115,.14)', border:'rgba(174,82,115,.18)', text:'#6f5b45' };
   }
@@ -2167,6 +2168,205 @@ export async function initWanbanXiaowu() {
       }
       #${FLOAT_ID}:hover { transform:translateY(-1px); box-shadow:0 14px 30px rgba(0,0,0,.32), 0 0 0 3px rgba(255,255,255,.32); }
       #${FLOAT_ID}.dragging { cursor:grabbing; transform:scale(.98); }
+
+      #${POPUP_ID}.wb-cardtheater {
+        background:
+          radial-gradient(circle at 50% -16%, rgba(201,24,43,.34), transparent 34%),
+          radial-gradient(circle at 112% 12%, rgba(245,201,104,.10), transparent 26%),
+          repeating-linear-gradient(45deg, rgba(255,255,255,.025) 0 1px, transparent 1px 7px),
+          linear-gradient(180deg, #160609 0%, #080304 62%, #040203 100%);
+        border:1px solid rgba(245,201,104,.46);
+        border-top:3px solid #C9182B;
+        box-shadow:0 26px 76px rgba(0,0,0,.72), 0 0 0 1px rgba(255,255,255,.04) inset, 0 0 44px rgba(201,24,43,.22);
+        font-family:'WanbanCardTheater','LXGW WenKai','霞鹜文楷','霞鹜文楷 GB',Georgia,'Noto Serif SC','Microsoft YaHei',serif;
+      }
+      #${POPUP_ID}.wb-cardtheater::before,
+      .wb-modal-mask.wb-cardtheater .wb-modal::before,
+      #${POPUP_ID}.wb-cardtheater .wb-panel::before,
+      #${POPUP_ID}.wb-cardtheater .wb-game-card::after {
+        content:'♠  ♥  ♦  ♣';
+        position:absolute;
+        pointer-events:none;
+        color:rgba(245,201,104,.08);
+        font-weight:900;
+        letter-spacing:10px;
+        white-space:nowrap;
+      }
+      #${POPUP_ID}.wb-cardtheater::before { right:18px; bottom:10px; font-size:42px; transform:rotate(-7deg); opacity:.72; }
+      #${POPUP_ID}.wb-cardtheater .wb-head {
+        position:relative;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.10)),
+          linear-gradient(90deg, rgba(20,6,8,.94), rgba(70,9,16,.78) 48%, rgba(12,5,6,.94));
+        border-bottom:1px solid rgba(245,201,104,.34);
+        box-shadow:0 1px 0 rgba(255,255,255,.08) inset, 0 10px 24px rgba(0,0,0,.22);
+      }
+      #${POPUP_ID}.wb-cardtheater :is(.wb-title,.wb-tab,.wb-btn,.wb-iconbtn,.wb-pill,.wb-tag,.wb-input,.wb-select,.wb-textarea,.wb-modal-title),
+      .wb-modal-mask.wb-cardtheater :is(.wb-modal,.wb-modal-title,.wb-btn,.wb-iconbtn,.wb-pill,.wb-tag,.wb-input,.wb-select,.wb-textarea) {
+        font-family:'WanbanCardTheater','LXGW WenKai','霞鹜文楷','霞鹜文楷 GB',Georgia,'Noto Serif SC','Microsoft YaHei',serif;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-title { color:#F8EFE7; text-shadow:0 0 10px rgba(201,24,43,.46); }
+      #${POPUP_ID}.wb-cardtheater .wb-title::before { content:''; width:22px; height:22px; margin-right:0; border-radius:5px; border:1px solid rgba(245,201,104,.58); background:url('${APP_ICON_URL}') center / cover no-repeat, linear-gradient(135deg,#C9182B,#0D0708); box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 0 12px rgba(201,24,43,.24); }
+      #${POPUP_ID}.wb-cardtheater .wb-title::after { width:100%; height:1px; background:linear-gradient(90deg, #F5C968, #C9182B, transparent); opacity:.9; }
+      #${POPUP_ID}.wb-cardtheater .wb-head-meta span {
+        color:#F8EFE7;
+        background:linear-gradient(180deg, rgba(245,201,104,.12), rgba(0,0,0,.18));
+        border-color:rgba(245,201,104,.42);
+        box-shadow:0 1px 0 rgba(255,255,255,.08) inset;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-head-meta i { color:#F5C968; }
+      #${POPUP_ID}.wb-cardtheater .wb-tabs {
+        border-color:rgba(245,201,104,.40);
+        background:linear-gradient(180deg, rgba(245,201,104,.08), rgba(0,0,0,.20));
+        box-shadow:0 0 0 1px rgba(255,255,255,.04) inset;
+        overflow:hidden;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-tabs .wb-tab {
+        color:#D5BBA5;
+        background:transparent;
+        border-right:1px solid rgba(245,201,104,.22);
+        text-shadow:none;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-tabs .wb-tab:nth-child(1)::before { content:'♠'; color:#F8EFE7; opacity:.82; }
+      #${POPUP_ID}.wb-cardtheater .wb-tabs .wb-tab:nth-child(2)::before { content:'♥'; color:#FF3048; opacity:.82; }
+      #${POPUP_ID}.wb-cardtheater .wb-tabs .wb-tab:nth-child(3)::before { content:'♦'; color:#F5C968; opacity:.82; }
+      #${POPUP_ID}.wb-cardtheater .wb-tabs .wb-tab:nth-child(4)::before { content:'♣'; color:#F8EFE7; opacity:.82; }
+      #${POPUP_ID}.wb-cardtheater .wb-tabs .wb-tab.active {
+        color:#FFF8F0;
+        background:linear-gradient(180deg, #C9182B, #7A1019 56%, #3A0710);
+        box-shadow:0 10px 20px rgba(201,24,43,.30), 0 1px 0 rgba(255,255,255,.20) inset, 0 -1px 0 rgba(245,201,104,.55) inset;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-body {
+        background:
+          radial-gradient(circle at 18% 8%, rgba(201,24,43,.18), transparent 22%),
+          repeating-linear-gradient(90deg, rgba(245,201,104,.025) 0 1px, transparent 1px 18px),
+          linear-gradient(180deg, rgba(255,255,255,.025), transparent 30%);
+      }
+      #${POPUP_ID}.wb-cardtheater :is(.wb-btn,.wb-iconbtn,.wb-pill,.wb-tag),
+      .wb-modal-mask.wb-cardtheater :is(.wb-btn,.wb-iconbtn,.wb-pill,.wb-tag) {
+        color:#F8EFE7;
+        background:linear-gradient(180deg, #201014, #0D0708);
+        border:1px solid rgba(245,201,104,.38);
+        border-radius:5px;
+        box-shadow:0 8px 18px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(201,24,43,.28);
+        text-shadow:0 1px 1px rgba(0,0,0,.55);
+        max-width:100%;
+      }
+      #${POPUP_ID}.wb-cardtheater :is(.wb-btn.primary,.wb-tab.active,.wb-tag.active),
+      .wb-modal-mask.wb-cardtheater :is(.wb-btn.primary,.wb-tab.active,.wb-tag.active) {
+        color:#FFF8F0;
+        background:linear-gradient(135deg, #E12A3B, #A30F20 58%, #4A0710);
+        border-color:rgba(245,201,104,.68);
+        box-shadow:0 12px 24px rgba(201,24,43,.34), 0 0 0 1px rgba(255,255,255,.06) inset, inset 0 1px 0 rgba(255,255,255,.22);
+      }
+      #${POPUP_ID}.wb-cardtheater :is(.wb-btn,.wb-iconbtn,.wb-tab,.wb-game-card):hover,
+      .wb-modal-mask.wb-cardtheater :is(.wb-btn,.wb-iconbtn,.wb-tab):hover {
+        border-color:rgba(245,201,104,.74);
+        filter:brightness(1.07);
+        box-shadow:0 14px 28px rgba(0,0,0,.36), 0 0 18px rgba(201,24,43,.24), inset 0 1px 0 rgba(255,255,255,.10);
+      }
+      #${POPUP_ID}.wb-cardtheater :is(.wb-input,.wb-select,.wb-textarea),
+      .wb-modal-mask.wb-cardtheater :is(.wb-input,.wb-select,.wb-textarea) {
+        color:#F8EFE7;
+        background:linear-gradient(180deg, #100708, #080405);
+        border:1px solid rgba(245,201,104,.36);
+        border-radius:5px;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.045);
+      }
+      #${POPUP_ID}.wb-cardtheater :is(.wb-input,.wb-select,.wb-textarea)::placeholder,
+      .wb-modal-mask.wb-cardtheater :is(.wb-input,.wb-select,.wb-textarea)::placeholder { color:rgba(213,187,165,.62); }
+      #${POPUP_ID}.wb-cardtheater :is(.wb-input,.wb-select,.wb-textarea):focus,
+      .wb-modal-mask.wb-cardtheater :is(.wb-input,.wb-select,.wb-textarea):focus { outline:0; border-color:#F5C968; box-shadow:0 0 0 2px rgba(245,201,104,.16), 0 0 16px rgba(201,24,43,.18); }
+      #${POPUP_ID}.wb-cardtheater .wb-panel,
+      .wb-modal-mask.wb-cardtheater :is(.wb-api-status,.wb-worldbook-list,.wb-sticky-actions,.wb-record-table-wrap) {
+        position:relative;
+        overflow:hidden;
+        color:#F8EFE7;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.035), rgba(0,0,0,.10)),
+          radial-gradient(circle at 100% 0%, rgba(201,24,43,.13), transparent 34%),
+          #13080A;
+        border:1px solid rgba(245,201,104,.34);
+        border-top-color:rgba(245,201,104,.58);
+        border-radius:8px;
+        box-shadow:0 14px 32px rgba(0,0,0,.28), 0 0 0 1px rgba(255,255,255,.035) inset;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-panel::before { right:10px; top:6px; font-size:22px; letter-spacing:5px; opacity:.70; }
+      #${POPUP_ID}.wb-cardtheater .wb-section-title,
+      .wb-modal-mask.wb-cardtheater .wb-section-title { color:#F5C968; border-color:rgba(245,201,104,.28); text-shadow:0 1px 0 rgba(0,0,0,.48); }
+      #${POPUP_ID}.wb-cardtheater .wb-section-title::before { content:'♠ '; color:#F5C968; background:transparent; box-shadow:none; text-shadow:0 0 10px rgba(245,201,104,.30); }
+      #${POPUP_ID}.wb-cardtheater .wb-section-title.no-mark::before { content:''; }
+      #${POPUP_ID}.wb-cardtheater .wb-muted,
+      .wb-modal-mask.wb-cardtheater .wb-muted { color:#D5BBA5; }
+      #${POPUP_ID}.wb-cardtheater .wb-game-card {
+        border:1px solid rgba(245,201,104,.34);
+        border-left:1px solid rgba(245,201,104,.34);
+        border-radius:7px;
+        background:
+          radial-gradient(circle at 15% 20%, rgba(255,255,255,.06), transparent 20%),
+          linear-gradient(145deg, rgba(34,12,15,.92), rgba(9,4,5,.96) 56%, rgba(63,8,15,.58));
+        box-shadow:0 18px 38px rgba(0,0,0,.38), 0 0 0 1px rgba(255,255,255,.04) inset;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-game-card::before { border-top:2px solid rgba(245,201,104,.62); }
+      #${POPUP_ID}.wb-cardtheater .wb-game-card::after { right:10px; bottom:6px; font-size:20px; letter-spacing:5px; transform:rotate(-8deg); }
+      #${POPUP_ID}.wb-cardtheater .wb-game-card:hover { transform:translateY(-4px) rotate(-.35deg); border-color:rgba(245,201,104,.72); box-shadow:0 22px 44px rgba(0,0,0,.46), 0 0 26px rgba(201,24,43,.28); }
+      #${POPUP_ID}.wb-cardtheater .wb-game-icon {
+        border-radius:5px;
+        border:1px solid rgba(245,201,104,.45);
+        background:linear-gradient(135deg, #C9182B, #26080D 62%, #F5C968);
+        box-shadow:0 12px 24px rgba(201,24,43,.26), inset 0 1px 0 rgba(255,255,255,.20);
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-game-icon.has-image { background:#0E0708; }
+      #${POPUP_ID}.wb-cardtheater .wb-game-name { color:#FFF8F0; text-shadow:0 1px 0 rgba(0,0,0,.55); }
+      #${POPUP_ID}.wb-cardtheater .wb-tab-count,
+      #${POPUP_ID}.wb-cardtheater :is(.badge,.left,.wb-popstar-badge,.wb-sudoku-badge),
+      .wb-modal-mask.wb-cardtheater .wb-tab-count {
+        color:#120608;
+        background:radial-gradient(circle at 30% 25%, #FFF8F0, #F5C968 58%, #B88A3B);
+        border:1px solid rgba(255,248,240,.58);
+        text-shadow:none;
+      }
+      .wb-modal-mask.wb-cardtheater { background:radial-gradient(circle at 50% 16%, rgba(201,24,43,.24), transparent 35%), rgba(0,0,0,.88); }
+      .wb-modal-mask.wb-cardtheater .wb-modal {
+        position:relative;
+        color:#F8EFE7;
+        background:
+          linear-gradient(180deg, rgba(92,10,18,.30), transparent 88px),
+          repeating-linear-gradient(45deg, rgba(245,201,104,.028) 0 1px, transparent 1px 8px),
+          linear-gradient(180deg, #17090B, #080304);
+        border:1px solid rgba(245,201,104,.54);
+        border-top:3px solid #C9182B;
+        border-radius:8px;
+        box-shadow:0 24px 70px rgba(0,0,0,.66), 0 0 34px rgba(201,24,43,.22), inset 0 0 0 1px rgba(255,255,255,.04);
+      }
+      .wb-modal-mask.wb-cardtheater .wb-modal::before { right:16px; top:12px; font-size:24px; opacity:.95; }
+      .wb-modal-mask.wb-cardtheater .wb-modal-title {
+        color:#F5C968;
+        border-bottom:1px solid rgba(245,201,104,.30);
+        text-shadow:0 1px 0 rgba(0,0,0,.56);
+      }
+      .wb-modal-mask.wb-cardtheater .wb-modal-title::before { content:'♠ '; color:#F8EFE7; }
+      .wb-modal-mask.wb-cardtheater .wb-modal-title::after { content:' ♥'; color:#FF3048; }
+      .wb-modal-mask.wb-cardtheater .wb-sticky-actions {
+        position:sticky;
+        bottom:-18px;
+        z-index:6;
+        overflow:visible;
+        margin:12px -22px -18px;
+        padding:10px 22px;
+        background:linear-gradient(180deg, rgba(19,8,10,.82), #080304 72%);
+        border:0;
+        border-top:1px solid rgba(245,201,104,.48);
+        border-radius:0 0 8px 8px;
+        box-shadow:0 -10px 24px rgba(0,0,0,.32), 0 -1px 0 rgba(255,255,255,.04) inset;
+      }
+      .wb-modal-mask.wb-cardtheater table,
+      .wb-modal-mask.wb-cardtheater th,
+      .wb-modal-mask.wb-cardtheater td { color:#F8EFE7; border-color:rgba(245,201,104,.24); }
+      .wb-modal-mask.wb-cardtheater th { color:#F5C968; background:rgba(245,201,104,.08); }
+      #${POPUP_ID}.wb-cardtheater :is(.wb-switch,.wb-field label,label),
+      .wb-modal-mask.wb-cardtheater :is(.wb-switch,.wb-field label,label) { color:#F8EFE7; }
+      #${POPUP_ID}.wb-cardtheater input[type="checkbox"] { accent-color:#C9182B; }
       @media (max-width: 768px) {
         #${FLOAT_ID} {
           width:36px;
@@ -2334,12 +2534,14 @@ export async function initWanbanXiaowu() {
       @font-face { font-family: 'WanbanCyberPixel'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_885190757_1759071282816_qdqqd_d815d3.ttf') format('truetype'); font-display:swap; }
       @font-face { font-family: 'WanbanLetter'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_1_885190757_1763396927198_qdqqd_gnxuoc.ttf') format('truetype'); font-display:swap; }
       @font-face { font-family: 'WanbanIntimacyButton'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_1_5673241091_1762496170336_qdqqd_cyuxp9.ttf') format('truetype'); font-display:swap; }
+      @font-face { font-family: 'WanbanCardTheater'; src: url('https://s3plus.meituan.net/opapisdk/op_ticket_1_885190757_1763396605104_qdqqd_izlvcf.ttf') format('truetype'); font-display:swap; }
       #${POPUP_ID}.wb-day { --wb-bg:#fff7fb; --wb-panel:#fffefd; --wb-soft:#ffeaf1; --wb-text:#2f2430; --wb-sub:#8a6470; --wb-border:#e8b9c5; --wb-accent:#c65b7c; --wb-accent2:#3a8f91; --wb-board:#fff2e6; --wb-input:#fff9fb; --wb-glow:rgba(198,91,124,.26); --wb-gold:#c99738; --wb-screen:#fff9f2; --wb-on-accent:#fff; }
       #${POPUP_ID}.wb-arcade { --wb-bg:#F3FAFF; --wb-panel:#FFFDF8; --wb-soft:#E5F4FF; --wb-text:#28435A; --wb-sub:#6F8EA3; --wb-border:#B8DCEF; --wb-accent:#5FA8D7; --wb-accent2:#F6C8D8; --wb-board:#F8FCFF; --wb-input:#FFFDF8; --wb-glow:rgba(95,168,215,.14); --wb-gold:#5FA8D7; --wb-screen:#FFFDF8; --wb-on-accent:#fff; }
       #${POPUP_ID}.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; --wb-on-accent:#fff; }
 	      #${POPUP_ID}.wb-night { --wb-bg:#11121d; --wb-panel:#191a28; --wb-soft:#252033; --wb-text:#f5eafa; --wb-sub:#bba8c7; --wb-border:#54425f; --wb-accent:#ff7aa8; --wb-accent2:#6ed6d1; --wb-board:#111827; --wb-input:#151620; --wb-glow:rgba(255,122,168,.28); --wb-gold:#f3c56a; --wb-screen:#111827; --wb-on-accent:#fff; }
 	      #${POPUP_ID}.wb-mono { --wb-bg:#f2f2f2; --wb-panel:#ffffff; --wb-soft:#dcdcdc; --wb-text:#151515; --wb-sub:#565656; --wb-border:#8f8f8f; --wb-accent:#111111; --wb-accent2:#4d4d4d; --wb-board:#e6e6e6; --wb-input:#f7f7f7; --wb-glow:rgba(0,0,0,.12); --wb-gold:#2e2e2e; --wb-screen:#eeeeee; --wb-on-accent:#fff; }
 	      #${POPUP_ID}.wb-cyber { --wb-bg:#0D1512; --wb-panel:#18231E; --wb-soft:#24352D; --wb-text:#F6F5DE; --wb-sub:#B9C4B8; --wb-border:#4C5B4A; --wb-accent:#F1E85B; --wb-accent2:#19D3C5; --wb-board:#101A1D; --wb-input:#14201B; --wb-glow:rgba(241,232,91,.22); --wb-gold:#FF8A3D; --wb-screen:#1A221D; --wb-on-accent:#0D1512; }
+	      #${POPUP_ID}.wb-cardtheater { --wb-bg:#080304; --wb-panel:#13080A; --wb-soft:#241014; --wb-text:#F8EFE7; --wb-sub:#D5BBA5; --wb-border:rgba(245,201,104,.34); --wb-accent:#C9182B; --wb-accent2:#F5C968; --wb-board:#100506; --wb-input:#0E0708; --wb-glow:rgba(201,24,43,.30); --wb-gold:#F5C968; --wb-screen:#0B0506; --wb-on-accent:#FFF8F0; }
 	      #${POPUP_ID}.wb-tavern { --wb-bg:var(--SmartThemeBodyColor, #1f1f1f); --wb-panel:var(--SmartThemeBlurTintColor, var(--SmartThemeBotMesBlurTintColor, #2a2a2a)); --wb-soft:color-mix(in srgb, var(--wb-panel) 78%, var(--wb-accent) 22%); --wb-text:var(--SmartThemeTextColor, #f5f5f5); --wb-sub:color-mix(in srgb, var(--wb-text) 68%, var(--wb-bg) 32%); --wb-border:var(--SmartThemeBorderColor, rgba(255,255,255,.22)); --wb-accent:var(--SmartThemeQuoteColor, var(--SmartThemeEmColor, #8ab4f8)); --wb-accent2:var(--SmartThemeEmColor, var(--wb-accent)); --wb-board:color-mix(in srgb, var(--wb-bg) 78%, var(--wb-panel) 22%); --wb-input:color-mix(in srgb, var(--wb-panel) 86%, var(--wb-bg) 14%); --wb-glow:color-mix(in srgb, var(--wb-accent) 28%, transparent 72%); --wb-gold:var(--SmartThemeQuoteColor, #d7a64d); --wb-screen:color-mix(in srgb, var(--wb-bg) 72%, var(--wb-panel) 28%); font-family:inherit; }
       .wb-head { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 12px; border-bottom:1px solid var(--wb-border); background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.02)); }
       .wb-title { font-size:20px; font-weight:800; letter-spacing:2px; color:var(--wb-accent); white-space:nowrap; }
@@ -3052,6 +3254,7 @@ export async function initWanbanXiaowu() {
 	      .wb-modal-mask.wb-spring { --wb-bg:#EAF6D4; --wb-panel:#F6E7C8; --wb-soft:#D8EDB2; --wb-text:#4C3B2A; --wb-sub:#7A6752; --wb-border:#BFA372; --wb-accent:#6FA85A; --wb-accent2:#7DB9D8; --wb-board:#E2F0BF; --wb-input:#F8EED6; --wb-glow:rgba(111,168,90,.24); --wb-gold:#E3C56A; --wb-screen:#F4F1D3; --wb-on-accent:#fff; }
 	      .wb-modal-mask.wb-mono { --wb-bg:#f2f2f2; --wb-panel:#ffffff; --wb-soft:#dcdcdc; --wb-text:#151515; --wb-sub:#565656; --wb-border:#8f8f8f; --wb-accent:#111111; --wb-accent2:#4d4d4d; --wb-board:#e6e6e6; --wb-input:#f7f7f7; --wb-glow:rgba(0,0,0,.12); --wb-gold:#2e2e2e; --wb-screen:#eeeeee; --wb-on-accent:#fff; }
 	      .wb-modal-mask.wb-cyber { --wb-bg:#0D1512; --wb-panel:#18231E; --wb-soft:#24352D; --wb-text:#F6F5DE; --wb-sub:#B9C4B8; --wb-border:#4C5B4A; --wb-accent:#F1E85B; --wb-accent2:#19D3C5; --wb-board:#101A1D; --wb-input:#14201B; --wb-glow:rgba(241,232,91,.22); --wb-gold:#FF8A3D; --wb-screen:#1A221D; --wb-on-accent:#0D1512; }
+	      .wb-modal-mask.wb-cardtheater { --wb-bg:#080304; --wb-panel:#13080A; --wb-soft:#241014; --wb-text:#F8EFE7; --wb-sub:#D5BBA5; --wb-border:rgba(245,201,104,.34); --wb-accent:#C9182B; --wb-accent2:#F5C968; --wb-board:#100506; --wb-input:#0E0708; --wb-glow:rgba(201,24,43,.30); --wb-gold:#F5C968; --wb-screen:#0B0506; --wb-on-accent:#FFF8F0; }
 	      .wb-modal-mask.wb-arcade { --wb-bg:#F3FAFF; --wb-panel:#FFFDF8; --wb-soft:#E5F4FF; --wb-text:#28435A; --wb-sub:#6F8EA3; --wb-border:#B8DCEF; --wb-accent:#5FA8D7; --wb-accent2:#F6C8D8; --wb-board:#F8FCFF; --wb-input:#FFFDF8; --wb-glow:rgba(95,168,215,.14); --wb-gold:#5FA8D7; --wb-screen:#FFFDF8; --wb-on-accent:#fff; }
 	      .wb-modal-mask.wb-tavern { --wb-bg:var(--SmartThemeBodyColor, #1f1f1f); --wb-panel:var(--SmartThemeBlurTintColor, var(--SmartThemeBotMesBlurTintColor, #2a2a2a)); --wb-soft:color-mix(in srgb, var(--wb-panel) 78%, var(--wb-accent) 22%); --wb-text:var(--SmartThemeTextColor, #f5f5f5); --wb-sub:color-mix(in srgb, var(--wb-text) 68%, var(--wb-bg) 32%); --wb-border:var(--SmartThemeBorderColor, rgba(255,255,255,.22)); --wb-accent:var(--SmartThemeQuoteColor, var(--SmartThemeEmColor, #8ab4f8)); --wb-accent2:var(--SmartThemeEmColor, var(--wb-accent)); --wb-board:color-mix(in srgb, var(--wb-bg) 78%, var(--wb-panel) 22%); --wb-input:color-mix(in srgb, var(--wb-panel) 86%, var(--wb-bg) 14%); --wb-glow:color-mix(in srgb, var(--wb-accent) 28%, transparent 72%); --wb-gold:var(--SmartThemeQuoteColor, #d7a64d); --wb-screen:color-mix(in srgb, var(--wb-bg) 72%, var(--wb-panel) 28%); font-family:inherit; }
       @keyframes wbFadeIn{from{opacity:0}to{opacity:1}}
@@ -3428,6 +3631,43 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID}.wb-cyber .wb-ludo-cell.path { background:#24352D; }
       #${POPUP_ID}.wb-cyber .wb-ludo-cell.home-red { background:rgba(255,79,163,.20); }
       #${POPUP_ID}.wb-cyber .wb-ludo-cell.home-blue { background:rgba(25,211,197,.18); }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo {
+        background-color:#080304;
+        background-image:radial-gradient(circle at 50% 50%, rgba(201,24,43,.22), transparent 34%), repeating-linear-gradient(45deg, rgba(245,201,104,.055) 0 1px, transparent 1px 9px);
+        border-color:rgba(245,201,104,.62);
+        box-shadow:0 18px 36px rgba(0,0,0,.44), 0 0 0 1px rgba(245,201,104,.12) inset, 0 0 24px rgba(201,24,43,.16);
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-cell {
+        background:#0D0607;
+        border-color:rgba(245,201,104,.18);
+        color:#F8EFE7;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-cell.path { background:#1B090D; box-shadow:inset 0 0 0 1px rgba(245,201,104,.06); }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-cell.home-red { background:linear-gradient(135deg, rgba(201,24,43,.42), rgba(58,7,16,.78)); }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-cell.home-blue { background:linear-gradient(135deg, rgba(245,201,104,.22), rgba(10,7,8,.88)); }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-cell.flight-red { background:linear-gradient(rgba(201,24,43,.42), rgba(201,24,43,.42)), #1B090D; box-shadow:inset 0 0 0 2px rgba(255,48,72,.42); }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-cell.flight-blue { background:linear-gradient(rgba(245,201,104,.24), rgba(245,201,104,.24)), #0D0607; box-shadow:inset 0 0 0 2px rgba(245,201,104,.42); }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-cell.flight-red.flight-blue { background:linear-gradient(135deg, rgba(201,24,43,.46) 0 50%, rgba(245,201,104,.30) 50% 100%), #13080A; }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-piece.red {
+        background:radial-gradient(circle at 32% 26%, #FF9AA6, #C9182B 56%, #550711);
+        border-color:rgba(245,201,104,.62);
+        color:#FFF8F0;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-piece.blue {
+        background:radial-gradient(circle at 32% 26%, #FFF8F0, #F5C968 48%, #1A0A0D 72%);
+        border-color:rgba(245,201,104,.72);
+        color:#170608;
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-piece.can { outline-color:#F5C968; box-shadow:0 0 16px rgba(245,201,104,.42),0 2px 8px rgba(0,0,0,.36); }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-flight-line.red { stroke:#FF3048; opacity:.86; }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-flight-line.blue { stroke:#F5C968; opacity:.86; }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-dice {
+        background:linear-gradient(180deg,#F8EFE7,#D8B878);
+        border-color:rgba(245,201,104,.74);
+        box-shadow:0 8px 18px rgba(0,0,0,.34), inset 0 0 0 1px rgba(255,255,255,.55);
+      }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-dot { background:#160608; }
+      #${POPUP_ID}.wb-cardtheater .wb-ludo-dice.one .wb-ludo-dot { background:#C9182B; }
       #${POPUP_ID}.wb-spring :is(.wb-canvas,.wb-ludo,.wb-territory-board) {
         border:7px solid #9E7846;
         border-color:#B98A54 #6F4F2C #6F4F2C #C99A5F;
@@ -8929,7 +9169,7 @@ export async function initWanbanXiaowu() {
       + '<label class="wb-switch"><input id="wb-message-notify" type="checkbox" ' + (cfg.messageNotify ? 'checked' : '') + '>RP正文完成提醒</label>'
       + '<div class="wb-muted" style="font-size:11px;margin-top:-10px;padding-left:24px;line-height:1;">防沉迷系统（不是）</div>'
       + '<div class="wb-preset-row"><span class="wb-muted" style="flex:1;">正文标签：&lt;' + esc(cfg.messageNotifyTag || 'content') + '&gt;...&lt;/' + esc(cfg.messageNotifyTag || 'content') + '&gt;</span><button class="wb-btn" id="wb-message-tag-btn">设置正文标签</button></div>'
-	      + '<div class="wb-field"><label>美化主题</label><select class="wb-select" id="wb-theme"><option value="tavern">跟随酒馆美化主题</option><option value="day">【日】梦幻掌机</option><option value="arcade">【日】晴日信箱</option><option value="spring">【日】春野物语</option><option value="mono">【日】黑白像素</option><option value="night">【夜】霓虹游戏舱</option><option value="cyber">【夜】赛博街机</option></select></div>'
+	      + '<div class="wb-field"><label>美化主题</label><select class="wb-select" id="wb-theme"><option value="tavern">跟随酒馆美化主题</option><option value="day">【日】梦幻掌机</option><option value="arcade">【日】晴日信箱</option><option value="spring">【日】春野物语</option><option value="mono">【日】黑白像素</option><option value="night">【夜】霓虹游戏舱</option><option value="cyber">【夜】赛博街机</option><option value="card">【夜】红黑牌剧场</option></select></div>'
 	      + '<div class="wb-field"><label>全局字体</label><div class="wb-preset-row"><select class="wb-select" id="wb-font-select">' + fontOptions + '</select><button class="wb-btn" id="wb-font-edit" type="button">编辑</button></div></div>'
       + '</div>'
       + '<div class="wb-panel"><div class="wb-section-title">API 配置</div>'
@@ -15895,19 +16135,23 @@ function showGameRecords(game, page) {
       board.className = 'wb-sudoku-board';
       board.style.cssText = 'width:100%;max-width:min(390px,64cqh);max-height:100%;aspect-ratio:1/1;position:relative;box-sizing:border-box;border:2px solid var(--wb-text);background:var(--wb-text);overflow:hidden;flex:0 0 auto;';
       const selectedFixed = selected >= 0 && !!puzzle[selected];
-      const mono = (settings().theme || 'day') === 'mono';
+      const theme = settings().theme || 'day';
+      const mono = theme === 'mono', cardTheme = theme === 'card';
+      if(cardTheme) board.style.cssText = 'width:100%;max-width:min(390px,64cqh);max-height:100%;aspect-ratio:1/1;position:relative;box-sizing:border-box;border:2px solid rgba(245,201,104,.72);background:#F5C968;overflow:hidden;flex:0 0 auto;box-shadow:0 16px 34px rgba(0,0,0,.42),0 0 0 1px rgba(255,255,255,.04) inset;';
       const same = selectedFixed ? puzzle[selected] : 0, sr=row(selected), sc=col(selected);
       board.innerHTML = Array.from({length:81},(_,i)=>{
         const r = row(i), c = col(i), v = grid[i] || 0;
         const fixed = !!puzzle[i], sel = i === selected, peer = selected >= 0 && (r === sr || c === sc);
         const sameNum = !!(same && fixed && puzzle[i] === same), wrong = !fixed && hasRuleConflict(i);
         const monoDarkFixed = mono && selectedFixed && (sameNum || sel);
-        const bg = monoDarkFixed ? '#111' : (sameNum ? 'var(--wb-gold)' : (peer ? (fixed ? 'var(--wb-soft)' : 'var(--wb-panel)') : (fixed ? 'var(--wb-soft)' : 'var(--wb-panel)')));
-        const color = wrong ? '#ef4444' : (monoDarkFixed ? '#fff' : 'var(--wb-text)');
-        const border = 'border-left:'+(c%3===0?'1.5px solid var(--wb-text)':'1px solid var(--wb-border)')+';border-right:'+(c%3===2?'1.5px solid var(--wb-text)':'1px solid var(--wb-border)')+';border-top:'+(r%3===0?'1.5px solid var(--wb-text)':'1px solid var(--wb-border)')+';border-bottom:'+(r%3===2?'1.5px solid var(--wb-text)':'1px solid var(--wb-border)')+';';
-        const outline = sel ? 'outline:2px solid var(--wb-accent);outline-offset:-3px;' : '';
-        const shadow = wrong ? 'box-shadow:inset 0 0 0 2px #ef4444;' : (peer && !sameNum ? 'box-shadow:inset 0 0 0 999px rgba(125,185,216,.10);' : '');
-        return '<button type="button" data-sudoku-cell="1" data-i="'+i+'" class="wb-sudoku-tile '+(fixed?'fixed':'mutable')+'" style="position:absolute;left:'+((c*100)/9)+'%;top:'+((r*100)/9)+'%;width:'+(100/9)+'%;height:'+(100/9)+'%;display:flex;align-items:center;justify-content:center;margin:0;padding:0;box-sizing:border-box;border-radius:0;font-weight:900;font-size:clamp(15px,3.1vh,24px);line-height:1;background:'+bg+';color:'+color+';'+border+outline+shadow+'">'+(v ? String(v) : '')+'</button>';
+        const bg = cardTheme ? (sameNum ? '#F5C968' : (sel ? '#3A0710' : (peer ? (fixed ? '#351018' : '#19080B') : (fixed ? '#2A0B12' : '#0B0506')))) : (monoDarkFixed ? '#111' : (sameNum ? 'var(--wb-gold)' : (peer ? (fixed ? 'var(--wb-soft)' : 'var(--wb-panel)') : (fixed ? 'var(--wb-soft)' : 'var(--wb-panel)'))));
+        const color = wrong ? (cardTheme ? '#FF6B7A' : '#ef4444') : (cardTheme ? (sameNum ? '#160608' : (fixed ? '#F5C968' : '#F8EFE7')) : (monoDarkFixed ? '#fff' : 'var(--wb-text)'));
+        const line = cardTheme ? 'rgba(245,201,104,.24)' : 'var(--wb-border)', heavy = cardTheme ? 'rgba(245,201,104,.82)' : 'var(--wb-text)';
+        const border = 'border-left:'+(c%3===0?'1.5px solid '+heavy:'1px solid '+line)+';border-right:'+(c%3===2?'1.5px solid '+heavy:'1px solid '+line)+';border-top:'+(r%3===0?'1.5px solid '+heavy:'1px solid '+line)+';border-bottom:'+(r%3===2?'1.5px solid '+heavy:'1px solid '+line)+';';
+        const outline = sel ? 'outline:2px solid '+(cardTheme ? '#C9182B' : 'var(--wb-accent)')+';outline-offset:-3px;' : '';
+        const shadow = wrong ? 'box-shadow:inset 0 0 0 2px '+(cardTheme ? '#FF3048' : '#ef4444')+';' : (peer && !sameNum ? 'box-shadow:inset 0 0 0 999px '+(cardTheme ? 'rgba(201,24,43,.13)' : 'rgba(125,185,216,.10)')+';' : '');
+        const cls = ['wb-sudoku-tile', fixed?'fixed':'mutable', sel?'sel':'', peer?'peer':'', sameNum?'same':'', wrong?'wrong':''].filter(Boolean).join(' ');
+        return '<button type="button" data-sudoku-cell="1" data-i="'+i+'" class="'+cls+'" style="position:absolute;left:'+((c*100)/9)+'%;top:'+((r*100)/9)+'%;width:'+(100/9)+'%;height:'+(100/9)+'%;display:flex;align-items:center;justify-content:center;margin:0;padding:0;box-sizing:border-box;border-radius:0;font-weight:900;font-size:clamp(15px,3.1vh,24px);line-height:1;background:'+bg+';color:'+color+';'+border+outline+shadow+'">'+(v ? String(v) : '')+'</button>';
       }).join('');
       qsa('[data-sudoku-cell]', board).forEach(b=>b.onclick=()=>{ selected=+b.dataset.i; draw(); save(); });
     }
