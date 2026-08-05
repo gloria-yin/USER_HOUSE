@@ -277,7 +277,7 @@ export async function initWanbanXiaowu() {
     paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
-    spider: '经典蜘蛛纸牌的无尽模式。十列牌堆，默认黑桃与红桃两种花色；卡牌可按点数递减叠放，不同花色可以临时混放，但只有同花色严格递减的连续牌组能整体移动。同花色K到A完整序列会自动收起到下方收藏区。牌库无限，每隔若干有效移动自动发一排；存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
+    spider: '经典蜘蛛纸牌的无尽模式。十列牌堆，默认黑桃与红桃两种花色；卡牌可按点数递减叠放，不同花色可以临时混放，但只有同花色严格递减的连续牌组能整体移动。同花色K到A完整序列会自动收起到下方收藏区。牌库无限，玩家可主动发一排；存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '进入时可选择普通模式或无尽模式。普通模式任意方向先连成五子获胜；无尽模式双方各30颗棋子，连五后回收自己的五子并吃掉对方一子，直到一方棋子被吃完或双方无可用棋子。',
     territory: '在点阵之间画边，规则类似围方格。谁画下一个小方格的第4条边，谁就占领该格并继续行动。所有边画完后，占领格子多的一方获胜。',
@@ -361,7 +361,7 @@ export async function initWanbanXiaowu() {
     paopao: { start:'泡泡龙开局，顶部已有5行泡泡，玩家准备瞄准发射。', aim:'玩家按住并拖动，虚线轨迹正在根据墙壁反弹预测落点。', clear:'玩家成功消除同色泡泡。', clear_5:'玩家一次性消除超过5个泡泡。', drop:'失去顶部连接的泡泡悬空掉落。', danger:'泡泡群快要接近红色警戒线。', score_1000:'泡泡龙本局分数每增加1000分时触发。', bomb:'玩家使用炸弹泡泡，炸掉落点周围3格泡泡。', record:'泡泡龙刷新历史最高分。', gameover:'泡泡越过红色警戒线，泡泡龙本局结束。', random:'观看泡泡龙时的待机碎碎念。' },
     game1010: { start:'1010!开局，10×10棋盘为空，底部出现3个不可旋转方块。', place:'玩家成功放置一个候补方块。', clear:'玩家消除了一行或一列，30%概率触发。', clear_3:'玩家一次性消除超过3行/列。', score_1000:'1010!本局分数每增加1000分时触发。', tool:'玩家使用重新生成或小锤子道具。', low_space:'棋盘剩余空格少于5个，局面接近死局。', record:'1010!刷新历史最高分。', gameover:'没有任何剩余候补方块可以放入棋盘，且道具已经用完，1010!结束。', random:'观看1010!方块拼图时的碎碎念。' },
     turkey: { start:'土耳其方块开局，底部四行横向方块已经出现。', first_clear:'玩家第一次消除完整横行。', clear_2:'玩家同时消除2行。', clear_3:'玩家同时消除3行及以上。', chain_3:'同一次移动连锁达到第3轮。', combo_5:'连续5次普通移动都产生消除。', score_1000:'土耳其方块分数首次达到1000。', score_5000:'土耳其方块分数首次达到5000。', record:'土耳其方块刷新历史最高分。', top_3:'当前最高方块进入顶部3行。', top_row:'顶行已经被占用。', no_clear_8:'连续8次普通移动没有消除。', thunder:'玩家使用云雷道具。', stardust:'玩家使用星尘收集器。', hammer:'玩家使用小锤粉碎机。', danger_tool:'顶部危险时使用道具并成功存活。', gameover:'方块被推到棋盘顶部之外，土耳其方块结束。', random:'观看土耳其方块时的待机碎碎念。' },
-    spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已发好，玩家开始整理黑桃与红桃。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'自动发牌倒计数剩余3步。', deal:'新的一排牌自动或主动发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
+    spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已发好，玩家开始整理黑桃与红桃。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'玩家尝试发牌但存在空列，需要先填满空列。', deal:'新的一排牌主动发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
     tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'{{char}}阻挡了玩家即将连线的一步。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'{{char}}在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
     gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，{{char}}知道自己这把基本必输了。', ai_block:'{{char}}阻挡玩家形成强威胁。', ai_threat:'{{char}}形成强威胁，玩家需要防守。', user_capture:'五子棋无尽模式，玩家吃掉{{char}}一颗棋子并用自己的棋子替换该位置。', char_capture:'五子棋无尽模式，{{char}}吃掉玩家一颗棋子并用自己的棋子替换该位置。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'{{char}}五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
     territory: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', edge:'玩家画下一条边。', no_safe_edge:'场面没有普通边了，之后每条边都可能送分。', capture:'玩家围住某个方格最后一条边并占领得分。', chain:'玩家连续占领多个方格。', ta_capture:'{{char}}围住某个方格并占领得分。', user_turn:'{{char}}的回合结束，轮到玩家。', danger:'玩家选择可能送给{{char}}得分机会的边。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'所有边画完后玩家得分更高。', user_lose:'所有边画完后{{char}}得分更高。', draw:'所有边画完后双方平分。', random:'和user玩电子围地盘时的碎碎念。' },
@@ -2872,7 +2872,7 @@ export async function initWanbanXiaowu() {
       .wb-turkey-particle { position:absolute; width:6px; height:6px; border-radius:50%; background:var(--c); z-index:6; pointer-events:none; animation:wbTurkeyParticle .42s ease-out forwards; }
       .wb-turkey-combo { position:absolute; left:50%; top:45%; transform:translate(-50%,-50%); z-index:8; font-weight:1000; font-size:28px; color:#fff; text-shadow:0 2px 8px rgba(15,23,42,.55); animation:wbTurkeyCombo .8s ease forwards; pointer-events:none; }
       .wb-turkey-tools { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; height:30px; align-items:center; }
-      .wb-turkey-tool { position:relative; min-height:28px; height:28px; border:1px solid var(--wb-border); border-radius:7px; padding:2px 5px; font-size:11px; background:linear-gradient(180deg,#fff,#eef6f3); color:var(--wb-text); font-weight:900; display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; }
+      .wb-turkey-tool { position:relative; min-height:28px; height:28px; border:1px solid var(--wb-border); border-radius:7px; padding:2px 5px; font-size:11px; background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 86%,var(--wb-bg) 14%),color-mix(in srgb,var(--wb-soft) 72%,var(--wb-bg) 28%)); color:var(--wb-text); font-weight:900; display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; box-shadow:0 3px 10px color-mix(in srgb,#000 12%,transparent 88%), inset 0 1px 0 color-mix(in srgb,var(--wb-text) 10%,transparent 90%); }
       .wb-turkey-tool.active { outline:2px solid var(--wb-gold); }
       .wb-turkey-tool:disabled { opacity:.45; filter:grayscale(.8); }
       .wb-turkey-tool .badge { position:static; display:inline-grid; place-items:center; min-width:15px; height:15px; border-radius:999px; background:color-mix(in srgb,var(--wb-accent) 72%,var(--wb-panel) 28%); color:var(--wb-on-accent,#fff); border:1px solid color-mix(in srgb,var(--wb-border) 55%,var(--wb-accent) 45%); font-size:9px; line-height:1; }
@@ -2887,14 +2887,16 @@ export async function initWanbanXiaowu() {
       .wb-spider-stat:last-child { border-right:0; }
       .wb-spider-stat small { display:block; font-size:9px; color:var(--wb-muted); font-weight:800; }
       .wb-spider-stat b { display:block; margin-top:1px; font-size:13px; color:var(--wb-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .wb-spider-deckbar { display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:42px; padding:4px 6px; border-bottom:1px solid color-mix(in srgb,var(--wb-border) 70%,transparent 30%); }
+      .wb-spider-deckbar { display:flex; align-items:center; justify-content:space-between; gap:5px; min-height:42px; padding:4px 6px; border-bottom:1px solid color-mix(in srgb,var(--wb-border) 70%,transparent 30%); }
+      .wb-spider-dealinfo { flex:0 0 auto; min-width:0; }
       .wb-spider-pilebox { height:34px; min-width:48px; display:flex; align-items:center; justify-content:center; border:0; background:transparent; box-shadow:none; padding:2px 3px; }
-      .wb-spider-deckside { display:flex; align-items:center; gap:5px; flex:0 0 auto; }
+      .wb-spider-pilebox.collect { flex:1 1 auto; min-width:78px; justify-content:flex-start; overflow:hidden; }
+      .wb-spider-deckside { display:flex; align-items:center; gap:5px; flex:1 1 auto; min-width:0; justify-content:flex-end; }
       .wb-spider-deckpile { position:relative; width:42px; height:28px; flex:0 0 42px; }
       .wb-spider-deckpile span { position:absolute; width:20px; height:28px; border:1px solid #26344f; background:url('${SPIDER_BACK_URL}') center / 100% 100% no-repeat,#243858; box-shadow:0 1px 4px rgba(15,23,42,.22); }
       .wb-spider-deckpile span:nth-child(1){ left:0; top:2px; } .wb-spider-deckpile span:nth-child(2){ left:7px; top:1px; } .wb-spider-deckpile span:nth-child(3){ left:14px; top:0; }
       .wb-spider-deckpile.dealt span:nth-child(3) { opacity:0; transform:translateY(-4px); transition:.18s ease; }
-      .wb-spider-collectpile { width:clamp(36px,22vw,132px); height:32px; flex:0 1 132px; color:#243449; display:flex; align-items:center; overflow:hidden; padding-left:2px; }
+      .wb-spider-collectpile { width:100%; max-width:240px; height:32px; flex:1 1 auto; color:#243449; display:flex; align-items:center; overflow:hidden; padding-left:2px; }
       .wb-spider-collectpile.empty { opacity:.38; }
       .wb-spider-collect-card { position:relative; flex:0 0 22px; width:22px; height:30px; margin-left:-7px; border:1px solid #aeb9c8; background:#fffdf8; color:#172033; font-weight:900; box-shadow:0 1px 4px rgba(15,23,42,.14); overflow:hidden; }
       .wb-spider-collect-card:first-child { margin-left:0; }
@@ -2907,7 +2909,7 @@ export async function initWanbanXiaowu() {
       .wb-spider-countdown { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:4px 10px; border:1px solid rgba(15,118,110,.28); background:linear-gradient(180deg,rgba(240,253,250,.92),rgba(204,251,241,.46)); box-shadow:inset 0 1px 0 rgba(255,255,255,.62),0 2px 8px rgba(15,118,110,.08); font-weight:900; color:#0f766e; line-height:1.1; }
       .wb-spider-countdown.warn { color:#d97706; }
       .wb-spider-countdown.danger { color:#ea580c; animation:wbSpiderPulse .7s ease-in-out infinite alternate; }
-      .wb-spider-deck { min-width:54px; height:34px; border:1px solid #60708c; border-radius:5px; background:#fff7df; color:#273449; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:900; box-shadow:0 2px 7px rgba(37,59,99,.13); cursor:pointer; }
+      .wb-spider-deck { min-width:62px; height:34px; border:1px solid #60708c; border-radius:5px; background:#fff7df; color:#273449; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:900; box-shadow:0 2px 7px rgba(37,59,99,.13); cursor:pointer; white-space:nowrap; word-break:keep-all; line-height:1; flex:0 0 auto; }
       .wb-spider-deck::before { content:'☞'; font-size:16px; line-height:1; }
       .wb-spider-deck.blocked { opacity:.55; filter:saturate(.72); }
       .wb-spider-board { min-height:0; display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:var(--sp-col-gap); align-items:start; overflow:hidden; padding:3px 2px 5px; border:1px solid color-mix(in srgb,var(--wb-border) 65%,#a8c8c4 35%); border-radius:10px; background:linear-gradient(180deg,rgba(236,250,246,.70),rgba(255,248,236,.72)); touch-action:pan-y; }
@@ -2931,8 +2933,9 @@ export async function initWanbanXiaowu() {
       .wb-spider-drag-card { position:absolute; left:0; width:var(--sp-card-w); height:var(--sp-card-h); border:1px solid #aeb9c8; border-radius:1px; background:#fffdf8; box-shadow:0 8px 20px rgba(15,23,42,.24); color:#172033; font-weight:900; padding:3px; box-sizing:border-box; display:grid; grid-template-rows:auto 1fr auto; overflow:hidden; }
       .wb-spider-drag-card.red { color:#d94b55; border-color:#e89aa3; }
       .wb-spider-done { display:none; }
-      .wb-spider-tools { height:34px; display:flex; align-items:center; justify-content:center; gap:14px; padding:1px 0 0; }
-      .wb-spider-tool { width:66px; min-width:66px; height:30px; padding:0 6px; border:1px solid var(--wb-border); border-radius:6px; background:linear-gradient(180deg,#fff,#eef6f3); color:var(--wb-text); font-weight:900; box-shadow:0 3px 10px rgba(15,23,42,.10); position:relative; display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; }
+      .wb-spider-tools { height:34px; display:flex; align-items:center; justify-content:center; gap:8px; padding:1px 0 0; }
+      .wb-spider-tool { width:66px; min-width:66px; height:30px; padding:0 6px; border:1px solid var(--wb-border); border-radius:6px; background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 86%,var(--wb-bg) 14%),color-mix(in srgb,var(--wb-soft) 72%,var(--wb-bg) 28%)); color:var(--wb-text); font-weight:900; box-shadow:0 3px 10px color-mix(in srgb,#000 12%,transparent 88%), inset 0 1px 0 color-mix(in srgb,var(--wb-text) 10%,transparent 90%); position:relative; display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; }
+      .wb-spider-tool.end { width:58px; min-width:58px; border-color:color-mix(in srgb,var(--wb-accent) 52%,var(--wb-border) 48%); background:linear-gradient(180deg,color-mix(in srgb,var(--wb-accent) 18%,var(--wb-panel) 82%),color-mix(in srgb,var(--wb-accent) 28%,var(--wb-bg) 72%)); color:var(--wb-text); }
       .wb-spider-tool.active { border-color:#ef4444; box-shadow:0 0 0 2px rgba(239,68,68,.22); }
       .wb-spider-tool.hint-on { border-color:#3b82f6; box-shadow:0 0 0 2px rgba(59,130,246,.24); }
       .wb-spider-tool .left { position:static; display:inline-grid; place-items:center; min-width:16px; height:16px; border-radius:999px; background:color-mix(in srgb,var(--wb-accent) 72%,var(--wb-panel) 28%); color:var(--wb-on-accent,#fff); border:1px solid color-mix(in srgb,var(--wb-border) 55%,var(--wb-accent) 45%); font-size:10px; line-height:1; }
@@ -12228,7 +12231,7 @@ function showGameRecords(game, page) {
       return [{id:rid(),row,col:Math.floor(Math.random()*W),len:1,color:COLORS[Math.floor(Math.random()*COLORS.length)],split:false},{id:rid(),row,col:Math.floor(Math.random()*6),len:2,color:COLORS[Math.floor(Math.random()*COLORS.length)],split:false}];
     }
     function initial(){ let blocks=[], ones=0; for(let r=6;r<10;r++){ const bs=rowBlocks(r,{needOne:ones<2}); bs.forEach(b=>{ if(b.len===1) ones++; blocks.push(b); }); } return { blocks, score:0, moves:0, combo:0, tools:{thunder:3,stardust:3,hammer:3}, noOneRows:0, fourRows:0, details:detailBase(), seen:{}, over:false }; }
-    st=state&&Array.isArray(state.blocks)?Object.assign(initial(),state):initial(); st.tools=Object.assign({thunder:3,stardust:3,hammer:3},st.tools||{}); st.details=Object.assign(detailBase(),st.details||{}); st.seen=st.seen||{};
+    st=state&&Array.isArray(state.blocks)?Object.assign(initial(),state):initial(); st.tools=Object.assign({thunder:3,stardust:3,hammer:3},st.tools||{}); st.details=Object.assign(detailBase(),st.details||{}); st.seen=st.seen||{}; normalizeStartBoard();
     let busy=false, over=false, selectedTool='', drag=null;
     box.innerHTML='<div class="wb-turkey"><div class="wb-turkey-top"><div class="wb-turkey-stats"><div class="wb-turkey-stat"><small>分数</small><b id="tk-score">0</b></div><div class="wb-turkey-stat"><small>消除</small><b id="tk-lines">0</b></div><div class="wb-turkey-stat"><small>连击</small><b id="tk-combo">0</b></div><div class="wb-turkey-stat"><small>移动</small><b id="tk-moves">0</b></div></div><div class="wb-turkey-danger"><div class="wb-turkey-danger-bar" id="tk-danger"></div><span id="tk-danger-text">安全</span></div><div class="wb-turkey-hint" id="tk-hint"></div></div><div class="wb-turkey-board" id="tk-board"></div><div class="wb-turkey-tools"><button class="wb-turkey-tool" data-tool="thunder">☁ 云雷<span class="badge" id="tk-thunder">3</span></button><button class="wb-turkey-tool" data-tool="stardust">✦ 星尘<span class="badge" id="tk-stardust">3</span></button><button class="wb-turkey-tool" data-tool="hammer">🔨 粉碎<span class="badge" id="tk-hammer">3</span></button></div></div>';
     speak('turkey','start'); draw(); save(); setTimeout(draw,50);
@@ -12260,7 +12263,9 @@ function showGameRecords(game, page) {
       if(st.score>=1000&&!st.seen.s1000){st.seen.s1000=1;speak('turkey','score_1000');} if(st.score>=5000&&!st.seen.s5000){st.seen.s5000=1;speak('turkey','score_5000');} if(st.score>=3000&&!Object.keys(st.details.toolsUsed||{}).length) st.details.noTool3000=true; return total; }
     function addGeneratedRow(row){ const bs=rowBlocks(row); const hasOne=bs.some(b=>b.len===1), occ=bs.reduce((a,b)=>a+b.len,0); st.noOneRows=hasOne?0:(st.noOneRows||0)+1; st.fourRows=bs.some(b=>b.len===4)?((st.fourRows||0)+1):0; const bad=!hasOne&&occ>=6; st.details.badRows=(st.details.badRows||[]).concat(bad?1:0).slice(-5); if(st.details.badRows.length===5&&st.details.badRows.filter(Boolean).length>=4) st.details.badLuck=true; st.blocks.push(...bs); }
     function addRow(){ const topBefore=highest(); st.blocks.forEach(b=>b.row--); const needOne=st.noOneRows>=4 || highest()<=1; const bs=rowBlocks(9,{needOne}); const hasOne=bs.some(b=>b.len===1), occ=bs.reduce((a,b)=>a+b.len,0); st.noOneRows=hasOne?0:(st.noOneRows||0)+1; st.fourRows=bs.some(b=>b.len===4)?((st.fourRows||0)+1):0; const bad=!hasOne&&occ>=6; st.details.badRows=(st.details.badRows||[]).concat(bad?1:0).slice(-5); if(st.details.badRows.length===5&&st.details.badRows.filter(Boolean).length>=4) st.details.badLuck=true; st.blocks.push(...bs); if(st.blocks.some(b=>b.row<0)){ gameOver(); return; } if(topBefore===0&&!over) speak('turkey','top_row'); else if(highest()<=2&&!st.seen.top3){ st.seen.top3=1; speak('turkey','top_3'); } }
-    async function refillIfAlmostClear(){ if(occupiedRows()>1 || over) return false; gravity(); const rows=Array.from(new Set(st.blocks.map(b=>b.row))).sort((a,b)=>a-b); const keepRows=rows.slice(-1); if(keepRows.length){ st.blocks=st.blocks.filter(b=>b.row===keepRows[0]).map(b=>Object.assign(b,{row:7})); for(let r=8;r<10;r++) addGeneratedRow(r); } else { st.blocks=[]; for(let r=7;r<10;r++) addGeneratedRow(r); } st.score+=300; st.details.amazingClear=true; st.details.clearAllCount=(st.details.clearAllCount||0)+1; showCombo('竟然全部消除 +300'); draw(); await delay(360); await settle(false); return true; }
+    function normalizeStartBoard(){ gravity(); if(!st.blocks.length) for(let r=7;r<10;r++) addGeneratedRow(r); }
+    function refillToThreeRows(){ gravity(); const rows=Array.from(new Set(st.blocks.map(b=>b.row))).sort((a,b)=>a-b); const keepRows=rows.slice(-1); if(keepRows.length){ st.blocks=st.blocks.filter(b=>b.row===keepRows[0]).map(b=>Object.assign(b,{row:7})); for(let r=8;r<10;r++) addGeneratedRow(r); } else { st.blocks=[]; for(let r=7;r<10;r++) addGeneratedRow(r); } }
+    async function refillIfAlmostClear(){ if(over) return false; gravity(); if(occupiedRows()>1) return false; st.score+=300; st.details.amazingClear=true; st.details.clearAllCount=(st.details.clearAllCount||0)+1; showCombo('竟然全部消除 +300'); for(let attempt=0;attempt<3&&!over&&occupiedRows()<=1;attempt++){ refillToThreeRows(); draw(); await delay(360); await settle(false); gravity(); } if(!over&&occupiedRows()<=1){ refillToThreeRows(); draw(); } return true; }
     async function afterMove(wasTop){ const cleared=await settle(true); if(wasTop&&cleared>=2&&!over) st.details.clutch=true; const refilled=cleared ? await refillIfAlmostClear() : false; if(!refilled){ addRow(); draw(); if(!over){ await delay(360); await settle(false); await refillIfAlmostClear(); } } draw(); save(); }
     function gameOver(){ over=true; clearProgress('turkey'); setScore('turkey',Math.max(scores().turkey||0,st.score)); speak('turkey','gameover'); draw(); setTimeout(()=>showGameOver('turkey','游戏结束','本局分数：'+st.score+'分，消除'+st.details.clearedLines+'行',{outcome:'score',score:st.score},{details:Object.assign({},st.details,{score:st.score,moves:st.moves})}),350); }
     function draw(){ const board=qs('#tk-board'); if(!board) return; const rect=board.getBoundingClientRect(); const cell=(rect.width||320)/W; board.style.setProperty('--tk-cell',cell+'px'); const high=highest(), filled=high>=H?0:H-high, dangerClass=high<=0?'critical':high<=1?'danger':high<=3?'warn':'safe'; qs('#tk-danger').className='wb-turkey-danger-bar '+dangerClass; qs('#tk-danger').innerHTML=Array.from({length:10},(_,i)=>'<span class="'+(i<filled?'on':'')+'"></span>').join(''); qs('#tk-danger-text').textContent=dangerClass==='safe'?'安全':dangerClass==='warn'?'注意':'危险'; qs('#tk-hint').textContent=toolHint(); [['#tk-score',st.score],['#tk-lines',st.details.clearedLines],['#tk-combo',st.combo||0],['#tk-moves',st.moves||0],['#tk-thunder',st.tools.thunder],['#tk-stardust',st.tools.stardust],['#tk-hammer',st.tools.hammer]].forEach(([a,b])=>{const el=qs(a);if(el)el.textContent=b;}); qsa('.wb-turkey-tool',box).forEach(b=>{b.classList.toggle('active',selectedTool===b.dataset.tool); b.disabled=(st.tools[b.dataset.tool]||0)<=0;}); board.innerHTML=st.blocks.map(b=>'<div class="wb-turkey-block '+(selectedTool==='hammer'&&b.len<=1?'dim':'')+'" data-id="'+b.id+'" style="--c:'+b.color+';left:'+(b.col*cell+2)+'px;top:'+(b.row*cell+2)+'px;width:'+(b.len*cell-4)+'px"><span class="wb-turkey-face">'+faceFor(b)+'</span></div>').join(''); qsa('.wb-turkey-block',board).forEach(el=>{el.onclick=e=>{e.stopPropagation(); const b=st.blocks.find(x=>x.id===el.dataset.id); if(selectedTool&&b) useTool(b);}; el.onpointerdown=startDrag;}); }
@@ -12300,7 +12305,7 @@ function showGameRecords(game, page) {
         if (cols[col].length < counts[col]) { const c = deck.shift(); c.face = cols[col].length === counts[col] - 1; cols[col].push(c); left--; }
         col = (col + 1) % 10;
       }
-      return { cols, deck, score:0, level:1, moves:0, completed:[], countdown:16, tools:{undo:1, eliminate:5}, details:{ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, emptied:{}, dealEmptyLock:false, dangerPeak:false };
+      return { cols, deck, score:0, level:1, moves:0, completed:[], stepsSinceDeal:0, tools:{undo:1, eliminate:5}, details:{ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, emptied:{}, dealEmptyLock:false, dangerPeak:false };
     };
     let st = state && Array.isArray(state.cols) ? Object.assign(initial(), state) : initial();
     st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false })));
@@ -12309,9 +12314,10 @@ function showGameRecords(game, page) {
     st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {});
     st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {});
     st.emptied = st.emptied || {};
-    let selected = null, busy = false, over = false, drag = null, eliminateMode = false, hintMode = false, lastCountdownWarn = 0;
+    st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0));
+    let selected = null, busy = false, over = false, drag = null, eliminateMode = false, hintMode = false;
     const undoStack = [];
-    box.innerHTML = '<div class="wb-spider" id="wb-spider"><div class="wb-spider-top"><div class="wb-spider-stat"><small>分数</small><b id="sp-score">0</b></div><div class="wb-spider-stat"><small>完成</small><b id="sp-done-count">0副</b></div><div class="wb-spider-stat"><small>移动</small><b id="sp-moves">0</b></div><div class="wb-spider-stat"><small>最高列</small><b id="sp-height">0/30</b></div></div><div class="wb-spider-deckbar"><div style="flex:1;min-width:0;"><div class="wb-spider-countdown" id="sp-countdown">16步后发牌</div><div class="wb-muted" id="sp-deal-hint"></div></div><div class="wb-spider-deckside"><div class="wb-spider-pilebox"><div class="wb-spider-collectpile empty" id="sp-collect-pile"></div></div><div class="wb-spider-pilebox"><div class="wb-spider-deckpile" aria-hidden="true"><span></span><span></span><span></span></div></div><button class="wb-spider-deck" id="sp-deck" type="button">发牌</button></div></div><div class="wb-spider-board" id="sp-board"></div><div class="wb-spider-tools"><button class="wb-spider-tool" id="sp-hint" type="button">提示</button><button class="wb-spider-tool" id="sp-undo" type="button">撤销</button><button class="wb-spider-tool" id="sp-eliminate" type="button">消除 <span class="left" id="sp-eliminate-left">5</span></button></div><div class="wb-spider-done"><div class="wb-spider-done-head"><span id="sp-done-title">已完成牌组</span><span id="sp-done-total">共 0 副</span></div><div class="wb-spider-done-track" id="sp-done-track"></div></div></div>';
+    box.innerHTML = '<div class="wb-spider" id="wb-spider"><div class="wb-spider-top"><div class="wb-spider-stat"><small>分数</small><b id="sp-score">0</b></div><div class="wb-spider-stat"><small>完成</small><b id="sp-done-count">0副</b></div><div class="wb-spider-stat"><small>移动</small><b id="sp-moves">0</b></div><div class="wb-spider-stat"><small>最高列</small><b id="sp-height">0/30</b></div></div><div class="wb-spider-deckbar"><div class="wb-spider-dealinfo"><div class="wb-spider-countdown" id="sp-countdown">发牌后执行 0 步</div><div class="wb-muted" id="sp-deal-hint"></div></div><div class="wb-spider-deckside"><div class="wb-spider-pilebox collect"><div class="wb-spider-collectpile empty" id="sp-collect-pile"></div></div><div class="wb-spider-pilebox"><div class="wb-spider-deckpile" aria-hidden="true"><span></span><span></span><span></span></div></div><button class="wb-spider-deck" id="sp-deck" type="button">发牌</button></div></div><div class="wb-spider-board" id="sp-board"></div><div class="wb-spider-tools"><button class="wb-spider-tool" id="sp-hint" type="button">提示</button><button class="wb-spider-tool" id="sp-undo" type="button">撤销</button><button class="wb-spider-tool" id="sp-eliminate" type="button">消除 <span class="left" id="sp-eliminate-left">5</span></button><button class="wb-spider-tool end" id="sp-end" type="button">结束</button></div><div class="wb-spider-done"><div class="wb-spider-done-head"><span id="sp-done-title">已完成牌组</span><span id="sp-done-total">共 0 副</span></div><div class="wb-spider-done-track" id="sp-done-track"></div></div></div>';
     speak('spider','start');
     draw(); save();
     setTimeout(()=>{ if(currentGame === 'spider') draw(); }, 60);
@@ -12319,17 +12325,19 @@ function showGameRecords(game, page) {
     qs('#sp-hint').onclick = () => toggleHint();
     qs('#sp-undo').onclick = () => undoMove();
     qs('#sp-eliminate').onclick = () => toggleEliminate();
+    qs('#sp-end').onclick = () => requestEndSpiderGame();
     qs('#sp-board').onclick = e => { if (e.target.id === 'sp-board') clearSelection(); };
     getHostDocument().addEventListener('keydown', spiderKeydown);
     function spiderKeydown(e){ if(currentGame==='spider' && e.key === 'Escape') clearSelection(); }
     function save(){ if(!over) saveProgress('spider', Object.assign({}, st, { selected:null })); }
     function snapshot(){ return JSON.parse(JSON.stringify(Object.assign({}, st, { selected:null }))); }
     function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length > 80) undoStack.shift(); }
-    function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; }
+    function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)); }
     function undoMove(){ if(busy || over || gamePaused || !undoStack.length) return; restoreState(undoStack.pop()); selected=null; eliminateMode=false; hintMode=false; st.score=Math.max(0,Number(st.score||0)-2); st.details.undo=(st.details.undo||0)+1; speak('spider','undo'); showSpiderToast('已撤销，分数-2'); draw(); save(); }
     function toggleHint(){ if(busy || over || gamePaused) return; selected=null; eliminateMode=false; if(hintMode){ hintMode=false; draw(); return; } st.score=Math.max(0,Number(st.score||0)-2); hintMode=true; showSpiderToast('可移动牌已标蓝，分数-2'); draw(); save(); }
     function toggleEliminate(){ if(busy || over || gamePaused || (st.tools.eliminate||0)<=0) return; selected=null; hintMode=false; eliminateMode=!eliminateMode; draw(); showSpiderToast(eliminateMode ? '选择同花色连续牌组，再点一次消除' : '取消消除'); }
-    function dealInterval(){ return Math.max(10, 16 - Math.floor((st.completed.length || 0) / 4)); }
+    function requestEndSpiderGame(){ if(busy || over) return; showConfirm('结束本局', '确定要提前结束无尽蜘蛛纸牌吗？本局会结算并可开启下一把。', endSpiderGame); }
+    function endSpiderGame(){ if(busy || over) return; over=true; selected=null; hintMode=false; eliminateMode=false; clearProgress('spider'); setScore('spider', Math.max(scores().spider || 0, st.score)); speak('spider','gameover'); draw(); showGameOver('spider','提前结束','本局分数：' + st.score + '分，完成' + st.completed.length + '副', { outcome:'score', score:st.score }, { details:Object.assign({}, st.details, { score:st.score, completed:st.completed.length }) }); }
     function ensureDeck(n=30){ while(st.deck.length < n) st.deck.push(...makeBatch()); }
     function topCard(i){ const c=st.cols[i]; return c[c.length-1]; }
     function isRun(col, idx){ const arr = st.cols[col]; if (!arr[idx] || !arr[idx].face) return false; for(let i=idx;i<arr.length;i++) if(!arr[i].face) return false; for(let i=idx;i<arr.length-1;i++) if(arr[i].suit !== arr[i+1].suit || arr[i].rank !== arr[i+1].rank + 1) return false; return true; }
@@ -12349,10 +12357,8 @@ function showGameRecords(game, page) {
       await delay(80);
       st.moves++; st.details.moves = st.moves;
       st.score = Math.max(0, Number(st.score||0) - 1);
+      st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)) + 1;
       await settle([from, to], true);
-      st.countdown = Math.max(0, Number(st.countdown || dealInterval()) - 1);
-      if(st.countdown === 3 && lastCountdownWarn !== st.moves){ lastCountdownWarn = st.moves; speak('spider','auto_3'); }
-      await maybeAutoDeal();
       await settle([], false);
       checkOverflow();
       await checkClearTable();
@@ -12407,7 +12413,6 @@ function showGameRecords(game, page) {
     }
     function resetEmptyRewardsAfterDeal(){ st.emptied = {}; }
     function allFilled(){ return st.cols.every(c=>c.length>0); }
-    async function maybeAutoDeal(){ if(st.countdown > 0) return; if(!allFilled()){ st.dealEmptyLock = true; draw(); return; } await dealRow(true); }
     async function manualDeal(){ if(busy || over || gamePaused) return; if(!allFilled()){ st.dealEmptyLock=true; draw(); speak('spider','auto_3'); return; } busy=true; pushUndo(); await dealRow(false); await settle([], false); checkOverflow(); await checkClearTable(); draw(); save(); busy=false; }
     function addDealWant(list, suit, rank, weight, kind){
       if(!suit || rank < 1 || rank > 13) return;
@@ -12484,7 +12489,7 @@ function showGameRecords(game, page) {
       }
       const deckPile = qs('.wb-spider-deckpile');
       if(deckPile){ deckPile.classList.add('dealt'); await delay(500); deckPile.classList.remove('dealt'); }
-      st.details.deals=(st.details.deals||0)+1; st.countdown = dealInterval(); st.level = Math.max(1, Math.floor(st.completed.length / 4) + 1); st.dealEmptyLock=false; resetEmptyRewardsAfterDeal(); speak('spider','deal');
+      st.details.deals=(st.details.deals||0)+1; st.stepsSinceDeal = 0; st.level = Math.max(1, Math.floor(st.completed.length / 4) + 1); st.dealEmptyLock=false; resetEmptyRewardsAfterDeal(); speak('spider','deal');
       if(!hasAnyMove()){ st.details.badDeals=(st.details.badDeals||0)+1; st.details.badDealsTotal=(st.details.badDealsTotal||0)+1; if((st.details.badDeals||0)>=3) speak('spider','bad_deal'); } else st.details.badDeals=0;
       draw(); await delay(280);
     }
@@ -12571,7 +12576,7 @@ function showGameRecords(game, page) {
       st.details.clearTable = true;
       st.score += 1000; showSpiderToast('牌桌清空！'); speak('spider','clear_table'); await delay(700); ensureDeck(40);
       for(let r=0;r<4;r++) for(let i=0;i<10;i++){ const c=st.deck.shift(); c.face = r===3; st.cols[i].push(c); }
-      st.countdown = dealInterval(); resetEmptyRewardsAfterDeal(); draw(); save();
+      st.stepsSinceDeal = 0; resetEmptyRewardsAfterDeal(); draw(); save();
     }
     function cardHTML(c, col, idx, top, extra){
       if(!c.face) return '<div class="wb-spider-card back '+(extra||'')+'" data-col="'+col+'" data-idx="'+idx+'" style="top:'+top+'px"></div>';
@@ -12589,7 +12594,7 @@ function showGameRecords(game, page) {
       const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：' + st.score + '分';
       const highEl=qs('#wb-high'); if(highEl) highEl.textContent='最高：' + Math.max(scores().spider || 0, st.score) + '分';
       const maxH=Math.max(...st.cols.map(c=>c.length));
-      const cd=qs('#sp-countdown'); if(cd){ cd.textContent = st.countdown ? (st.countdown + '步后发牌') : '填满空列后发牌'; cd.className='wb-spider-countdown ' + (st.countdown<=1?'danger':st.countdown<=5?'warn':''); }
+      const cd=qs('#sp-countdown'); if(cd){ cd.textContent = '发牌后执行 ' + Math.max(0, Number(st.stepsSinceDeal || 0)) + ' 步'; cd.className='wb-spider-countdown'; }
       const hint=qs('#sp-deal-hint'); if(hint) hint.textContent = st.dealEmptyLock || !allFilled() ? '请先填满空列' : '';
       const deck=qs('#sp-deck'); if(deck) deck.className='wb-spider-deck' + (!allFilled() ? ' blocked' : '');
       const pile=qs('#sp-collect-pile'); if(pile){ const cap=Math.max(1, Math.floor(((pile.clientWidth || 36) + 7) / 16)); const shown=st.completed.slice(0, cap); pile.className='wb-spider-collectpile' + (!shown.length ? ' empty' : ''); pile.innerHTML = shown.length ? shown.map(d=>'<span class="wb-spider-collect-card '+(d.suit==='H'?'red':'')+'" title="第'+d.index+'副">'+faceInner({ rank:1, suit:d.suit })+'</span>').join('') : '<span class="wb-spider-collect-card">'+faceInner({ rank:1, suit:'S' })+'</span>'; }
