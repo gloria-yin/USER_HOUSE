@@ -122,6 +122,7 @@ export async function initWanbanXiaowu() {
   let gamePetRewardNextMs = 30 * 60 * 1000;
   let gameDurationRewardTimer = null;
   let randomLineTimer = null;
+  let linkLinkTimer = null;
   let lastDialogueAt = 0;
   let singleDialogueQueue = null;
   let singleDialogueTimer = null;
@@ -190,6 +191,7 @@ export async function initWanbanXiaowu() {
     game1010: { id: 'game1010', name: '1010!', mode: 'single', unit: '分', icon: '1010', iconImage: GAME_ICON_BASE + '1010.png' },
     turkey: { id: 'turkey', name: '土耳其方块', mode: 'single', unit: '分', icon: '土', iconImage: GAME_ICON_BASE + 'turkey.png' },
     spider: { id: 'spider', name: '无尽蜘蛛纸牌', mode: 'single', unit: '分', icon: '蛛', iconImage: GAME_ICON_BASE + 'spider.png' },
+    linklink: { id: 'linklink', name: '连连看', mode: 'single', unit: '分', icon: '连', iconImage: GAME_ICON_BASE + 'lian.png' },
     ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: GAME_ICON_BASE + 'ludo.jpg' },
     guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: GAME_ICON_BASE + 'guessnumber.jpg' },
     wordguess: { id: 'wordguess', name: '我说你猜', mode: 'double', unit: '胜', icon: '谜', iconImage: GAME_ICON_BASE + 'wordguess.jpg' },
@@ -200,7 +202,8 @@ export async function initWanbanXiaowu() {
     reversi: { id: 'reversi', name: '翻转棋', mode: 'double', unit: '胜', icon: '●○', iconImage: GAME_ICON_BASE + 'reversi.jpg' },
     bombnumber: { id: 'bombnumber', name: '数字炸弹', mode: 'double', unit: '胜', icon: '爆', iconImage: GAME_ICON_BASE + 'bombnumber.jpg' },
     connect4d: { id: 'connect4d', name: '立体四子棋', mode: 'double', unit: '胜', icon: '4D', iconImage: GAME_ICON_BASE + 'connect4d.jpg' },
-    draughts: { id: 'draughts', name: '跳棋', mode: 'double', unit: '胜', icon: '跳', iconImage: GAME_ICON_BASE + 'draughts.png' }
+    draughts: { id: 'draughts', name: '跳棋', mode: 'double', unit: '胜', icon: '跳', iconImage: GAME_ICON_BASE + 'draughts.png' },
+    blackjack: { id: 'blackjack', name: '21点', mode: 'double', unit: '胜', icon: '21', iconImage: GAME_ICON_BASE + '21p.png' }
   };
 
   const DEFAULT_SETTINGS = {
@@ -278,6 +281,8 @@ export async function initWanbanXiaowu() {
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
     spider: '经典蜘蛛纸牌的无尽模式。十列牌堆，默认黑桃与红桃两种花色；卡牌可按点数递减叠放，不同花色可以临时混放，但只有同花色严格递减的连续牌组能整体移动。同花色K到A完整序列会自动收起到下方收藏区。牌库无限，玩家可主动发一排；存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
+    linklink: '限时配对消除。点击两个相同图案，若它们之间存在最多两次转弯的横竖连接路径即可消除；连接线可以从棋盘外侧一格绕行，但不能穿过图块或石块。共12关，逐步加入下落、上移、左右靠拢、集中、分散和障碍物。每关清空棋盘并达成目标分后自动进入下一关。',
+    blackjack: '双人21点挑战。每一小局使用一副完整52张牌重新洗牌，你和Char轮流决定要牌或停牌，尽量接近21点但不能爆牌。每关双方积分从0开始竞速，先达到目标分者赢下本关；玩家连胜8关即完整通关。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '进入时可选择普通模式或无尽模式。普通模式任意方向先连成五子获胜；无尽模式双方各30颗棋子，连五后回收自己的五子并吃掉对方一子，直到一方棋子被吃完或双方无可用棋子。',
     territory: '在点阵之间画边，规则类似围方格。谁画下一个小方格的第4条边，谁就占领该格并继续行动。所有边画完后，占领格子多的一方获胜。',
@@ -362,6 +367,8 @@ export async function initWanbanXiaowu() {
     game1010: { start:'1010!开局，10×10棋盘为空，底部出现3个不可旋转方块。', place:'玩家成功放置一个候补方块。', clear:'玩家消除了一行或一列，30%概率触发。', clear_3:'玩家一次性消除超过3行/列。', score_1000:'1010!本局分数每增加1000分时触发。', tool:'玩家使用重新生成或小锤子道具。', low_space:'棋盘剩余空格少于5个，局面接近死局。', record:'1010!刷新历史最高分。', gameover:'没有任何剩余候补方块可以放入棋盘，且道具已经用完，1010!结束。', random:'观看1010!方块拼图时的碎碎念。' },
     turkey: { start:'土耳其方块开局，底部四行横向方块已经出现。', first_clear:'玩家第一次消除完整横行。', clear_2:'玩家同时消除2行。', clear_3:'玩家同时消除3行及以上。', chain_3:'同一次移动连锁达到第3轮。', combo_5:'连续5次普通移动都产生消除。', score_1000:'土耳其方块分数首次达到1000。', score_5000:'土耳其方块分数首次达到5000。', record:'土耳其方块刷新历史最高分。', top_3:'当前最高方块进入顶部3行。', top_row:'顶行已经被占用。', no_clear_8:'连续8次普通移动没有消除。', thunder:'玩家使用云雷道具。', stardust:'玩家使用星尘收集器。', hammer:'玩家使用小锤粉碎机。', danger_tool:'顶部危险时使用道具并成功存活。', gameover:'方块被推到棋盘顶部之外，土耳其方块结束。', random:'观看土耳其方块时的待机碎碎念。' },
     spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已发好，玩家开始整理黑桃与红桃。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'玩家尝试发牌但存在空列，需要先填满空列。', deal:'新的一排牌主动发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
+    linklink: { start:'连连看新关卡开始，棋盘已经生成。', straight:'零转弯连线成功。', two_turn:'两转弯连线成功。', outside:'连接线从棋盘外侧绕行成功。', combo_5:'连连看达到5连击。', combo_10:'连连看达到10连击。', combo_20:'连连看达到20连击。', wrong:'点击了无法连接的一对。', hint:'玩家使用提示道具。', shuffle:'玩家使用洗牌道具。', dead_shuffle:'棋盘死局并自动洗牌。', freeze:'玩家使用冻结时间。', magic:'玩家使用魔法消除。', time_30:'连连看剩余30秒。', fast_clear:'剩余一半以上时间通关。', level_clear:'连连看完成普通关卡。', gameover:'连连看倒计时结束。', record:'连连看刷新历史最高分。', random:'观看连连看时的待机碎碎念。' },
+    blackjack: { start:'21点新关卡开始，双方重新发牌对决。', player_blackjack:'玩家开局获得Blackjack。', char_blackjack:'Char开局获得Blackjack。', player_21:'玩家抽牌后刚好21点。', char_21:'Char抽牌后刚好21点。', player_bust:'玩家爆牌。', char_bust:'Char爆牌。', risky_hit:'玩家19点仍选择要牌。', player_win:'玩家赢下本轮。', char_win:'Char赢下本轮。', win5:'玩家达成五连胜。', close_score:'双方比分非常接近。', hint:'玩家使用提示。', peek:'玩家使用偷看。', undo:'玩家使用反悔。', protect:'护牌生效。', gameover:'21点挑战失败。', record:'21点刷新历史最高总分。', random:'观看21点时的待机碎碎念。' },
     tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'{{char}}阻挡了玩家即将连线的一步。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'{{char}}在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
     gomoku: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_three:'玩家形成三连或强威胁。', user_open_three:'玩家下出三连且两边都没有被遮挡，明显准备进攻。', user_blocked_four:'玩家下出四连但有一边被遮挡，仍然是强进攻。', user_open_four:'玩家下出四连且两边都没有被遮挡，{{char}}知道自己这把基本必输了。', ai_block:'{{char}}阻挡玩家形成强威胁。', ai_threat:'{{char}}形成强威胁，玩家需要防守。', user_capture:'五子棋无尽模式，玩家吃掉{{char}}一颗棋子并用自己的棋子替换该位置。', char_capture:'五子棋无尽模式，{{char}}吃掉玩家一颗棋子并用自己的棋子替换该位置。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家五子连线获胜。', user_lose:'{{char}}五子连线获胜，玩家失败。', draw:'五子棋平局。', random:'和user玩五子棋时的碎碎念。' },
     territory: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', edge:'玩家画下一条边。', no_safe_edge:'场面没有普通边了，之后每条边都可能送分。', capture:'玩家围住某个方格最后一条边并占领得分。', chain:'玩家连续占领多个方格。', ta_capture:'{{char}}围住某个方格并占领得分。', user_turn:'{{char}}的回合结束，轮到玩家。', danger:'玩家选择可能送给{{char}}得分机会的边。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'所有边画完后玩家得分更高。', user_lose:'所有边画完后{{char}}得分更高。', draw:'所有边画完后双方平分。', random:'和user玩电子围地盘时的碎碎念。' },
@@ -861,6 +868,7 @@ export async function initWanbanXiaowu() {
   }
   function hasPlayableProgress(game, state) {
     if (!state) return false;
+    if (game === 'linklink') return !!(state.board && state.board.length && state.timeLeft > 0);
     if (game === 'wordguess') return !!(state.completed || state.clueIndex || state.revealed || (state.guesses && state.guesses.length));
     if (game === 'guessnumber') return !!(state.tries || (state.history && state.history.length));
     if (game === 'oldmaid') return !!(state.pending || state.phase !== 'user_pick' || state.turn !== 'user' || (state.log && state.log.length));
@@ -1043,6 +1051,8 @@ export async function initWanbanXiaowu() {
     if (game === 'game1010') return ['时间','用时','分数','消除','放置','陪伴者','日志','操作'];
     if (game === 'turkey') return ['时间','用时','分数','消除','移动','陪伴者','日志','操作'];
     if (game === 'spider') return ['时间','用时','分数','完成','发牌','陪伴者','日志','操作'];
+    if (game === 'linklink') return ['时间','用时','总分','关卡','最高连击','陪伴者','日志','操作'];
+    if (game === 'blackjack') return ['时间','用时','胜负','总分','关卡','最高连胜','陪伴者','日志','操作'];
     if (game === 'wordguess') return ['时间','用时','猜中题数','陪伴者','日志','操作'];
     if (isRoundCountGame(game)) return ['时间','用时','胜负','回合数','陪伴者','日志','操作'];
     if ((GAME_META[game] || {}).mode === 'double') return ['时间','用时','胜负','陪伴者','日志','操作'];
@@ -1061,6 +1071,8 @@ export async function initWanbanXiaowu() {
     if (game === 'game1010') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || extractNumber(r?.scoreText || '', /消除\s*(\d+)\s*行列/, 0)), String(r?.details?.placements || extractNumber(r?.scoreText || '', /放置\s*(\d+)\s*块/, 0)), recordCompanionDisplay(r)]);
     if (game === 'turkey') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || 0), String(r?.details?.moves || 0), recordCompanionDisplay(r)]);
     if (game === 'spider') return base.concat([singleRecordPoints(r), String(r?.details?.completed ?? extractNumber(r?.scoreText || '', /完成\s*(\d+)\s*副/, 0)), String(r?.details?.deals || 0), recordCompanionDisplay(r)]);
+    if (game === 'linklink') return base.concat([singleRecordPoints(r), String(r?.details?.level || extractNumber(r?.scoreText || '', /第\s*(\d+)\s*关/, 1)), String(r?.details?.maxCombo || 0), recordCompanionDisplay(r)]);
+    if (game === 'blackjack') return base.concat([userOutcomeText(r.result), singleRecordPoints(r), String(r?.details?.level || extractNumber(r?.scoreText || '', /第\s*(\d+)\s*关/, 1)), String(r?.details?.maxStreak || 0), recordCompanionDisplay(r)]);
     if (game === 'wordguess') return base.concat([wordGuessHits(r), recordCompanionDisplay(r)]);
     if (isRoundCountGame(game)) return base.concat([userOutcomeText(r.result), recordRoundCount(r), recordCompanionDisplay(r)]);
     if ((GAME_META[game] || {}).mode === 'double') return base.concat([userOutcomeText(r.result), recordCompanionDisplay(r)]);
@@ -1135,6 +1147,8 @@ export async function initWanbanXiaowu() {
     if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
     if (game === 'turkey') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；累计消除：' + (d.clearedLines || 0) + '行；有效移动：' + (d.moves || 0) + '次；最大同时消除：' + (d.maxClear || 0) + '行；最大连锁：' + (d.maxChain || 0) + '轮；最大连续回合连击：' + (d.maxCombo || 0) + '；云雷/星尘/粉碎机：' + (d.thunderUsed || 0) + '/' + (d.stardustUsed || 0) + '/' + (d.hammerUsed || 0) + '次；无道具达到3000：' + (d.noTool3000 ? '是' : '否') + '。';
     if (game === 'spider') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；完成牌组：' + (d.completed || 0) + '副；黑桃：' + (d.spades || 0) + '副；红桃：' + (d.hearts || 0) + '副；最大连锁：' + (d.maxChain || 0) + '副；发牌次数：' + (d.deals || 0) + '次；有效移动：' + (d.moves || 0) + '次；撤销：' + (d.undo || 0) + '次；消除：' + (d.eliminate || 0) + '次；清空列次数：' + (d.emptyCols || 0) + '次；同屏最多空列：' + (d.maxEmptyCols || 0) + '列；命悬一线次数：' + (d.clutch || 0) + '次；糟糕发牌连续/累计记录：' + (d.badDeals || 0) + '/' + (d.badDealsTotal || 0) + '次；游戏时间灯：' + (rec.durationMs >= 20*60000 ? '长时间游玩' : rec.durationMs >= 10*60000 ? '中等时长' : '短时游玩') + '。';
+    if (game === 'linklink') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；最高连击：' + (d.maxCombo || 0) + '；提示/洗牌/冻结/魔法：' + (d.hintUsed || 0) + '/' + (d.shuffleUsed || 0) + '/' + (d.freezeUsed || 0) + '/' + (d.magicUsed || 0) + '次；自动死局洗牌：' + (d.deadShuffles || 0) + '次；最快通关：' + (d.fastClear ? '是' : '否') + '；最后一秒：' + (d.lastSecond ? '是' : '否') + '。';
+    if (game === 'blackjack') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；胜/负/平：' + (d.wins || 0) + '/' + (d.losses || 0) + '/' + (d.ties || 0) + '；Blackjack：' + (d.blackjacks || 0) + '次；玩家爆牌：' + (d.busts || 0) + '次；Char爆牌：' + (d.charBusts || 0) + '次；最高连胜：' + (d.maxStreak || 0) + '；提示/偷看/反悔/护牌：' + (d.hintUsed || 0) + '/' + (d.peekUsed || 0) + '/' + (d.undoUsed || 0) + '/' + (d.protectUsed || 0) + '次。';
     if (game === 'ludo') return cheatText + 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user飞行次数：' + (d.userFlights || 0) + '次；' + (rec.companion || '{{char}}') + '飞行次数：' + (d.charFlights || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
     if (game === 'guessnumber') return '每次猜测：\n' + ((d.guesses || []).map((x,i) => (i+1) + '. 猜“' + x.guess + '”：数字对' + x.nums + '个，位置对' + x.pos + '个').join('\n') || '无');
     if (game === 'wordguess') return '每题记录：\n' + ((d.rounds || []).map((r,i) => (i+1) + '. 题目：' + r.word + '；5条提示：' + (r.clues || []).join(' / ') + '；user猜过：' + ((r.guesses || []).join('、') || '无') + '；第几条提示猜中：' + (r.winClueIndex || '未猜中')).join('\n') || '无');
@@ -1334,6 +1348,15 @@ export async function initWanbanXiaowu() {
         'turkey_tools：工具齐全。同一局使用过三种不同道具。',
         'record：破纪录小剧场。刷新当前游戏历史最高分。'
       ].join('\n');
+      if (game === 'linklink') return [
+        'link_fast_combo：超快小剧场。达到20连击。',
+        'link_time_rich：时间富翁。剩余时间超过本关初始时间一半时通关。',
+        'link_last_second：最后一秒。剩余时间不超过1秒时通关。',
+        'bad_luck：超级倒霉。同一关触发3次自动死局洗牌。',
+        'link_master：连连看大师。完成第12关。',
+        'record：破纪录小剧场。刷新当前游戏历史最高分。',
+        'normal：普通小剧场。根据关卡、总分、最高连击和道具使用自然复盘。'
+      ].join('\n');
       if (game === 'spider') return [
         'spider_chain_master：连锁大师。同一次结算收起至少5副完整牌。',
         'spider_four_empty：四面通风。同一时刻至少有4个空列。',
@@ -1354,6 +1377,18 @@ export async function initWanbanXiaowu() {
         '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
       ].join('\n');
     }
+    if (game === 'blackjack') return [
+      'bj_blackjack：天生21。user获得Blackjack。',
+      'bj_exact21：21正好。user使用3张或更多牌组成21点。',
+      'bj_six：六牌奇迹。手牌达到6张且没有爆牌。',
+      'bj_peek_win：一眼看穿。使用偷看后赢下这一轮。',
+      'bad_luck：超级倒霉。user连续3轮爆牌。',
+      'bj_char_bust：Char也有今天。Char连续3轮爆牌。',
+      'bj_win5：停不下来。连续击败Char 5轮。',
+      'bj_tiebreak：决胜赢家。在决胜局击败Char。',
+      'bj_peek_bust：偷看是不对的。一局使用偷看后仍然爆牌。',
+      'record：破纪录小剧场。刷新当前游戏历史最高分。'
+    ].join('\n');
     if (game === 'ludo') return [
       'cheat_win：耍赖小剧场。user三次耍赖/悔棋都用掉了，但最后还是赢了，重点写' + role + '纵容user后的反应。',
       'flight_show：特殊小剧场。飞行棋里user本局完成超过3次飞行，必须写user多次利用飞行区拉开距离，' + role + '惊讶、不服、得瑟被压回去或认真复盘飞行过程。',
@@ -1476,14 +1511,20 @@ export async function initWanbanXiaowu() {
     if (game === 'spider' && (meta.completed || meta.details?.completed || 0) >= 50) candidates.push('super_good');
     if (game === 'spider' && (meta.clutch || meta.details?.clutch || 0) > 0) candidates.push('spider_clutch');
     if (game === 'spider' && (meta.badDeals || meta.details?.badDeals || 0) >= 3) candidates.push('bad_luck');
+    if (game === 'linklink' && (meta.maxCombo || meta.details?.maxCombo || 0) >= 20) candidates.push('link_fast_combo');
+    if (game === 'linklink' && (meta.fastClear || meta.details?.fastClear)) candidates.push('link_time_rich');
+    if (game === 'linklink' && (meta.lastSecond || meta.details?.lastSecond)) candidates.push('link_last_second');
+    if (game === 'linklink' && (meta.deadShufflesInLevel || meta.details?.deadShufflesInLevel || 0) >= 3) candidates.push('bad_luck');
+    if (game === 'linklink' && (meta.completedAll || meta.details?.completedAll)) candidates.push('link_master');
     if (durationMs <= 15000 && ((game === 'tetris' && score < 200) || (game === 'snake' && score < 30) || ((game === 'jump' || game === 'plank') && score < 3) || (game === 'watermelon' && score < 120) || (game === 'game2048' && score < 128))) candidates.push('super_bad');
-    if (durationMs >= 1200000) candidates.push('long_run');
+    if (game !== 'linklink' && durationMs >= 1200000) candidates.push('long_run');
     if (currentRoundRecord) candidates.push('record');
     if (game === 'screw' && !candidates.length) candidates.push(meta.completed ? 'screw_success' : 'screw_fail');
     return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : '';
   }
   function doubleSpecialTheater(game, outcome, scoreText, meta) {
     meta = meta || {};
+    if (game === 'blackjack') { const d=meta.details||meta||{}; const arr=[]; if((d.blackjacks||0)>0) arr.push('bj_blackjack'); if((d.exact21||0)>0) arr.push('bj_exact21'); if(d.sixCard) arr.push('bj_six'); if(d.peekWin) arr.push('bj_peek_win'); if(d.tripleBust) arr.push('bad_luck'); if(d.charTripleBust) arr.push('bj_char_bust'); if((d.maxStreak||0)>=5) arr.push('bj_win5'); if(d.wonTiebreak) arr.push('bj_tiebreak'); if(d.peekBust) arr.push('bj_peek_bust'); if(currentRoundRecord) arr.push('record'); return arr.length ? arr[Math.floor(Math.random()*arr.length)] : ''; }
     if (game === 'connect4d' && outcome === 'draw') return 'balanced';
     if (game === 'ludo' && Number(meta.userFlights || meta.details?.userFlights || 0) > 3) return 'flight_show';
     if (outcome === 'user_win') {
@@ -1578,10 +1619,22 @@ export async function initWanbanXiaowu() {
       ,turkey_clutch: '绝地反击'
       ,turkey_clear_all: '竟然全部消除'
       ,turkey_tools: '工具齐全'
+      ,link_fast_combo: '超快小剧场'
+      ,link_time_rich: '时间富翁'
+      ,link_last_second: '最后一秒'
+      ,link_master: '连连看大师'
       ,spider_chain_master: '连锁大师小剧场'
       ,spider_four_empty: '四面通风小剧场'
       ,spider_clear_table: '牌桌清空小剧场'
       ,spider_clutch: '命悬一线小剧场'
+      ,bj_blackjack: '天生21'
+      ,bj_exact21: '21正好'
+      ,bj_six: '六牌奇迹'
+      ,bj_peek_win: '一眼看穿'
+      ,bj_char_bust: 'Char也有今天'
+      ,bj_win5: '停不下来'
+      ,bj_tiebreak: '决胜赢家'
+      ,bj_peek_bust: '偷看是不对的'
       ,flight_show: '飞行小剧场'
     }[special] || '特殊角色互动小剧场').replace(/{{char}}/g, displayCharName());
   }
@@ -2049,7 +2102,7 @@ export async function initWanbanXiaowu() {
     }, 1200);
   }
 
-  function stopGame() { flushAllProgressSaves(); commitGameActiveDuration(true); clearGameDurationRewardTimer(); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (screwTimer) clearInterval(screwTimer); if (randomLineTimer) clearInterval(randomLineTimer); if (singleDialogueTimer) clearTimeout(singleDialogueTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = screwTimer = randomLineTimer = null; singleDialogueTimer = null; singleDialogueQueue = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
+  function stopGame() { flushAllProgressSaves(); commitGameActiveDuration(true); clearGameDurationRewardTimer(); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (screwTimer) clearInterval(screwTimer); if (linkLinkTimer) clearInterval(linkLinkTimer); if (randomLineTimer) clearInterval(randomLineTimer); if (singleDialogueTimer) clearTimeout(singleDialogueTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = screwTimer = linkLinkTimer = randomLineTimer = null; singleDialogueTimer = null; singleDialogueQueue = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
   function showGamePauseOverlay() {
     const box = qs('#wb-gamebox');
     if (!box || qs('#wb-pause-overlay', box)) return;
@@ -2881,6 +2934,125 @@ export async function initWanbanXiaowu() {
       @keyframes wbTurkeyParticle { to { transform:translate(var(--dx),var(--dy)) scale(.2); opacity:0; } }
       @keyframes wbTurkeyShatter { 0%{transform:scale(1);opacity:1} 45%{transform:scale(1.06) rotate(.6deg);opacity:.9} 100%{transform:scale(.35) rotate(-4deg);opacity:0} }
       @keyframes wbTurkeyCombo { 0%{opacity:0;transform:translate(-50%,-35%) scale(.8)} 25%,75%{opacity:1;transform:translate(-50%,-50%) scale(1)} 100%{opacity:0;transform:translate(-50%,-68%) scale(.9)} }
+      .wb-link { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto auto; gap:7px; overflow:hidden; color:var(--wb-text); }
+      .wb-link-top { display:grid; grid-template-columns:minmax(70px,.9fr) minmax(120px,1.6fr) minmax(70px,.9fr) auto; align-items:center; gap:6px; padding:2px 2px 6px; border-bottom:1px solid color-mix(in srgb,var(--wb-border) 72%,transparent 28%); }
+      .wb-link-level,.wb-link-total { min-width:0; display:grid; gap:1px; text-align:center; line-height:1.05; }
+      .wb-link-level small,.wb-link-total small { color:var(--wb-muted); font-size:10px; font-weight:900; }
+      .wb-link-level b,.wb-link-total b { color:var(--wb-text); font-size:14px; font-weight:1000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .wb-link-progress { min-width:0; display:grid; gap:4px; color:var(--wb-muted); font-size:11px; font-weight:900; text-align:center; }
+      .wb-link-bar { height:5px; border-radius:999px; overflow:hidden; background:color-mix(in srgb,var(--wb-border) 36%,transparent 64%); }
+      .wb-link-fill { width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,#55cbb1,#9be7d2); transition:width .18s ease; }
+      .wb-link-fill.done { background:linear-gradient(90deg,#f5c94f,#ffe8a3); }
+      .wb-link-time { min-width:66px; height:28px; display:grid; place-items:center; padding:0 8px; border:1px solid color-mix(in srgb,var(--wb-border) 70%,var(--wb-accent) 30%); border-radius:999px; background:color-mix(in srgb,var(--wb-panel) 76%,transparent 24%); color:var(--wb-text); font-size:12px; font-weight:1000; white-space:nowrap; }
+      .wb-link-time.warn { border-color:#f59e0b; color:#d97706; }
+      .wb-link-time.danger { border-color:#ef4444; color:#ef4444; animation:wbLinkPulse .8s ease-in-out infinite alternate; }
+      .wb-link-time.freeze { border-color:#60a5fa; color:#2563eb; }
+      .wb-link-boardwrap { position:relative; min-height:0; display:grid; place-items:center; overflow:hidden; padding:2px; }
+      .wb-link-board { --ll-pad:5px; position:relative; display:grid; grid-template-columns:repeat(var(--ll-cols), minmax(0,1fr)); grid-template-rows:repeat(var(--ll-rows), minmax(0,1fr)); gap:0; width:min(100%, calc((100cqh - 120px) * var(--ll-ratio)), 560px); max-height:calc(100cqh - 120px); aspect-ratio:var(--ll-cols) / var(--ll-rows); padding:var(--ll-pad); border:1px solid color-mix(in srgb,var(--wb-border) 74%,var(--wb-accent) 26%); background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 82%,var(--wb-bg) 18%),color-mix(in srgb,var(--wb-soft) 58%,var(--wb-panel) 42%)); box-shadow:inset 0 1px 0 color-mix(in srgb,var(--wb-panel) 55%,transparent 45%),0 10px 24px color-mix(in srgb,#000 12%,transparent 88%); box-sizing:border-box; overflow:hidden; }
+      .wb-link-tile { appearance:none; -webkit-tap-highlight-color:transparent; min-width:0; min-height:0; width:100%; height:100%; aspect-ratio:1/1; padding:0; border:1px solid color-mix(in srgb,var(--wb-border) 78%,var(--wb-accent) 22%); border-radius:9px; background:radial-gradient(circle at 30% 18%,rgba(255,255,255,.9),transparent 34%),linear-gradient(145deg,#fffdf9,#edf8f2 58%,#e3f0ea); color:#28343a; box-shadow:inset 0 1px 0 rgba(255,255,255,.86), inset 0 -6px 12px rgba(47,78,70,.07), 0 1px 3px rgba(15,23,42,.08); display:grid; place-items:center; font-size:clamp(16px, min(5.8cqw, 7.2cqh), 34px); line-height:1; cursor:pointer; user-select:none; transition:transform .14s ease, opacity .18s ease, filter .18s ease, box-shadow .18s ease, background .18s ease; }
+      .wb-link-tile:focus,.wb-link-tile:focus-visible,.wb-link-tile:active { outline:none; filter:none; }
+      .wb-link-tile.empty { visibility:hidden; pointer-events:none; }
+      .wb-link-tile.stone { color:transparent; pointer-events:none; background:linear-gradient(135deg,#d9dee4,#aeb7c1); border-color:#aab3bd; box-shadow:inset 5px 0 0 rgba(255,255,255,.22), inset -4px -4px 0 rgba(80,90,105,.18); }
+      .wb-link-tile.sel { transform:translateY(-3px); background:radial-gradient(circle at 30% 18%,rgba(255,255,255,.95),transparent 36%),linear-gradient(145deg,#ecfff9,#d4f7ee 62%,#c2eadf); border-color:color-mix(in srgb,#55cbb1 72%,var(--wb-border) 28%); box-shadow:0 0 0 2px rgba(85,203,177,.36), 0 7px 16px rgba(15,23,42,.14), inset 0 1px 0 rgba(255,255,255,.82); z-index:2; }
+      .wb-link-tile.hint { border-color:#f5c94f; box-shadow:0 0 0 2px rgba(245,201,79,.34), inset 0 1px 0 rgba(255,255,255,.76); animation:wbLinkHint .8s ease-in-out infinite alternate; }
+      .wb-link-tile.bad { filter:sepia(.15) saturate(1.3); border-color:#ef4444; animation:wbLinkBad .18s linear; }
+      .wb-link-tile.gone { transform:scale(.72); opacity:0; pointer-events:none; }
+      .wb-link-line { position:absolute; inset:var(--ll-pad); z-index:5; pointer-events:none; overflow:visible; }
+      .wb-link-line path { fill:none; stroke:#55cbb1; stroke-width:1.35; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 0 3px rgba(85,203,177,.34)); vector-effect:non-scaling-stroke; }
+      .wb-link-line.hint path { stroke:#f5c94f; stroke-dasharray:4 3; }
+      .wb-link-line.magic path { stroke:#b28dff; }
+      .wb-link-tools { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; height:38px; }
+      .wb-link-tool { position:relative; min-width:0; height:38px; padding:2px 5px; border:1px solid var(--wb-border); border-radius:9px; background:linear-gradient(180deg,color-mix(in srgb,var(--wb-panel) 88%,var(--wb-bg) 12%),color-mix(in srgb,var(--wb-soft) 74%,var(--wb-bg) 26%)); color:var(--wb-text); font-size:11px; font-weight:1000; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; box-shadow:0 3px 10px color-mix(in srgb,#000 10%,transparent 90%), inset 0 1px 0 color-mix(in srgb,var(--wb-text) 9%,transparent 91%); }
+      .wb-link-tool i { font-style:normal; font-size:13px; line-height:1; }
+      .wb-link-tool:disabled { opacity:.42; filter:grayscale(.75); }
+      .wb-link-tool.hint { animation:wbLinkPulse .8s ease-in-out 1; }
+      .wb-link-tool .badge { position:static; display:inline-grid; place-items:center; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:color-mix(in srgb,var(--wb-accent) 72%,var(--wb-panel) 28%); color:var(--wb-on-accent,#fff); border:1px solid color-mix(in srgb,var(--wb-border) 55%,var(--wb-accent) 45%); font-size:10px; line-height:1; }
+      .wb-link-rule { min-height:16px; color:var(--wb-muted); font-size:11px; font-weight:900; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .wb-link-combo,.wb-link-toast { position:absolute; left:50%; top:42%; transform:translate(-50%,-50%); z-index:8; pointer-events:none; padding:7px 12px; border-radius:999px; background:rgba(15,23,42,.82); color:#fff; font-weight:1000; box-shadow:0 8px 22px rgba(15,23,42,.24); animation:wbLinkFloat .9s ease forwards; }
+      .wb-link-combo.hot { color:#fde68a; } .wb-link-combo.fire { color:#fdba74; }
+      @keyframes wbLinkFloat { 0%{opacity:0;transform:translate(-50%,-28%)} 20%,75%{opacity:1;transform:translate(-50%,-50%)} 100%{opacity:0;transform:translate(-50%,-74%)} }
+      @keyframes wbLinkHint { to { box-shadow:0 0 0 3px rgba(245,201,79,.42), inset 0 1px 0 rgba(255,255,255,.76); } }
+      @keyframes wbLinkBad { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-2px)} 75%{transform:translateX(2px)} }
+      @keyframes wbLinkPulse { to { filter:brightness(1.1); box-shadow:0 0 12px color-mix(in srgb,var(--wb-accent) 35%,transparent 65%); } }
+      @media (max-width:700px), (pointer:coarse) {
+        .wb-link { gap:5px; }
+        .wb-link-top { grid-template-columns:minmax(56px,.8fr) minmax(92px,1.45fr) minmax(54px,.78fr) auto; gap:4px; padding-bottom:4px; }
+        .wb-link-level small,.wb-link-total small { font-size:9px; }
+        .wb-link-level b,.wb-link-total b { font-size:12px; }
+        .wb-link-progress { font-size:10px; gap:3px; }
+        .wb-link-time { min-width:58px; height:25px; padding:0 6px; font-size:11px; }
+        .wb-link-board { --ll-pad:4px; gap:0; width:min(100%, calc((100cqh - 94px) * var(--ll-ratio)), 520px); max-height:calc(100cqh - 94px); }
+        .wb-link-tools { height:32px; gap:4px; }
+        .wb-link-tool { height:32px; padding:1px 3px; font-size:10px; border-radius:7px; }
+        .wb-link-rule { min-height:14px; font-size:10px; }
+      }
+      .wb-bj { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:8px; overflow:hidden; color:var(--wb-text); }
+      .wb-bj-top { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:4px 2px 7px; border-bottom:1px solid color-mix(in srgb,var(--wb-border) 76%,transparent 24%); }
+      .wb-bj-title { display:flex; align-items:center; gap:8px; font-weight:1000; font-size:16px; white-space:nowrap; }
+      .wb-bj-point-toggle { height:24px; padding:0 8px; border:1px solid color-mix(in srgb,var(--wb-border) 70%,var(--wb-accent) 30%); border-radius:999px; background:color-mix(in srgb,var(--wb-panel) 78%,transparent 22%); color:var(--wb-text); font-size:11px; font-weight:1000; white-space:nowrap; cursor:pointer; }
+      .wb-bj-point-toggle.active { border-color:color-mix(in srgb,var(--wb-gold) 72%,var(--wb-border) 28%); background:color-mix(in srgb,var(--wb-gold) 24%,var(--wb-panel) 76%); }
+      .wb-bj-title small,.wb-bj-total { color:var(--wb-muted); font-size:12px; font-weight:900; }
+      .wb-bj-table { position:relative; min-height:0; display:grid; grid-template-rows:auto minmax(76px,.9fr) auto minmax(92px,1fr) auto auto auto; gap:6px; padding:9px; border:1px solid color-mix(in srgb,var(--wb-border) 74%,var(--wb-accent) 26%); border-radius:24px; background:radial-gradient(circle at 18% 8%,rgba(255,255,255,.24),transparent 26%),linear-gradient(145deg,color-mix(in srgb,var(--wb-board) 76%,#0f766e 24%),color-mix(in srgb,var(--wb-bg) 62%,#111827 38%)); box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 12px 28px color-mix(in srgb,#000 16%,transparent 84%); overflow:hidden; }
+      .wb-bj-playerbar { display:grid; grid-template-columns:34px minmax(0,1fr) auto; grid-template-rows:auto 6px; align-items:center; gap:3px 7px; min-width:0; }
+      .wb-bj-playerbar.user { grid-template-columns:minmax(0,1fr) auto; }
+      .wb-bj-avatar { width:32px; height:32px; border-radius:50%; display:grid; place-items:center; overflow:hidden; background:linear-gradient(135deg,var(--wb-accent),var(--wb-accent2)); color:var(--wb-on-accent,#fff); font-weight:1000; box-shadow:0 3px 10px color-mix(in srgb,#000 18%,transparent 82%); }
+      .wb-bj-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+      .wb-bj-name { min-width:0; display:flex; align-items:center; gap:5px; font-weight:1000; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+      .wb-bj-name small { color:var(--wb-muted); font-size:11px; font-weight:900; }
+      .wb-bj-score { position:relative; font-weight:1000; font-size:12px; color:var(--wb-text); white-space:nowrap; }
+      .wb-bj-progress { grid-column:1 / -1; height:6px; border-radius:999px; overflow:hidden; background:color-mix(in srgb,var(--wb-panel) 64%,#000 12%); border:1px solid color-mix(in srgb,var(--wb-border) 72%,transparent 28%); }
+      .wb-bj-progress span { display:block; height:100%; width:0; transition:width .35s ease; }
+      .wb-bj-progress.user span { background:linear-gradient(90deg,#65d6bd,#a7f3d0); }
+      .wb-bj-progress.char span { background:linear-gradient(90deg,#fb923c,#fed7aa); }
+      .wb-bj-hand { min-height:64px; display:flex; align-items:center; justify-content:center; gap:0; padding:2px 0; overflow:hidden; }
+      .wb-bj-card { position:relative; flex:0 0 clamp(38px,10.5vw,58px); width:clamp(38px,10.5vw,58px); aspect-ratio:2.5/3.5; margin-left:clamp(-13px,-2.5vw,-5px); border:1px solid #d5dce2; border-radius:8px; background:#fffdfc; color:#27343a; box-shadow:0 4px 10px rgba(15,23,42,.16); font-weight:1000; overflow:hidden; animation:wbBjDeal .25s ease-out both; }
+      .wb-bj-card:first-child { margin-left:0; }
+      .wb-bj-card.red { color:#d95c5c; }
+      .wb-bj-card.back { background:url('${OLDMAID_BACK_URL}') center / 100% 100% no-repeat,#29384d; border-color:#223149; }
+      .wb-bj-card .corner { position:absolute; left:4px; top:4px; display:grid; line-height:.92; font-size:clamp(10px,2.5vw,14px); }
+      .wb-bj-card .pip { position:absolute; inset:0; display:grid; place-items:center; font-size:clamp(22px,6vw,34px); opacity:.88; }
+      .wb-bj-points { visibility:hidden; min-height:22px; text-align:center; font-size:15px; font-weight:1000; color:#f8fafc; text-shadow:0 1px 2px rgba(0,0,0,.25); }
+      .wb-bj.show-points .wb-bj-points { visibility:visible; }
+      .wb-bj-points.good { color:#a7f3d0; } .wb-bj-points.gold { color:#facc15; } .wb-bj-points.bust { color:#fb7185; animation:wbBjShake .22s linear; }
+      .wb-bj-mid { display:flex; align-items:center; justify-content:center; gap:16px; min-height:46px; color:#f8fafc; font-size:12px; font-weight:900; }
+      .wb-bj-status { min-width:132px; max-width:52%; padding:6px 10px; border-radius:999px; text-align:center; background:rgba(15,23,42,.42); border:1px solid rgba(255,255,255,.2); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+      .wb-bj-deck { position:relative; width:44px; height:36px; margin:auto; }
+      .wb-bj-deck i { position:absolute; width:28px; height:36px; border:1px solid #223149; border-radius:7px; background:url('${OLDMAID_BACK_URL}') center / 100% 100% no-repeat,#29384d; box-shadow:0 2px 6px rgba(0,0,0,.18); }
+      .wb-bj-deck i:nth-child(1){ left:0; top:3px; } .wb-bj-deck i:nth-child(2){ left:6px; top:1px; } .wb-bj-deck i:nth-child(3){ left:12px; top:0; }
+      .wb-bj-tools { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+      .wb-bj-tool { position:relative; min-width:0; height:44px; padding:4px 5px; border:1px solid color-mix(in srgb,var(--wb-border) 76%,var(--wb-accent) 24%); border-radius:12px; background:color-mix(in srgb,var(--wb-panel) 82%,transparent 18%); color:var(--wb-text); font-size:12px; font-weight:1000; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; box-shadow:inset 0 1px 0 rgba(255,255,255,.22); }
+      .wb-bj-tool.ready { outline:2px solid var(--wb-gold); }
+      .wb-bj-tool:disabled { opacity:.35; filter:grayscale(.8); }
+      .wb-bj-tool .badge { position:static; display:inline-grid; place-items:center; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:color-mix(in srgb,var(--wb-accent) 72%,var(--wb-panel) 28%); color:var(--wb-on-accent,#fff); font-size:10px; line-height:1; }
+      .wb-bj-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+      .wb-bj-action { min-height:46px; border:0; border-radius:14px; font-size:16px; font-weight:1000; color:#fff; box-shadow:0 6px 16px color-mix(in srgb,#000 20%,transparent 80%), inset 0 1px 0 rgba(255,255,255,.24); }
+      .wb-bj-hit { background:linear-gradient(135deg,#0f766e,#22c55e); }
+      .wb-bj-stand { background:linear-gradient(135deg,#b45309,#f59e0b); }
+      .wb-bj-action:disabled { opacity:.45; filter:grayscale(.65); }
+      .wb-bj-float,.wb-bj-choice { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:30; border-radius:18px; background:rgba(15,23,42,.88); color:#fff; border:1px solid rgba(255,255,255,.22); box-shadow:0 14px 32px rgba(0,0,0,.28); font-weight:1000; }
+      .wb-bj-float { padding:10px 16px; animation:wbBjFloat 1.35s ease forwards; pointer-events:none; }
+      .wb-bj-choice { min-width:min(280px,86%); padding:14px; display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
+      .wb-bj-choice span { flex:1 1 100%; text-align:center; }
+      .wb-bj-choice button { min-width:86px; min-height:34px; border-radius:10px; border:1px solid rgba(255,255,255,.28); background:rgba(255,255,255,.1); color:#fff; font-weight:1000; }
+      .wb-bj-choice button.primary { background:linear-gradient(135deg,#0f766e,#22c55e); border-color:transparent; }
+      .wb-bj-gain { position:absolute; right:0; top:-20px; color:#facc15; font-size:12px; font-weight:1000; pointer-events:none; animation:wbBjGain .52s ease-out forwards; text-shadow:0 1px 4px rgba(0,0,0,.32); }
+      @keyframes wbBjDeal { from { transform:translate(22px,-18px) scale(.82); opacity:0; } to { transform:none; opacity:1; } }
+      @keyframes wbBjGain { to { transform:translateY(-20px); opacity:0; } }
+      @keyframes wbBjFloat { 0% { opacity:0; transform:translate(-50%,-42%); } 18%,78% { opacity:1; transform:translate(-50%,-50%); } 100% { opacity:0; transform:translate(-50%,-64%); } }
+      @keyframes wbBjShake { 0%,100% { transform:translateX(0); } 25% { transform:translateX(-3px); } 75% { transform:translateX(3px); } }
+      @media (max-width:700px), (pointer:coarse) {
+        .wb-bj { gap:5px; }
+        .wb-bj-top { padding-bottom:4px; }
+        .wb-bj-title { font-size:14px; gap:5px; }
+        .wb-bj-point-toggle { height:22px; padding:0 6px; font-size:10px; }
+        .wb-bj-table { grid-template-rows:auto minmax(56px,.75fr) auto minmax(70px,.9fr) auto auto auto; gap:4px; padding:6px; border-radius:18px; }
+        .wb-bj-hand { min-height:50px; }
+        .wb-bj-card { flex-basis:clamp(34px,10vw,48px); width:clamp(34px,10vw,48px); }
+        .wb-bj-mid { min-height:38px; gap:9px; }
+        .wb-bj-status { min-width:108px; padding:5px 8px; }
+        .wb-bj-tool { height:36px; font-size:11px; padding:2px 3px; }
+        .wb-bj-action { min-height:42px; font-size:15px; }
+      }
       .wb-spider { --sp-card-w:clamp(23px,8vw,44px); --sp-card-h:calc(var(--sp-card-w) * 1.38); --sp-col-gap:2px; width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:4px; overflow:hidden; position:relative; }
       .wb-spider-top { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; align-items:center; padding:0 2px; border-bottom:1px solid color-mix(in srgb,var(--wb-border) 72%,transparent 28%); }
       .wb-spider-stat { min-width:0; padding:2px 3px; text-align:center; line-height:1.02; background:transparent; border:0; border-right:1px solid color-mix(in srgb,var(--wb-border) 70%,transparent 30%); }
@@ -10274,9 +10446,11 @@ export async function initWanbanXiaowu() {
       if (game === 'game1010') return [['score','normal'], ['score','record'], ['score','game1010_strategy'], ['score','game1010_bad_luck'], ['score','game1010_clutch'], ['score','long_run']];
       if (game === 'turkey') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','turkey_hot'], ['score','turkey_endure'], ['score','turkey_minimal'], ['score','turkey_clutch'], ['score','turkey_clear_all'], ['score','bad_luck'], ['score','turkey_tools'], ['score','long_run']];
       if (game === 'spider') return [['score','normal'], ['score','record'], ['score','spider_chain_master'], ['score','spider_four_empty'], ['score','spider_clear_table'], ['score','spider_clutch'], ['score','super_good'], ['score','bad_luck'], ['score','long_run']];
+      if (game === 'linklink') return [['score','normal'], ['score','record'], ['score','link_fast_combo'], ['score','link_time_rich'], ['score','link_last_second'], ['score','bad_luck'], ['score','link_master']];
       const jobs = [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','long_run']];
       return jobs;
     }
+    if (game === 'blackjack') return [['user_win','normal'], ['ta_win','normal'], ['user_win','bj_blackjack'], ['user_win','bj_exact21'], ['user_win','bj_six'], ['user_win','bj_peek_win'], ['ta_win','bad_luck'], ['user_win','bj_char_bust'], ['user_win','bj_win5'], ['user_win','bj_tiebreak'], ['ta_win','bj_peek_bust']];
     if (game === 'bombnumber') return [['user_win','normal'], ['ta_win','normal'], ['ta_win','bad_luck'], ['user_win','bomb_lucky'], ['ta_win','fated'], ['user_win','rage'], ['user_win','cheat_win']];
     if (game === 'connect4d') return [['user_win','normal'], ['ta_win','normal'], ['draw','balanced'], ['user_win','win_streak3'], ['ta_win','lose_streak3'], ['user_win','cheat_win']];
     if (game === 'draughts') return [['user_win','normal'], ['ta_win','normal'], ['user_win','super_good'], ['ta_win','super_bad'], ['user_win','shock'], ['ta_win','shock'], ['user_win','cheat_win']];
@@ -11408,7 +11582,8 @@ export async function initWanbanXiaowu() {
     const presetSelect = qs('#wb-line-preset-select'); if (presetSelect) presetSelect.onchange = () => applyLinePresetSelection(id, presetSelect.value);
     const genBtn = qs('#wb-generate-lines'); if (genBtn) genBtn.onclick = () => openSingleGenerateChoice(id);
     updateLineGenerationStatusUI();
-    if (!needsFirstMoverChoice(id) && DEFAULT_LINES[id] && DEFAULT_LINES[id].start) speak(id, 'start');
+    if (!needsFirstMoverChoice(id) && !['linklink','blackjack'].includes(id) && DEFAULT_LINES[id] && DEFAULT_LINES[id].start) speak(id, 'start');
+    if (id === 'linklink' || id === 'blackjack') setTimeout(() => { const saved = gameProgress(id); if (currentGame === id && !gameStarted && !(saved && hasPlayableProgress(id, saved))) startCurrentGame(id); }, 30);
     setTimeout(() => { const saved = gameProgress(id); if (currentGame === id && saved && hasPlayableProgress(id, saved) && !gameStarted) showProgressChoice(id, saved); }, 60);
   }
 
@@ -11462,6 +11637,8 @@ export async function initWanbanXiaowu() {
     if (id === 'game1010') startGame1010(resumeState);
     if (id === 'turkey') startTurkey(resumeState);
     if (id === 'spider') startSpider(resumeState);
+    if (id === 'linklink') startLinkLink(resumeState);
+    if (id === 'blackjack') startBlackjack(null);
     if (id === 'game2048') start2048(resumeState);
     if (id === 'watermelon') startWatermelon(resumeState);
     if (id === 'memory') startMemory(resumeState);
@@ -11810,8 +11987,9 @@ function showGameRecords(game, page) {
     if (watermelonTimer) clearInterval(watermelonTimer);
     if (jumpTimer) clearInterval(jumpTimer);
     if (screwTimer) clearInterval(screwTimer);
+    if (linkLinkTimer) clearInterval(linkLinkTimer);
     if (randomLineTimer) clearInterval(randomLineTimer);
-    snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = screwTimer = randomLineTimer = null;
+    snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = screwTimer = linkLinkTimer = randomLineTimer = null;
     const inferred = result || inferResult(game, title, scoreText);
     const g = GAME_META[game] || { name: '游戏', unit: '分' };
     if (g.mode === 'double' && inferred === 'ta_win' && !result) addTaWin(game);
@@ -12208,6 +12386,161 @@ function showGameRecords(game, page) {
       if (value > old) { sc[game] = value; saveJSON(STORAGE_SCORES, sc); if (!currentRoundRecord && old > 0 && DEFAULT_LINES[game] && DEFAULT_LINES[game].record) { currentRoundRecord = true; speak(game, 'record'); } }
     }
     const s = qs('#wb-score'); if (s) s.textContent = '本局：' + value;
+  }
+
+  function startBlackjack(state) {
+    clearProgress('blackjack');
+    const box=qs('#wb-gamebox'), charName=displayCharNameForGame('blackjack'), avatar=findAvatar();
+    const LEVELS=[300,350,400,450,500,550,600,650], ERR=[.25,.20,.15,.12,.10,.07,.05,.03];
+    const SUITS=['♠','♥','♣','♦'], RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+    const delay=ms=>new Promise(r=>setTimeout(r,ms));
+    let st={level:1,total:0,userScore:0,charScore:0,user:[],char:[],deck:[],phase:'deal',target:300,userStreak:0,charStreak:0,maxStreak:0,round:0,tieBreak:false,personality:'冷静',peek:false,peekWin:false,lastDraw:null,protectReady:false,showPoints:false,details:{score:0,level:1,wins:0,losses:0,ties:0,blackjacks:0,busts:0,charBusts:0,maxStreak:0,peekUsed:0,hintUsed:0,undoUsed:0,protectUsed:0,consecutiveBusts:0,charConsecutiveBusts:0,wonTiebreak:false,exact21:0,sixCard:false}};
+    let busy=false, over=false, undoTimer=null, waitingUndo=false;
+    box.innerHTML='<div class="wb-bj"><div class="wb-bj-top"><div class="wb-bj-title">21点 · <span id="bj-level">第1关</span><small id="bj-target">目标 300</small><button class="wb-bj-point-toggle" id="bj-point-toggle" type="button">显示点数</button></div><div class="wb-bj-total" id="bj-total">总分 0</div></div><div class="wb-bj-table"><div class="wb-bj-playerbar"><div class="wb-bj-avatar" id="bj-char-av">'+(avatar?'<img src="'+esc(avatar)+'" alt="">':esc(charName.slice(0,1)))+'</div><div class="wb-bj-name"><span id="bj-char-name">'+esc(charName)+'</span><small id="bj-personality">冷静</small><span class="wb-bj-streak" id="bj-char-streak"></span></div><div class="wb-bj-score" id="bj-char-score">0 / 300</div><div class="wb-bj-progress char"><span id="bj-char-fill"></span></div></div><div><div class="wb-bj-hand" id="bj-char-hand"></div><div class="wb-bj-points" id="bj-char-points">?</div></div><div class="wb-bj-mid"><div class="wb-bj-status" id="bj-status">准备发牌</div><div><div class="wb-bj-deck"><i></i><i></i><i></i></div><div style="text-align:center;margin-top:2px;">牌堆</div></div></div><div><div class="wb-bj-points" id="bj-user-points">0</div><div class="wb-bj-hand" id="bj-user-hand"></div></div><div class="wb-bj-playerbar user"><div class="wb-bj-name">你<span class="wb-bj-streak" id="bj-user-streak"></span></div><div class="wb-bj-score" id="bj-user-score">0 / 300</div><div class="wb-bj-progress user"><span id="bj-user-fill"></span></div></div><div class="wb-bj-tools"><button class="wb-bj-tool" data-tool="hint">💡 提示<span class="badge" id="bj-hint-left">2</span></button><button class="wb-bj-tool" data-tool="peek">👁 偷看<span class="badge" id="bj-peek-left">1</span></button><button class="wb-bj-tool" data-tool="undo">↩ 反悔<span class="badge" id="bj-undo-left">1</span></button><button class="wb-bj-tool" data-tool="protect">◇ 护牌<span class="badge" id="bj-protect-left">0</span></button></div><div class="wb-bj-actions"><button class="wb-bj-action wb-bj-hit" id="bj-hit">要牌</button><button class="wb-bj-action wb-bj-stand" id="bj-stand">停牌</button></div></div></div>';
+    qs('#bj-hit').onclick=()=>playerHit(); qs('#bj-stand').onclick=()=>playerStand(); qs('#bj-point-toggle').onclick=()=>{ st.showPoints=!st.showPoints; draw(); }; qsa('.wb-bj-tool',box).forEach(b=>b.onclick=()=>useTool(b.dataset.tool));
+    function newDeck(){ const a=[]; SUITS.forEach(s=>RANKS.forEach(r=>a.push({s,r,id:r+s}))); return shuffleArray(a); }
+    function val(c){ return c.r==='A'?11:(/[JQK]/.test(c.r)?10:+c.r); }
+    function handValue(h){ let total=0, aces=0; h.forEach(c=>{ total+=val(c); if(c.r==='A') aces++; }); let soft=aces>0; while(total>21&&aces){ total-=10; aces--; } soft=aces>0; return { total, soft, bust:total>21, bj:h.length===2&&total===21, exact21:total===21 }; }
+    function scoreClass(v){ if(v.bust) return 'bust'; if(v.total===21) return 'gold'; if(v.total>=18) return 'good'; return ''; }
+    function cardHTML(c, hidden){ if(hidden) return '<div class="wb-bj-card back"></div>'; const red=c.s==='♥'||c.s==='♦'; return '<div class="wb-bj-card '+(red?'red':'')+'"><div class="corner"><span>'+c.r+'</span><span>'+c.s+'</span></div><div class="pip">'+c.s+'</div></div>'; }
+    function draw(){ const target=st.target; const root=qs('.wb-bj',box); if(root) root.classList.toggle('show-points',!!st.showPoints); const toggle=qs('#bj-point-toggle',box); if(toggle){ toggle.textContent=st.showPoints?'隐藏点数':'显示点数'; toggle.classList.toggle('active',!!st.showPoints); } qs('#bj-level').textContent='第'+st.level+'关'; qs('#bj-target').textContent='目标 '+target; qs('#bj-total').textContent='总分 '+String(st.total).replace(/\B(?=(\d{3})+(?!\d))/g,','); qs('#bj-personality').textContent=st.level>=8?'认真起来了':(st.level>=3?st.personality:''); qs('#bj-char-score').textContent=st.charScore+' / '+target; qs('#bj-user-score').textContent=st.userScore+' / '+target; qs('#bj-char-fill').style.width=Math.min(100,st.charScore/target*100)+'%'; qs('#bj-user-fill').style.width=Math.min(100,st.userScore/target*100)+'%'; qs('#bj-user-streak').textContent=st.userStreak>=2?'🔥 ×'+st.userStreak:''; qs('#bj-char-streak').textContent=st.charStreak>=2?'🔥 ×'+st.charStreak:''; const reveal=st.phase!=='player' || st.peek; qs('#bj-char-hand').innerHTML=st.char.map((c,i)=>cardHTML(c,i===1&&!reveal)).join(''); qs('#bj-user-hand').innerHTML=st.user.map(c=>cardHTML(c,false)).join(''); const uv=handValue(st.user), cv=handValue(st.char); const up=qs('#bj-user-points'), cp=qs('#bj-char-points'); up.textContent=uv.bust?'爆牌 '+uv.total:(uv.total===21?'21!':uv.total); up.className='wb-bj-points '+scoreClass(uv); cp.textContent=reveal?(cv.bust?'爆牌 '+cv.total:(cv.total===21?'21!':charName+' · '+cv.total)):('可见：'+handValue([st.char[0]]).total); cp.className='wb-bj-points '+(reveal?scoreClass(cv):''); const playerOn=st.phase==='player'&&!busy&&!over; qs('#bj-hit').disabled=!playerOn; qs('#bj-stand').disabled=!playerOn; [['hint',2],['peek',1],['undo',1],['protect',st.level>=3?1:0]].forEach(([k])=>{ const btn=qs('[data-tool="'+k+'"]',box); if(btn) btn.disabled=busy||over||(st.tools?.[k]||0)<=0||(k!=='undo'&&st.phase!=='player')||(k==='undo'&&!st.lastDraw)||(k==='protect'&&st.protectReady); const badge=qs('#bj-'+k+'-left'); if(badge) badge.textContent=st.tools?.[k]||0; }); const p=qs('[data-tool="protect"]',box); if(p) p.classList.toggle('ready',!!st.protectReady); }
+    function setStatus(t){ const el=qs('#bj-status'); if(el) el.textContent=t; }
+    function toastMid(t){ const el=getHostDocument().createElement('div'); el.className='wb-bj-float'; el.textContent=t; qs('.wb-bj-table',box).appendChild(el); setTimeout(()=>el.remove(),1350); }
+    function gain(who,text){ const el=getHostDocument().createElement('div'); el.className='wb-bj-gain'; el.textContent=text; qs(who==='user'?'#bj-user-score':'#bj-char-score',box).appendChild(el); setTimeout(()=>el.remove(),520); }
+    function drawCard(to){ const c=st.deck.shift(); st[to].push(c); return c; }
+    async function nextLevel(){ st.level++; if(st.level>8){ finishAll(); return; } startLevel(); }
+    function personality(){ if(st.level<3) return '冷静'; if(st.level===8){ const diff=st.charScore-st.userScore; return diff>150?'谨慎':(diff<-150?'冒险':'冷静'); } return ['谨慎','冷静','冒险'][Math.floor(Math.random()*3)]; }
+    async function startLevel(){ st.target=LEVELS[st.level-1]; st.userScore=0; st.charScore=0; st.userStreak=0; st.charStreak=0; st.round=0; st.tieBreak=false; st.personality=personality(); st.tools={hint:2,peek:1,undo:1,protect:st.level>=3?1:0}; st.protectReady=false; speak('blackjack','start'); await startRound(); }
+    async function startRound(){ busy=true; st.round++; st.user=[]; st.char=[]; st.deck=newDeck(); st.phase='deal'; st.peek=false; st.peekWin=false; st.lastDraw=null; waitingUndo=false; clearUndoChoice(); setStatus(st.tieBreak?'决胜局':'发牌中'); draw(); const seq=['user','char','user','char']; for(const who of seq){ await delay(120); drawCard(who); draw(); } await delay(250); const u=handValue(st.user), c=handValue(st.char); if(u.bj||c.bj){ st.phase='settle'; draw(); if(u.bj&&c.bj) await settleRound('tie','双方 Blackjack｜平局',40,40,true); else if(u.bj){ st.details.blackjacks++; speak('blackjack','player_blackjack'); await settleRound('user','Blackjack！',150,0,true); } else { speak('blackjack','char_blackjack'); await settleRound('char','Char Blackjack',0,150,true); } return; } st.phase='player'; busy=false; setStatus('你的回合'); draw(); }
+    async function playerHit(){ if(st.phase!=='player'||busy) return; if(handValue(st.user).total>=19) speak('blackjack','risky_hit'); busy=true; const before=st.user.slice(); const c=drawCard('user'); st.lastDraw={card:c,before}; draw(); await delay(220); const v=handValue(st.user); if(st.protectReady){ st.protectReady=false; st.details.protectUsed++; st.tools.protect=Math.max(0,st.tools.protect||0); if(v.bust){ st.user=before; st.lastDraw=null; speak('blackjack','protect'); toastMid('护牌生效'); busy=false; draw(); return; } }
+      if(st.user.length>=6&&!v.bust) st.details.sixCard=true;
+      if(v.exact21){ st.details.exact21++; speak('blackjack','player_21'); toastMid('21！'); draw(); await delay(500); busy=false; playerStand(); return; }
+      if(v.bust){ st.details.busts++; st.details.consecutiveBusts++; if(st.peekWin) st.details.peekBust=true; if(st.details.consecutiveBusts>=3) st.details.tripleBust=true; speak('blackjack','player_bust'); draw(); if((st.tools.undo||0)>0){ showUndoChoice(); return; } await delay(700); await settleRound('char','玩家爆牌',0,100,false); return; }
+      busy=false; draw(); }
+    function showUndoChoice(){ clearUndoChoice(); waitingUndo=true; busy=true; const div=getHostDocument().createElement('div'); div.className='wb-bj-choice'; div.id='bj-undo-choice'; div.innerHTML='<span>使用反悔？</span><button class="primary" id="bj-use-undo">反悔</button><button id="bj-accept-bust">接受结果</button>'; qs('.wb-bj-table',box).appendChild(div); qs('#bj-use-undo').onclick=useUndo; qs('#bj-accept-bust').onclick=()=>acceptBust(); undoTimer=setTimeout(()=>{ if(qs('#bj-undo-choice')) acceptBust(); },3000); draw(); }
+    function clearUndoChoice(){ if(undoTimer) clearTimeout(undoTimer); undoTimer=null; waitingUndo=false; const old=qs('#bj-undo-choice',box); if(old) old.remove(); }
+    async function acceptBust(){ if(!waitingUndo) return; clearUndoChoice(); busy=true; await settleRound('char','玩家爆牌',0,100,false); }
+    function useUndo(){ if(!st.lastDraw||!(st.tools.undo>0)) return; clearUndoChoice(); st.user=st.lastDraw.before.slice(); st.lastDraw=null; st.tools.undo--; st.details.undoUsed++; st.details.busts=Math.max(0,(st.details.busts||0)-1); st.details.consecutiveBusts=0; speak('blackjack','undo'); toastMid('已反悔'); busy=false; draw(); }
+    async function playerStand(){ if(st.phase!=='player'||busy) return; busy=true; st.lastDraw=null; clearUndoChoice(); st.phase='char'; draw(); await charTurn(); }
+    function remainingCounts(){ const m={}; st.deck.forEach(c=>{ const v=c.r==='A'?'A':(/[JQK]/.test(c.r)?'10':c.r); m[v]=(m[v]||0)+1; }); return m; }
+    function bustProb(hand){ const m=remainingCounts(), total=Object.values(m).reduce((a,b)=>a+b,0)||1; let bad=0; Object.entries(m).forEach(([r,n])=>{ const c={r:r==='10'?'10':r,s:'♠'}; if(handValue(hand.concat([c])).bust) bad+=n; }); return bad/total; }
+    function standValue(c,p){ if(c>21) return 0; if(c>p) return 1; if(c===p) return .35; return 0; }
+    function hitValue(hand,p,depth){ const m=remainingCounts(), total=Object.values(m).reduce((a,b)=>a+b,0)||1; let ev=0; Object.entries(m).forEach(([r,n])=>{ const c={r:r==='10'?'10':r,s:'♠'}, h=hand.concat([c]), v=handValue(h).total; if(v>21) ev+=0; else if(depth<=0||v>=21) ev+=standValue(v,p)*n/total; else ev+=Math.max(standValue(v,p), hitValue(h,p,depth-1))*n/total; }); return ev; }
+    function decideChar(){ const c=handValue(st.char), p=handValue(st.user).total; if(c.total<=11) return 'hit'; if(c.total>=21) return 'stand'; let hit=.5, stand=.5; if(st.level<=2){ if(c.total<=14) hit=.85; else if(c.total===15) hit=.70; else if(c.total===16) hit=p<=15?.35:.75; else if(c.total===17) hit=.10; else hit=.03; return Math.random()<hit?'hit':'stand'; }
+      if(st.level<=5){ if(c.total>p) hit=.12; else if(c.total===p) hit=c.total<18?.45:.12; else hit=c.total<=16?.85:.62; }
+      else { stand=standValue(c.total,p); hit=hitValue(st.char,p,st.level>=7?6:1); }
+      const mood=st.level===8?personality():st.personality; if(mood==='谨慎') hit-=.06; if(mood==='冒险'&&c.total<p) hit+=.08; const best=hit>stand?'hit':'stand', other=best==='hit'?'stand':'hit', gap=Math.abs(hit-stand); const err=ERR[st.level-1]; if(gap<.18&&Math.random()<err) return other; return best; }
+    async function charTurn(){ st.phase='char'; draw(); await delay(300); while(!over){ const v=handValue(st.char); if(v.bust){ st.details.charBusts++; st.details.charConsecutiveBusts++; if(st.details.charConsecutiveBusts>=3) st.details.charTripleBust=true; speak('blackjack','char_bust'); await settleRound('user','Char爆牌',100,0,false); return; } if(v.exact21&&st.char.length>=3) speak('blackjack','char_21'); setStatus(charName+'正在思考……'); await delay(450+Math.random()*400); const act=decideChar(); if(act==='hit'){ setStatus(charName+'：要牌'); await delay(300); drawCard('char'); draw(); continue; } setStatus(charName+'：停牌'); await delay(400); await compareRound(); return; } }
+    async function compareRound(){ const u=handValue(st.user), c=handValue(st.char); if(u.bust) return settleRound('char','玩家爆牌',0,100,false); if(c.bust) return settleRound('user','Char爆牌',100,0,false); if(u.total>c.total) return settleRound('user','你赢了',winPoints(st.user),0,false); if(c.total>u.total) return settleRound('char','Char赢了',0,winPoints(st.char),false); return settleRound('tie','平局',40,40,false); }
+    function winPoints(h){ const v=handValue(h); return v.bj?150:(h.length>=3&&v.total===21?120:100); }
+    function streakBonus(who){ const n=who==='user'?st.userStreak:st.charStreak; return n>=6?100:Math.max(0,(n-1)*20); }
+    async function settleRound(winner,msg,uPts,cPts,bj){ st.phase='settle'; const uv=handValue(st.user), cv=handValue(st.char); if(!uv.bust) st.details.consecutiveBusts=0; if(!cv.bust) st.details.charConsecutiveBusts=0; draw(); if(winner==='user'){ st.userStreak++; st.charStreak=0; st.details.wins++; if(st.tieBreak) st.details.wonTiebreak=true; if(st.peekWin) st.details.peekWin=true; if(st.user.length>=6&&!uv.bust) st.details.sixCard=true; if(st.userStreak===5){ speak('blackjack','win5'); } } else if(winner==='char'){ st.charStreak++; st.userStreak=0; st.details.losses++; if(st.char.length>=6&&!cv.bust) st.details.charSixCard=true; } else { st.details.ties++; }
+      if(winner==='user') uPts+=streakBonus('user'); if(winner==='char') cPts+=streakBonus('char'); st.userScore+=uPts; st.charScore+=cPts; st.total+=uPts; setScore('blackjack',st.total); st.maxStreak=Math.max(st.maxStreak,st.userStreak); st.details.maxStreak=st.maxStreak; if(winner==='user') speak('blackjack','player_win'); if(winner==='char') speak('blackjack','char_win'); if(Math.abs(st.userScore-st.charScore)<=50) speak('blackjack','close_score'); toastMid(msg+(uPts?(' +'+uPts):'')); if(uPts) gain('user','+'+uPts+(bj?' BLACKJACK':'')); if(cPts) gain('char','+'+cPts); draw(); await delay(1300); await checkLevelEnd(winner); }
+    async function checkLevelEnd(lastWinner){ const target=st.target, u=st.userScore>=target, c=st.charScore>=target; if(u||c){ if(u&&c&&st.userScore===st.charScore){ st.tieBreak=true; toastMid('决胜局'); await delay(900); startRound(); return; } const userWin=u&&(!c||st.userScore>st.charScore); if(userWin){ toastMid('第'+st.level+'关胜利'); await delay(1500); if(st.level>=8) finishAll(); else nextLevel(); } else fail(); return; } await delay(900); startRound(); }
+    function fail(){ over=true; clearProgress('blackjack'); setScore('blackjack',Math.max(scores().blackjack||0,st.total)); st.details.score=st.total; st.details.level=st.level; showGameOver('blackjack','本次挑战结束','到达第'+st.level+'关，累计总分：'+st.total+'分，最高连胜：'+st.maxStreak,{outcome:'ta_win'},{details:Object.assign({},st.details)}); }
+    function finishAll(){ over=true; clearProgress('blackjack'); setScore('blackjack',Math.max(scores().blackjack||0,st.total)); st.details.completedAll=true; st.details.score=st.total; st.details.level=8; showGameOver('blackjack','你赢过Char了！','累计总分：'+st.total+'分，胜局：'+st.details.wins+'，负局：'+st.details.losses+'，平局：'+st.details.ties+'，Blackjack：'+st.details.blackjacks+'，爆牌：'+st.details.busts+'，最高连胜：'+st.maxStreak,{outcome:'user_win'},{details:Object.assign({},st.details)}); }
+    function useTool(t){ if(busy||over||!st.tools||st.tools[t]<=0) return; if(t!=='undo'&&st.phase!=='player') return; if(t==='hint'){ st.tools.hint--; st.details.hintUsed++; const p=bustProb(st.user); speak('blackjack','hint'); setStatus('建议：'+(p>.42?'停牌':'要牌')+'｜爆牌概率约'+Math.round(p*100)+'%'); setTimeout(()=>{ if(currentGame==='blackjack') setStatus(st.phase==='player'?'你的回合':''); },2500); }
+      if(t==='peek'&&st.phase==='player'){ busy=true; st.tools.peek--; st.details.peekUsed++; st.peek=true; st.peekWin=true; speak('blackjack','peek'); draw(); setTimeout(()=>{ st.peek=false; busy=false; draw(); },2000); }
+      if(t==='undo') useUndo(); if(t==='protect'&&st.phase==='player'){ st.tools.protect--; st.protectReady=true; toastMid('护牌已准备'); draw(); } draw(); }
+    startLevel();
+  }
+
+  function startLinkLink(state) {
+    const box = qs('#wb-gamebox');
+    const EMOJIS = ['🍓','🍊','🍋','🍎','🍇','🍉','🍒','🍑','🥝','🍄','🌻','🌙','⭐','☁️','🐟','🐚','🍬','🧁','🔔','🐾'];
+    const LEVELS = [
+      { rows:6, cols:6, tiles:36, icons:10, time:90, target:1800, mode:'none', name:'完全静止' },
+      { rows:6, cols:8, tiles:48, icons:12, time:90, target:2400, mode:'none', name:'完全静止' },
+      { rows:6, cols:8, tiles:48, icons:12, time:85, target:2400, mode:'down', name:'消除后图块向下移动' },
+      { rows:7, cols:8, tiles:56, icons:14, time:85, target:2800, mode:'up', name:'消除后图块向上移动' },
+      { rows:8, cols:8, tiles:64, icons:16, time:80, target:3200, mode:'left', name:'消除后每行向左靠拢' },
+      { rows:8, cols:8, tiles:64, icons:16, time:80, target:3200, mode:'right', name:'消除后每行向右靠拢' },
+      { rows:8, cols:9, tiles:72, icons:18, time:78, target:3600, mode:'hCenter', name:'消除后水平向中心集中' },
+      { rows:8, cols:9, tiles:68, icons:17, time:78, target:3400, stones:4, mode:'hOut', name:'4个石块；消除后水平向外侧分散' },
+      { rows:8, cols:10, tiles:80, icons:20, time:75, target:4000, mode:'vCenter', name:'消除后垂直向中心集中' },
+      { rows:8, cols:10, tiles:72, icons:18, time:72, target:3600, stones:8, mode:'altDownLeft', name:'8个石块；奇数次向下，偶数次向左' },
+      { rows:8, cols:10, tiles:72, icons:20, time:70, target:3600, stones:8, mode:'randomFixed', name:'8个石块；开局随机移动规则' },
+      { rows:8, cols:10, tiles:68, icons:20, time:68, target:3400, stones:12, mode:'switch5', name:'12个石块；每消除5对切换规则' }
+    ];
+    const MODES = ['up','down','left','right','hCenter','hOut','vCenter'];
+    const MODE_TEXT = { none:'完全静止', up:'向上移动', down:'向下移动', left:'向左靠拢', right:'向右靠拢', hCenter:'水平向中心集中', hOut:'水平向外侧分散', vCenter:'垂直向中心集中' };
+    const delay = ms => new Promise(r=>setTimeout(r,ms));
+    let st = null, selected = null, busy = false, over = false, timer = null, lastTick = Date.now(), hintPair = null, linePath = null, lineKind = '', idle8 = false, idle15 = false, frozenLeft = 0, warned30 = false, pendingRemovals = 0, fadingTiles = new Map();
+    box.innerHTML = '<div class="wb-link"><div class="wb-link-top"><div class="wb-link-level"><small>当前关卡</small><b id="ll-level">第 1 关</b></div><div class="wb-link-progress"><div id="ll-progress-text">本关 0 / 1800</div><div class="wb-link-bar"><div class="wb-link-fill" id="ll-fill"></div></div></div><div class="wb-link-total"><small>累计总分</small><b id="ll-total">0</b></div><div class="wb-link-time" id="ll-time">⏱ 01:30</div></div><div class="wb-link-boardwrap"><div class="wb-link-board" id="ll-board"></div></div><div class="wb-link-tools"><button class="wb-link-tool" data-tool="hint"><i>💡</i><span class="name">提示</span><span class="badge" id="ll-hint-left">2</span></button><button class="wb-link-tool" data-tool="shuffle"><i>⇄</i><span class="name">洗牌</span><span class="badge" id="ll-shuffle-left">1</span></button><button class="wb-link-tool" data-tool="freeze"><i>❄</i><span class="name">冻结</span><span class="badge" id="ll-freeze-left">1</span></button><button class="wb-link-tool" data-tool="magic"><i>✦</i><span class="name">消除</span><span class="badge" id="ll-magic-left">0</span></button></div><div class="wb-link-rule" id="ll-rule">本关规则：完全静止</div></div>';
+    qsa('.wb-link-tool', box).forEach(b => b.onclick = () => useTool(b.dataset.tool));
+    function detailsBase(){ return { score:0, level:1, maxCombo:0, hintUsed:0, shuffleUsed:0, freezeUsed:0, magicUsed:0, deadShuffles:0, deadShufflesInLevel:0, fastClear:false, lastSecond:false, completedAll:false, clearLevels:0 }; }
+    function updateBest(){ const key=SCRIPT_ID + '_linklinkBest_v1', old=safeObject(loadJSON(key,{})); saveJSON(key,{ score:Math.max(Number(old.score||0),st.totalScore||0), level:Math.max(Number(old.level||0),st.level||1), maxCombo:Math.max(Number(old.maxCombo||0),st.maxCombo||0) }); }
+    function newState(){ return { level:1, totalScore:0, levelScore:0, combo:0, maxCombo:0, lastSuccessAt:0, tools:{hint:2,shuffle:1,freeze:1,magic:0}, board:[], details:detailsBase(), used:{hint:0,shuffle:0,freeze:0,magic:0}, pairsCleared:0, mode:'none', startedAt:Date.now(), timeLeft:90 }; }
+    function save(force){ if(!over && st && pendingRemovals===0 && !busy) saveProgress('linklink', Object.assign({}, st, { selected:null }), force ? { immediate:true } : undefined); }
+    function stonePositions(rows, cols, n){
+      if(!n) return new Set();
+      const pts=[]; const mids=[[Math.floor(rows/2)-1,Math.floor(cols/2)-1],[Math.floor(rows/2)-1,Math.floor(cols/2)],[Math.floor(rows/2),Math.floor(cols/2)-1],[Math.floor(rows/2),Math.floor(cols/2)]];
+      if(n===4) pts.push(...mids); else if(n===8) for(let r=1;r<rows-1;r+=2){ pts.push([r,Math.floor(cols/2)-1],[r,Math.floor(cols/2)]); if(pts.length>=8) break; } else for(let r=1;r<rows-1;r+=2){ pts.push([r,2],[r,cols-3]); if(pts.length>=12) break; }
+      return new Set(pts.slice(0,n).map(p=>p[0]+','+p[1]));
+    }
+    function makeIcons(count, kinds){ const icons=EMOJIS.slice(0,kinds), pairs=[]; for(let i=0;i<count/2;i++) pairs.push(icons[i%icons.length]); return shuffleArray(pairs); }
+    function emptyBoard(rows, cols){ return Array.from({length:rows},()=>Array(cols).fill(null)); }
+    function placePaired(rows, cols, tileCount, iconKinds, stones){
+      const b=emptyBoard(rows,cols), cells=[]; for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ if(stones.has(r+','+c)) b[r][c]='#'; else cells.push([r,c]); }
+      const icons=shuffleArray(makeIcons(tileCount, iconKinds).flatMap(x=>[x,x]));
+      shuffleArray(cells).slice(0,icons.length).forEach((p,i)=>{ b[p[0]][p[1]]=icons[i]; });
+      return b;
+    }
+    function adjacentSameScore(b, rows, cols){ let n=0; for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ const v=b[r][c]; if(!v||v==='#') continue; if(c+1<cols&&b[r][c+1]===v) n++; if(r+1<rows&&b[r+1][c]===v) n++; } return n; }
+    function countLegalPairs(b=st.board){ const pairs=[]; for(let r1=0;r1<st.rows;r1++) for(let c1=0;c1<st.cols;c1++){ const v=b[r1][c1]; if(!v||v==='#') continue; for(let r2=r1;r2<st.rows;r2++) for(let c2=0;c2<st.cols;c2++){ if(r1===r2&&c2<=c1) continue; if(b[r2][c2]===v){ const path=findPath({r:r1,c:c1},{r:r2,c:c2},b); if(path) pairs.push({a:{r:r1,c:c1},b:{r:r2,c:c2},path}); } } } return pairs; }
+    function startLevel(n){
+      const lv=LEVELS[n-1], stones=stonePositions(lv.rows,lv.cols,lv.stones||0); st.rows=lv.rows; st.cols=lv.cols; st.level=n; st.levelScore=0; st.timeLeft=lv.time; st.initialTime=lv.time; st.target=lv.target || Math.floor(lv.tiles/2)*100; st.tools={hint:2,shuffle:1,freeze:1,magic:n>=5?1:0}; st.used={hint:0,shuffle:0,freeze:0,magic:0}; st.combo=0; st.lastSuccessAt=0; st.pairsCleared=0; st.deadShufflesInLevel=0; warned30=false; frozenLeft=0; pendingRemovals=0; fadingTiles=new Map(); selected=null; hintPair=null; linePath=null; idle8=idle15=false;
+      st.mode = lv.mode==='randomFixed' ? randomMode() : (lv.mode==='switch5' ? randomMode() : lv.mode);
+      let best=null, bestAdj=Infinity;
+      for(let tries=0;tries<120;tries++){ const b=placePaired(lv.rows,lv.cols,lv.tiles,lv.icons,stones), legal=countLegalPairs(b).length, adj=adjacentSameScore(b,lv.rows,lv.cols); if(legal>=3&&adj<bestAdj){ best=b; bestAdj=adj; if(adj<=1) break; } if(!best&&legal>0) best=b; }
+      st.board=best || placePaired(lv.rows,lv.cols,lv.tiles,lv.icons,stones);
+      speak('linklink','start'); if(lv.mode==='randomFixed'||lv.mode==='switch5') showToast('本关规则：' + MODE_TEXT[st.mode]); draw(); setScore('linklink', st.totalScore); lastTick=Date.now(); save(true);
+    }
+    function randomMode(except){ const arr=MODES.filter(x=>x!==except); return arr[Math.floor(Math.random()*arr.length)]; }
+    st=state ? Object.assign(newState(), state, { selected:null }) : newState(); if(!st.details) st.details=detailsBase(); if(!st.tools) st.tools={hint:2,shuffle:1,freeze:1,magic:st.level>=5?1:0}; if(!st.used) st.used={hint:0,shuffle:0,freeze:0,magic:0}; if(state && st.board && st.board.length){ st.rows=st.rows||st.board.length; st.cols=st.cols||(st.board[0]||[]).length; st.level=Math.min(12,Math.max(1,Number(st.level||1))); const lv=LEVELS[st.level-1]; st.target=st.target||lv.target||Math.floor(lv.tiles/2)*100; st.initialTime=st.initialTime||lv.time; st.mode=st.mode||lv.mode||'none'; draw(); setScore('linklink', st.totalScore||0); } else startLevel(1); timer=setInterval(tick,250); linkLinkTimer=timer; save(true);
+    function tick(){ if(currentGame!=='linklink'||over){ clearInterval(timer); if(linkLinkTimer===timer) linkLinkTimer=null; return; } const now=Date.now(), dt=Math.min(.35,(now-lastTick)/1000); lastTick=now; if(gamePaused||busy) return; if(frozenLeft>0){ frozenLeft=Math.max(0,frozenLeft-dt); drawTools(); return; } st.timeLeft=Math.max(0,st.timeLeft-dt); if(st.timeLeft<=30&&!warned30){ warned30=true; speak('linklink','time_30'); } if(st.lastSuccessAt){ const idle=(now-st.lastSuccessAt)/1000; if(idle>=8&&!idle8){ idle8=true; speak('linklink','random'); } if(idle>=15&&!idle15){ idle15=true; const h=qs('[data-tool="hint"]',box); h&&h.classList.add('hint'); setTimeout(()=>h&&h.classList.remove('hint'),900); } }
+      drawTop(); save(); if(st.timeLeft<=0 && tilesLeft()>0) fail(); }
+    function inRange(r,c){ return r>=-1&&r<=st.rows&&c>=-1&&c<=st.cols; }
+    function passable(r,c,b,a,z){ if(r===a.r&&c===a.c) return true; if(r===z.r&&c===z.c) return true; if(r<0||r>=st.rows||c<0||c>=st.cols) return true; return !b[r][c]; }
+    function findPath(a,z,b=st.board){
+      if(!a||!z||b[a.r]?.[a.c]!==b[z.r]?.[z.c]) return null; const dirs=[[0,1],[1,0],[0,-1],[-1,0]], q=[]; let seq=0; const seen=new Map();
+      dirs.forEach((d,i)=>{ const nr=a.r+d[0], nc=a.c+d[1]; if(inRange(nr,nc)&&passable(nr,nc,b,a,z)) q.push({r:nr,c:nc,dir:i,turns:0,len:1,path:[a,{r:nr,c:nc}],seq:seq++}); });
+      while(q.length){ q.sort((x,y)=>x.turns-y.turns||x.len-y.len||x.seq-y.seq); const cur=q.shift(), key=cur.r+','+cur.c+','+cur.dir+','+cur.turns; if(seen.has(key)&&seen.get(key)<=cur.len) continue; seen.set(key,cur.len); if(cur.r===z.r&&cur.c===z.c) return simplifyPath(cur.path); for(let i=0;i<dirs.length;i++){ const nt=cur.turns+(i===cur.dir?0:1); if(nt>2) continue; const nr=cur.r+dirs[i][0], nc=cur.c+dirs[i][1]; if(!inRange(nr,nc)||!passable(nr,nc,b,a,z)) continue; q.push({r:nr,c:nc,dir:i,turns:nt,len:cur.len+1,path:cur.path.concat([{r:nr,c:nc}]),seq:seq++}); } }
+      return null;
+    }
+    function simplifyPath(path){ const out=[]; for(let i=0;i<path.length;i++){ if(i>0&&i<path.length-1){ const p=path[i-1], c=path[i], n=path[i+1]; if((p.r===c.r&&c.r===n.r)||(p.c===c.c&&c.c===n.c)) continue; } out.push(path[i]); } return out; }
+    function pathStats(path){ let turns=Math.max(0,path.length-2), len=0, outside=false; for(let i=0;i<path.length-1;i++){ len+=Math.abs(path[i].r-path[i+1].r)+Math.abs(path[i].c-path[i+1].c); } path.forEach(p=>{ if(p.r<0||p.r>=st.rows||p.c<0||p.c>=st.cols) outside=true; }); return {turns,len,outside,between:Math.max(0,len-1)}; }
+    async function clickTile(r,c){ if(busy||over||gamePaused) return; const v=st.board[r]?.[c]; if(!v||v==='#') return; const cur={r,c}; if(selected&&selected.r===r&&selected.c===c){ selected=null; draw(); return; } if(!selected){ selected=cur; draw(); return; } if(st.board[selected.r][selected.c]!==v){ selected=cur; draw(); return; } const path=findPath(selected,cur); if(!path){ markBad(selected,cur); speakMaybe('linklink','wrong',.35); selected=cur; draw(); return; } await removePair(selected,cur,path,false); }
+    async function removePair(a,b,path,magic){ if(busy||over) return; const av=st.board[a.r]?.[a.c], bv=st.board[b.r]?.[b.c]; if(!av||!bv||av==='#'||bv==='#') return; hintPair=null; selected=null; linePath=path; const activePath=path; lineKind=magic?'magic':''; draw(); await delay(110); if(st.board[a.r]?.[a.c]!==av||st.board[b.r]?.[b.c]!==bv) return; fadingTiles.set(a.r+','+a.c,av); fadingTiles.set(b.r+','+b.c,bv); st.board[a.r][a.c]=null; st.board[b.r][b.c]=null; pendingRemovals++; const now=Date.now(), ps=pathStats(path); let gain=100; if(!magic){ gain += ps.turns===0?30:(ps.turns===1?20:10); if(ps.outside) gain+=10; gain += Math.min(20, ps.between*2); if(st.lastSuccessAt){ const gap=(now-st.lastSuccessAt)/1000; if(gap<=1.2) gain+=50; else if(gap<=2.5) gain+=25; st.combo = gap<=3 ? st.combo+1 : 1; } else st.combo=1; gain += Math.min(100, Math.max(0, st.combo-1)*10); } else st.combo=Math.max(0,st.combo||0);
+      st.maxCombo=Math.max(st.maxCombo,st.combo||0); st.details.maxCombo=Math.max(st.details.maxCombo||0,st.maxCombo); st.levelScore+=gain; st.totalScore+=gain; st.pairsCleared++; if(!magic) st.lastSuccessAt=now; idle8=idle15=false; if(linePath===activePath) linePath=null; if(!magic){ if(ps.turns===0) speakMaybe('linklink','straight',.25); if(ps.turns===2) speakMaybe('linklink','two_turn',.35); if(ps.outside) speakMaybe('linklink','outside',.5); if(st.combo===5) speak('linklink','combo_5'); if(st.combo===10) speak('linklink','combo_10'); if(st.combo===20) speak('linklink','combo_20'); showCombo(st.combo); }
+      draw(); save(); setTimeout(()=>{ fadingTiles.delete(a.r+','+a.c); fadingTiles.delete(b.r+','+b.c); pendingRemovals=Math.max(0,pendingRemovals-1); draw(); if(pendingRemovals===0) settleAfterRemovals(); },220); }
+    async function settleAfterRemovals(){ if(busy||over||pendingRemovals>0) return; const lv=LEVELS[st.level-1], willMove=lv.mode!=='none'; if(willMove){ busy=true; selected=null; await delay(40); applyAfterMove(); draw(); await delay(160); busy=false; } await ensurePlayable(); if(tilesLeft()===0) await levelClear(); draw(); save(); }
+    function speakMaybe(g,e,p){ if(Math.random()<p) speak(g,e); }
+    function tileCells(){ const arr=[]; for(let r=0;r<st.rows;r++) for(let c=0;c<st.cols;c++) if(st.board[r][c]&&st.board[r][c]!=='#') arr.push([r,c]); return arr; }
+    function tilesLeft(){ return tileCells().length; }
+    function compressLine(vals, dir){ const out=Array(vals.length).fill(null), segs=[]; let s=0; for(let i=0;i<=vals.length;i++){ if(i===vals.length||vals[i]==='#'){ segs.push([s,i]); if(i<vals.length) out[i]='#'; s=i+1; } } segs.forEach(([a,b])=>{ const items=vals.slice(a,b).filter(Boolean); if(dir==='end') for(let i=0;i<items.length;i++) out[b-items.length+i]=items[i]; else for(let i=0;i<items.length;i++) out[a+i]=items[i]; }); return out; }
+    function applyAfterMove(){ const lv=LEVELS[st.level-1]; let m=st.mode; if(lv.mode==='altDownLeft') m=(st.pairsCleared%2===1)?'down':'left'; if(lv.mode==='switch5'&&st.pairsCleared>0&&st.pairsCleared%5===0){ st.mode=randomMode(st.mode); m=st.mode; showToast('本关规则：' + MODE_TEXT[m]); }
+      if(m==='none') return; if(m==='left'||m==='right'||m==='hCenter'||m==='hOut') moveRows(m); else moveCols(m); }
+    function moveRows(m){ for(let r=0;r<st.rows;r++){ if(m==='left'||m==='right') st.board[r]=compressLine(st.board[r],m==='right'?'end':'start'); else { const mid=Math.floor(st.cols/2), left=compressLine(st.board[r].slice(0,mid),m==='hCenter'?'end':'start'), right=compressLine(st.board[r].slice(mid),m==='hCenter'?'start':'end'); st.board[r]=left.concat(right); } } }
+    function moveCols(m){ for(let c=0;c<st.cols;c++){ const col=[]; for(let r=0;r<st.rows;r++) col.push(st.board[r][c]); let next; if(m==='up'||m==='down') next=compressLine(col,m==='down'?'end':'start'); else { const mid=Math.floor(st.rows/2), top=compressLine(col.slice(0,mid),m==='vCenter'?'end':'start'), bot=compressLine(col.slice(mid),m==='vCenter'?'start':'end'); next=top.concat(bot); } for(let r=0;r<st.rows;r++) st.board[r][c]=next[r]; } }
+    async function ensurePlayable(){ if(tilesLeft()===0) return; if(countLegalPairs().length) return; st.timeLeft=Math.max(0,st.timeLeft-5); st.details.deadShuffles++; st.details.deadShufflesInLevel=++st.deadShufflesInLevel; speak('linklink','dead_shuffle'); showToast('没有可连接的图块，自动重新排列'); reshuffle(false); draw(); await delay(250); }
+    function reshuffle(cost){ fadingTiles=new Map(); pendingRemovals=0; const cells=tileCells(), vals=cells.map(([r,c])=>st.board[r][c]), original=st.board.map(row=>row.slice()); for(let tries=0;tries<80;tries++){ const shuffled=shuffleArray(vals.slice()); st.board=original.map(row=>row.slice()); cells.forEach((p,i)=>{ st.board[p[0]][p[1]]=shuffled[i]; }); if(countLegalPairs().length) break; } if(cost){ st.totalScore=Math.max(0,st.totalScore-100); st.combo=0; st.details.shuffleUsed++; speak('linklink','shuffle'); } save(); }
+    async function useTool(t){ if(busy||over||gamePaused||pendingRemovals>0) return; if((st.tools[t]||0)<=0) return; if(t==='hint'){ st.tools.hint--; st.used.hint++; st.details.hintUsed++; speak('linklink','hint'); if(!countLegalPairs().length) await ensurePlayable(); const pairs=countLegalPairs(); hintPair=pairs[Math.floor(Math.random()*pairs.length)]||null; if(hintPair){ linePath=hintPair.path; lineKind='hint'; draw(); setTimeout(()=>{ if(currentGame==='linklink'){ hintPair=null; linePath=null; draw(); } },2000); } }
+      if(t==='shuffle'){ st.tools.shuffle--; st.used.shuffle++; reshuffle(true); selected=null; draw(); }
+      if(t==='freeze'){ st.tools.freeze--; st.used.freeze++; st.details.freezeUsed++; frozenLeft=8; speak('linklink','freeze'); draw(); }
+      if(t==='magic'){ st.tools.magic--; st.used.magic++; st.details.magicUsed++; speak('linklink','magic'); if(!countLegalPairs().length) await ensurePlayable(); const p=countLegalPairs()[0]; if(p) await removePair(p.a,p.b,p.path,true); }
+      drawTools(); save(); }
+    async function levelClear(){ busy=true; const remain=Math.ceil(st.timeLeft), lv=LEVELS[st.level-1]; const fast=remain>lv.time/2, last=remain<=1; if(fast){ st.details.fastClear=true; speak('linklink','fast_clear'); } if(last){ st.details.lastSecond=true; } let bonus=remain*10 + (st.tools.hint||0)*50 + (st.tools.shuffle?100:0) + (st.tools.freeze?100:0) + (st.tools.magic?150:0); st.totalScore += bonus; st.details.clearLevels=st.level; showToast('第' + st.level + '关完成 +' + bonus); speak('linklink','level_clear'); setScore('linklink', st.totalScore); updateBest(); draw(); await delay(1200); if(st.level>=12){ st.details.completedAll=true; finishAll(); return; } startLevel(st.level+1); busy=false; }
+    function fail(){ if(over) return; over=true; clearInterval(timer); if(linkLinkTimer===timer) linkLinkTimer=null; clearProgress('linklink'); st.details.score=st.totalScore; st.details.level=st.level; setScore('linklink', Math.max(scores().linklink||0, st.totalScore)); updateBest(); speak('linklink','gameover'); draw(); showGameOver('linklink','时间到','到达第' + st.level + '关，累计总分：' + st.totalScore + '分，最高连击：' + st.maxCombo, {outcome:'score',score:st.totalScore}, { details:Object.assign({},st.details,{score:st.totalScore,level:st.level,maxCombo:st.maxCombo}) }); }
+    function finishAll(){ over=true; clearInterval(timer); if(linkLinkTimer===timer) linkLinkTimer=null; clearProgress('linklink'); st.details.score=st.totalScore; st.details.level=12; st.details.maxCombo=st.maxCombo; setScore('linklink', Math.max(scores().linklink||0, st.totalScore)); updateBest(); showGameOver('linklink','全部通关','累计总分：' + st.totalScore + '分，最高连击：' + st.maxCombo + '，用时：' + formatDuration(Date.now()-st.startedAt), {outcome:'score',score:st.totalScore}, { details:Object.assign({},st.details,{score:st.totalScore,level:12,maxCombo:st.maxCombo,completedAll:true}) }); }
+    function markBad(a,b){ draw(); [a,b].forEach(p=>{ const el=qs('.wb-link-tile[data-r="'+p.r+'"][data-c="'+p.c+'"]',box); if(el){ el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),200); } }); }
+    function drawTop(){ qs('#ll-level',box).textContent='第 ' + st.level + ' 关'; qs('#ll-progress-text',box).textContent='本关 ' + st.levelScore + ' / ' + st.target; qs('#ll-total',box).textContent=String(st.totalScore).replace(/\B(?=(\d{3})+(?!\d))/g, ','); const fill=qs('#ll-fill',box); fill.style.width=Math.min(100,st.levelScore/st.target*100)+'%'; fill.classList.toggle('done',st.levelScore>=st.target); const t=qs('#ll-time',box), left=Math.ceil(st.timeLeft); t.textContent=(frozenLeft>0?'❄ ':'⏱ ') + String(Math.floor(left/60)).padStart(2,'0') + ':' + String(left%60).padStart(2,'0'); t.className='wb-link-time ' + (frozenLeft>0?'freeze':left<=10?'danger':left<=30?'warn':''); }
+    function drawTools(){ ['hint','shuffle','freeze','magic'].forEach(k=>{ const el=qs('#ll-'+k+'-left',box); if(el) el.textContent=k==='freeze'&&frozenLeft>0?Math.ceil(frozenLeft):st.tools[k]; const btn=qs('[data-tool="'+k+'"]',box); if(btn) btn.disabled=(st.tools[k]||0)<=0||(k==='freeze'&&frozenLeft>0); }); }
+    function draw(){ drawTop(); drawTools(); const rule=qs('#ll-rule',box); if(rule) rule.textContent='本关规则：' + (LEVELS[st.level-1].mode==='none'?'完全静止':MODE_TEXT[st.mode]||LEVELS[st.level-1].name); const board=qs('#ll-board',box); board.style.setProperty('--ll-cols',st.cols); board.style.setProperty('--ll-rows',st.rows); board.style.setProperty('--ll-ratio',st.cols/st.rows); let html=''; for(let r=0;r<st.rows;r++) for(let c=0;c<st.cols;c++){ const key=r+','+c, fading=fadingTiles.get(key), v=st.board[r][c] || fading, sel=!fading&&selected&&selected.r===r&&selected.c===c, hp=!fading&&hintPair&&(hintPair.a.r===r&&hintPair.a.c===c||hintPair.b.r===r&&hintPair.b.c===c); html += '<button class="wb-link-tile '+(!v?'empty':v==='#'?'stone':fading?'gone':sel?'sel':hp?'hint':'')+'" data-r="'+r+'" data-c="'+c+'">'+(v&&v!=='#'?v:'')+'</button>'; } html += svgLine(); board.innerHTML=html; qsa('.wb-link-tile',board).forEach(el=>el.onclick=()=>clickTile(+el.dataset.r,+el.dataset.c)); }
+    function pointFor(p){ const x=p.c<0?0:(p.c>=st.cols?100:(p.c+.5)/st.cols*100), y=p.r<0?0:(p.r>=st.rows?100:(p.r+.5)/st.rows*100); return [x,y]; }
+    function svgLine(){ if(!linePath) return ''; const pts=linePath.map(pointFor); return '<svg class="wb-link-line '+lineKind+'" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M '+pts.map(p=>p[0].toFixed(2)+' '+p[1].toFixed(2)).join(' L ')+'"/></svg>'; }
+    function showCombo(n){ if(n<2) return; const wrap=qs('.wb-link-boardwrap',box), el=getHostDocument().createElement('div'); el.className='wb-link-combo '+(n>=10?'fire':n>=5?'hot':''); el.textContent='连击 ×'+n; wrap.appendChild(el); setTimeout(()=>el.remove(),900); }
+    function showToast(text){ const wrap=qs('.wb-link-boardwrap',box), el=getHostDocument().createElement('div'); el.className='wb-link-toast'; el.textContent=text; wrap.appendChild(el); setTimeout(()=>el.remove(),1500); }
   }
 
   function startTurkey(state) {
