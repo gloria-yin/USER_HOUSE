@@ -283,7 +283,7 @@ export async function initWanbanXiaowu() {
     paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
-    spider: '经典蜘蛛纸牌的无尽模式。十列牌堆，默认黑桃与红桃两种花色；卡牌可按点数递减叠放，不同花色可以临时混放，但只有同花色严格递减的连续牌组能整体移动。同花色K到A完整序列会自动收起到下方收藏区。牌库无限，玩家可主动发一排；存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
+    spider: '经典蜘蛛纸牌的无尽模式。十列牌堆，默认黑桃与红桃两种花色；卡牌可按点数递减叠放，不同花色可以临时混放，但只有同花色严格递减的连续牌组能整体移动。同花色K到A完整序列会自动收起到下方收藏区。牌库无限，玩家可主动发一排；每次发牌后会按完成牌组数给出步数限制，倒计时归零会强制发牌。存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
     linklink: '限时配对消除。点击两个相同图案，若它们之间存在最多两次转弯的横竖连接路径即可消除；连接线可以从棋盘外侧一格绕行，但不能穿过图块或石块。共12关，逐步加入下落、上移、左右靠拢、集中、分散和障碍物。每关清空棋盘并达成目标分后自动进入下一关。',
     blackjack: '双人21点挑战。每一小局使用一副完整52张牌重新洗牌，你和Char轮流决定要牌或停牌，尽量接近21点但不能爆牌。每关双方积分从0开始竞速，先达到目标分者赢下本关；玩家连胜8关即完整通关。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
@@ -375,7 +375,7 @@ export async function initWanbanXiaowu() {
     paopao: { start:'泡泡龙开局，顶部已有5行泡泡，玩家准备瞄准发射。', aim:'玩家按住并拖动，虚线轨迹正在根据墙壁反弹预测落点。', clear:'玩家成功消除同色泡泡。', clear_5:'玩家一次性消除超过5个泡泡。', drop:'失去顶部连接的泡泡悬空掉落。', danger:'泡泡群快要接近红色警戒线。', score_1000:'泡泡龙本局分数每增加1000分时触发。', bomb:'玩家使用炸弹泡泡，炸掉落点周围3格泡泡。', record:'泡泡龙刷新历史最高分。', gameover:'泡泡越过红色警戒线，泡泡龙本局结束。', random:'观看泡泡龙时的待机碎碎念。' },
     game1010: { start:'1010!开局，10×10棋盘为空，底部出现3个不可旋转方块。', place:'玩家成功放置一个候补方块。', clear:'玩家消除了一行或一列，30%概率触发。', clear_3:'玩家一次性消除超过3行/列。', score_1000:'1010!本局分数每增加1000分时触发。', tool:'玩家使用重新生成或小锤子道具。', low_space:'棋盘剩余空格少于5个，局面接近死局。', record:'1010!刷新历史最高分。', gameover:'没有任何剩余候补方块可以放入棋盘，且道具已经用完，1010!结束。', random:'观看1010!方块拼图时的碎碎念。' },
     turkey: { start:'土耳其方块开局，底部四行横向方块已经出现。', first_clear:'玩家第一次消除完整横行。', clear_2:'玩家同时消除2行。', clear_3:'玩家同时消除3行及以上。', chain_3:'同一次移动连锁达到第3轮。', combo_5:'连续5次普通移动都产生消除。', score_1000:'土耳其方块分数首次达到1000。', score_5000:'土耳其方块分数首次达到5000。', record:'土耳其方块刷新历史最高分。', top_3:'当前最高方块进入顶部3行。', top_row:'顶行已经被占用。', no_clear_8:'连续8次普通移动没有消除。', thunder:'玩家使用云雷道具。', stardust:'玩家使用星尘收集器。', hammer:'玩家使用小锤粉碎机。', danger_tool:'顶部危险时使用道具并成功存活。', gameover:'方块被推到棋盘顶部之外，土耳其方块结束。', random:'观看土耳其方块时的待机碎碎念。' },
-    spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已发好，玩家开始整理黑桃与红桃。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'玩家尝试发牌但存在空列，需要先填满空列。', deal:'新的一排牌主动发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
+    spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已发好，玩家开始整理黑桃与红桃。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'玩家尝试发牌或步数倒计时归零时存在空列，需要先填满空列。', deal:'新的一排牌主动或强制发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
     linklink: { start:'连连看新关卡开始，棋盘已经生成。', straight:'零转弯连线成功。', two_turn:'两转弯连线成功。', outside:'连接线从棋盘外侧绕行成功。', combo_5:'连连看达到5连击。', combo_10:'连连看达到10连击。', combo_20:'连连看达到20连击。', wrong:'点击了无法连接的一对。', hint:'玩家使用提示道具。', shuffle:'玩家使用洗牌道具。', dead_shuffle:'棋盘死局并自动洗牌。', freeze:'玩家使用冻结时间。', magic:'玩家使用魔法消除。', time_30:'连连看剩余30秒。', fast_clear:'剩余一半以上时间通关。', level_clear:'连连看完成普通关卡。', gameover:'连连看倒计时结束。', record:'连连看刷新历史最高分。', random:'观看连连看时的待机碎碎念。' },
     blackjack: { start:'21点新关卡开始，双方重新发牌对决。', player_blackjack:'玩家开局获得Blackjack。', char_blackjack:'Char开局获得Blackjack。', player_21:'玩家抽牌后刚好21点。', char_21:'Char抽牌后刚好21点。', player_bust:'玩家爆牌。', char_bust:'Char爆牌。', risky_hit:'玩家19点仍选择要牌。', player_win:'玩家赢下本轮。', char_win:'Char赢下本轮。', win5:'玩家达成五连胜。', close_score:'双方比分非常接近。', hint:'玩家使用提示。', peek:'玩家使用偷看。', undo:'玩家使用反悔。', protect:'护牌生效。', gameover:'21点挑战失败。', record:'21点刷新历史最高总分。', random:'观看21点时的待机碎碎念。' },
     tictactoe: { char_first:'{{char}}先手。', char_second:'{{char}}后手。', user_center:'玩家占据中心格。', user_corner:'玩家占据角落格。', ai_block:'{{char}}阻挡了玩家即将连线的一步。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一子，每隔3-5轮随机触发。', user_win:'玩家在井字棋获胜。', user_lose:'{{char}}在井字棋获胜，玩家失败。', draw:'井字棋平局。', random:'和user玩井字棋时的碎碎念。' },
@@ -12845,19 +12845,19 @@ function showGameRecords(game, page) {
         if (cols[col].length < counts[col]) { const c = deck.shift(); c.face = cols[col].length === counts[col] - 1; cols[col].push(c); left--; }
         col = (col + 1) % 10;
       }
-      return { cols, deck, score:0, level:1, moves:0, completed:[], stepsSinceDeal:0, tools:{undo:1, eliminate:5}, details:{ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, emptied:{}, dealEmptyLock:false, dangerPeak:false };
+      return { cols, deck, score:0, level:1, moves:0, completed:[], stepsSinceDeal:0, tools:{undo:1, eliminate:5}, details:{ hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, emptied:{}, dealEmptyLock:false, dangerPeak:false };
     };
     let st = state && Array.isArray(state.cols) ? Object.assign(initial(), state) : initial();
     st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false })));
     st.deck = Array.isArray(st.deck) ? st.deck : makeBatch();
     st.completed = Array.isArray(st.completed) ? st.completed : [];
     st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {});
-    st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {});
+    st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {});
     st.emptied = st.emptied || {};
     st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0));
     let selected = null, busy = false, over = false, drag = null, eliminateMode = false, hintMode = false;
     const undoStack = [];
-    box.innerHTML = '<div class="wb-spider" id="wb-spider"><div class="wb-spider-top"><div class="wb-spider-stat"><small>分数</small><b id="sp-score">0</b></div><div class="wb-spider-stat"><small>完成</small><b id="sp-done-count">0副</b></div><div class="wb-spider-stat"><small>移动</small><b id="sp-moves">0</b></div><div class="wb-spider-stat"><small>最高列</small><b id="sp-height">0/30</b></div></div><div class="wb-spider-deckbar"><div class="wb-spider-dealinfo"><div class="wb-spider-countdown" id="sp-countdown">发牌后执行 0 步</div><div class="wb-muted" id="sp-deal-hint"></div></div><div class="wb-spider-deckside"><div class="wb-spider-pilebox collect"><div class="wb-spider-collectpile empty" id="sp-collect-pile"></div></div><div class="wb-spider-pilebox"><div class="wb-spider-deckpile" aria-hidden="true"><span></span><span></span><span></span></div></div><button class="wb-spider-deck" id="sp-deck" type="button">发牌</button></div></div><div class="wb-spider-board" id="sp-board"></div><div class="wb-spider-tools"><button class="wb-spider-tool" id="sp-hint" type="button">提示</button><button class="wb-spider-tool" id="sp-undo" type="button">撤销</button><button class="wb-spider-tool" id="sp-eliminate" type="button">消除 <span class="left" id="sp-eliminate-left">5</span></button><button class="wb-spider-tool end" id="sp-end" type="button">结束</button></div><div class="wb-spider-done"><div class="wb-spider-done-head"><span id="sp-done-title">已完成牌组</span><span id="sp-done-total">共 0 副</span></div><div class="wb-spider-done-track" id="sp-done-track"></div></div></div>';
+    box.innerHTML = '<div class="wb-spider" id="wb-spider"><div class="wb-spider-top"><div class="wb-spider-stat"><small>分数</small><b id="sp-score">0</b></div><div class="wb-spider-stat"><small>完成</small><b id="sp-done-count">0副</b></div><div class="wb-spider-stat"><small>移动</small><b id="sp-moves">0</b></div><div class="wb-spider-stat"><small>最高列</small><b id="sp-height">0/30</b></div></div><div class="wb-spider-deckbar"><div class="wb-spider-dealinfo"><div class="wb-spider-countdown" id="sp-countdown">20 步后发牌</div><div class="wb-muted" id="sp-deal-hint"></div></div><div class="wb-spider-deckside"><div class="wb-spider-pilebox collect"><div class="wb-spider-collectpile empty" id="sp-collect-pile"></div></div><div class="wb-spider-pilebox"><div class="wb-spider-deckpile" aria-hidden="true"><span></span><span></span><span></span></div></div><button class="wb-spider-deck" id="sp-deck" type="button">发牌</button></div></div><div class="wb-spider-board" id="sp-board"></div><div class="wb-spider-tools"><button class="wb-spider-tool" id="sp-hint" type="button">提示</button><button class="wb-spider-tool" id="sp-undo" type="button">撤销</button><button class="wb-spider-tool" id="sp-eliminate" type="button">消除 <span class="left" id="sp-eliminate-left">5</span></button><button class="wb-spider-tool end" id="sp-end" type="button">结束</button></div><div class="wb-spider-done"><div class="wb-spider-done-head"><span id="sp-done-title">已完成牌组</span><span id="sp-done-total">共 0 副</span></div><div class="wb-spider-done-track" id="sp-done-track"></div></div></div>';
     speak('spider','start');
     draw(); save();
     setTimeout(()=>{ if(currentGame === 'spider') draw(); }, 60);
@@ -12872,7 +12872,7 @@ function showGameRecords(game, page) {
     function save(){ if(!over) saveProgress('spider', Object.assign({}, st, { selected:null })); }
     function snapshot(){ return JSON.parse(JSON.stringify(Object.assign({}, st, { selected:null }))); }
     function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length > 80) undoStack.shift(); }
-    function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)); }
+    function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)); }
     function undoMove(){ if(busy || over || gamePaused || !undoStack.length) return; restoreState(undoStack.pop()); selected=null; eliminateMode=false; hintMode=false; st.score=Math.max(0,Number(st.score||0)-2); st.details.undo=(st.details.undo||0)+1; speak('spider','undo'); showSpiderToast('已撤销，分数-2'); draw(); save(); }
     function toggleHint(){ if(busy || over || gamePaused) return; selected=null; eliminateMode=false; if(hintMode){ hintMode=false; draw(); return; } st.score=Math.max(0,Number(st.score||0)-2); hintMode=true; showSpiderToast('可移动牌已标蓝，分数-2'); draw(); save(); }
     function toggleEliminate(){ if(busy || over || gamePaused || (st.tools.eliminate||0)<=0) return; selected=null; hintMode=false; eliminateMode=!eliminateMode; draw(); showSpiderToast(eliminateMode ? '选择同花色连续牌组，再点一次消除' : '取消消除'); }
@@ -12890,6 +12890,7 @@ function showGameRecords(game, page) {
     async function doMove(from, idx, to){
       busy = true;
       pushUndo();
+      const countdownActive = allFilled();
       const moving = st.cols[from].splice(idx);
       st.cols[to].push(...moving);
       selected = null;
@@ -12897,9 +12898,11 @@ function showGameRecords(game, page) {
       await delay(80);
       st.moves++; st.details.moves = st.moves;
       st.score = Math.max(0, Number(st.score||0) - 1);
-      st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)) + 1;
+      if(countdownActive) st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)) + 1;
       await settle([from, to], true);
       await settle([], false);
+      if(allFilled()) st.dealEmptyLock = false;
+      await autoDealIfDue();
       checkOverflow();
       await checkClearTable();
       setScore('spider', st.score);
@@ -12953,7 +12956,28 @@ function showGameRecords(game, page) {
     }
     function resetEmptyRewardsAfterDeal(){ st.emptied = {}; }
     function allFilled(){ return st.cols.every(c=>c.length>0); }
+    function dealStepLimit(){
+      const collected = Math.max(0, Array.isArray(st.completed) ? st.completed.length : 0);
+      return Math.max(10, 20 - Math.floor(collected / 6) * 2);
+    }
+    function dealStepsLeft(){
+      return Math.max(0, dealStepLimit() - Math.max(0, Number(st.stepsSinceDeal || 0)));
+    }
     async function manualDeal(){ if(busy || over || gamePaused) return; if(!allFilled()){ st.dealEmptyLock=true; draw(); speak('spider','auto_3'); return; } busy=true; pushUndo(); await dealRow(false); await settle([], false); checkOverflow(); await checkClearTable(); draw(); save(); busy=false; }
+    async function autoDealIfDue(){
+      if(over || dealStepsLeft() > 0) return false;
+      if(!allFilled()){
+        st.dealEmptyLock = true;
+        showSpiderToast('步数到达，请先填满空列');
+        speak('spider','auto_3');
+        return false;
+      }
+      st.details.autoDeals = (st.details.autoDeals || 0) + 1;
+      showSpiderToast('步数到达，自动发牌');
+      await dealRow(true);
+      await settle([], false);
+      return true;
+    }
     function addDealWant(list, suit, rank, weight, kind){
       if(!suit || rank < 1 || rank > 13) return;
       list.push({ suit, rank, weight:Math.max(1, weight || 1), kind:kind || 'soft' });
@@ -13134,9 +13158,10 @@ function showGameRecords(game, page) {
       const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：' + st.score + '分';
       const highEl=qs('#wb-high'); if(highEl) highEl.textContent='最高：' + Math.max(scores().spider || 0, st.score) + '分';
       const maxH=Math.max(...st.cols.map(c=>c.length));
-      const cd=qs('#sp-countdown'); if(cd){ cd.textContent = '发牌后执行 ' + Math.max(0, Number(st.stepsSinceDeal || 0)) + ' 步'; cd.className='wb-spider-countdown'; }
-      const hint=qs('#sp-deal-hint'); if(hint) hint.textContent = st.dealEmptyLock || !allFilled() ? '请先填满空列' : '';
-      const deck=qs('#sp-deck'); if(deck) deck.className='wb-spider-deck' + (!allFilled() ? ' blocked' : '');
+      const leftSteps = dealStepsLeft();
+      const cd=qs('#sp-countdown'); if(cd){ cd.textContent = leftSteps > 0 ? (leftSteps + ' 步后发牌') : '立即发牌'; cd.className='wb-spider-countdown' + (leftSteps <= 3 ? ' warn' : ''); }
+      const hint=qs('#sp-deal-hint'); if(hint) hint.textContent = st.dealEmptyLock || !allFilled() ? '请先填满空列' : ('已走 ' + Math.max(0, Number(st.stepsSinceDeal || 0)) + '/' + dealStepLimit() + ' 步');
+      const deck=qs('#sp-deck'); if(deck){ deck.className='wb-spider-deck' + (!allFilled() ? ' blocked' : ''); deck.textContent = leftSteps > 0 ? '提前发牌' : '发牌'; }
       const pile=qs('#sp-collect-pile'); if(pile){ const cap=Math.max(1, Math.floor(((pile.clientWidth || 36) + 7) / 16)); const shown=st.completed.slice(0, cap); pile.className='wb-spider-collectpile' + (!shown.length ? ' empty' : ''); pile.innerHTML = shown.length ? shown.map(d=>'<span class="wb-spider-collect-card '+(d.suit==='H'?'red':'')+'" title="第'+d.index+'副">'+faceInner({ rank:1, suit:d.suit })+'</span>').join('') : '<span class="wb-spider-collect-card">'+faceInner({ rank:1, suit:'S' })+'</span>'; }
       const hintBtn=qs('#sp-hint'); if(hintBtn) hintBtn.className='wb-spider-tool' + (hintMode ? ' hint-on' : '');
       const elim=qs('#sp-eliminate'); if(elim) elim.className='wb-spider-tool' + (eliminateMode ? ' active' : '');
