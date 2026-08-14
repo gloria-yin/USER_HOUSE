@@ -391,6 +391,25 @@
 .wb-mines-cell.n8 { color:#666; }
 .wb-mines-actions { justify-content:center; gap:8px; flex-wrap:nowrap; }
 .wb-mines-actions .wb-btn { min-width:86px; }
+.wb-shuerte-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto auto; gap:8px; place-items:center; overflow:hidden; }
+.wb-shuerte-top { width:100%; display:flex; justify-content:center; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+.wb-shuerte-board { width:min(520px, 100%, 100cqh); max-height:100%; aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(var(--wb-shuerte-size,4),minmax(0,1fr)); grid-template-rows:repeat(var(--wb-shuerte-size,4),minmax(0,1fr)); gap:8px; padding:10px; border-radius:24px; background:linear-gradient(135deg,#f7f0de,#dff3e7); box-shadow:inset 0 0 0 1px rgba(80,96,68,.18), 0 16px 30px rgba(73,86,65,.12); box-sizing:border-box; contain:layout size; justify-self:center; align-self:center; }
+.wb-shuerte-cell { position:relative; min-width:0; min-height:0; width:100%; height:100%; padding:0; display:grid; place-items:center; border:0; border-radius:18px; background:#fffdf7; color:#33402f; font-weight:900; font-size:clamp(18px, 7cqh, 40px); line-height:1; cursor:pointer; box-shadow:0 8px 18px rgba(87,99,69,.13), inset 0 -3px 0 rgba(89,103,67,.08); transition:transform .12s ease, background .18s ease, opacity .18s ease, box-shadow .18s ease; }
+.wb-shuerte-cell:hover { transform:translateY(-1px); }
+.wb-shuerte-cell.done { opacity:.28; transform:scale(.94); background:#dfe8d6; box-shadow:none; cursor:default; }
+.wb-shuerte-cell.good { animation:wbShuerteGood .24s ease-out; background:#dff7e8; color:#18743a; }
+.wb-shuerte-cell.bad { animation:wbShuerteBad .22s ease-in-out; background:#ffe2df; color:#c82828; }
+.wb-shuerte-cell.hint, .wb-shuerte-cell.focus { outline:3px solid #f0b84d; box-shadow:0 0 0 6px rgba(240,184,77,.22), 0 10px 22px rgba(87,99,69,.18); }
+.wb-shuerte-cell.dim { opacity:.32; }
+.wb-shuerte-float { position:absolute; top:8px; right:10px; pointer-events:none; font-size:12px; font-weight:900; animation:wbScoreFloat .52s ease-out forwards; }
+.wb-shuerte-float.good { color:#16964c; }
+.wb-shuerte-float.bad { color:#d62d20; }
+.wb-shuerte-tools { justify-content:center; gap:8px; flex-wrap:wrap; }
+.wb-shuerte-tools .wb-btn { min-width:90px; }
+.wb-shuerte-note { font-size:12px; color:#7a816f; text-align:center; }
+@keyframes wbShuerteGood { 0%{ transform:scale(.92); } 60%{ transform:scale(1.06); } 100%{ transform:scale(1); } }
+@keyframes wbShuerteBad { 0%,100%{ transform:translateX(0); } 25%{ transform:translateX(-4px); } 75%{ transform:translateX(4px); } }
+@keyframes wbScoreFloat { from { opacity:0; transform:translateY(6px) scale(.9); } 20% { opacity:1; } to { opacity:0; transform:translateY(-24px) scale(1.08); } }
 @keyframes wbMinePress { 0%,100% { transform:translateY(0); } 50% { transform:translateY(1px); box-shadow:inset 1px 1px 0 rgba(0,0,0,.24); } }
 @keyframes wbMineBoom { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); filter:brightness(1.18); } }
 .wb-popstar-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:7px; place-items:center; overflow:hidden; }
@@ -2062,6 +2081,13 @@
   .wb-mines-cell { font-size:clamp(9px, 2.8cqh, 16px); }
   .wb-mines-actions { gap:6px; }
   .wb-mines-actions .wb-btn { flex:1 1 0; min-width:0; min-height:30px; }
+  .wb-shuerte-panel { gap:5px; }
+  .wb-shuerte-top { gap:4px; flex-wrap:nowrap; overflow:hidden; }
+  .wb-shuerte-board { width:min(100%, 100cqh, 66dvh, 390px); padding:6px; gap:5px; border-radius:18px; }
+  .wb-shuerte-cell { border-radius:12px; font-size:clamp(16px, 7cqh, 34px); }
+  .wb-shuerte-tools { gap:6px; width:100%; }
+  .wb-shuerte-tools .wb-btn { flex:1 1 0; min-width:0; min-height:30px; padding-inline:8px; }
+  .wb-shuerte-note { font-size:11px; }
   .wb-gomoku, .wb-territory-board { width:min(100%, 52dvh, 360px); }
   .wb-ludo { --wb-ludo-pad:5px; width:min(calc(100% - 12px), 46dvh, 310px); height:min(calc(100% - 12px), 46dvh, 310px); justify-self:center; align-self:center; }
   .wb-ludo-piece { min-width:12px; max-width:19px; font-size:10px; }
