@@ -85,6 +85,7 @@ export async function initWanbanXiaowu() {
   const STORAGE_SUMMARIES = SCRIPT_ID + '_summaries_v1';
   const STORAGE_SUMMARY_REQ = SCRIPT_ID + '_summaryReq_v1';
   const STORAGE_PROGRESS = SCRIPT_ID + '_progress_v1';
+  const STORAGE_SUDOKU_STATE = SCRIPT_ID + '_sudokuState_v1';
   const STORAGE_RECORDS = SCRIPT_ID + '_records_v1';
   const STORAGE_PET_TEST = SCRIPT_ID + '_petTest_v1';
   const STORAGE_PET_FULL = SCRIPT_ID + '_petFull_v1';
@@ -281,12 +282,12 @@ export async function initWanbanXiaowu() {
     shuerte: '每局会先选择难度：简单4×4、中等5×5、困难6×6，并可选择“盲点”模式。数字会随机打散在方格里，点击1开始计时，并按1、2、3……一路点到最后一个数字。普通模式点对后数字会变淡；盲点模式点对后不变色，难度更高且有少量倍率加成。点错会扣分并出现红色反馈；下方道具可以提示下一个数字、短暂聚焦目标所在行列或重排未点击数字。完成全部数字后按难度基础分、连击、速度和道具使用结算。',
     uyangle: '三消叠牌小游戏。普通模式可通关；无尽模式会在剩余牌较少时自动追加下一批牌层，失败时统计已消除数量。点击没有被上层遮挡的卡牌放入下方7格槽，同图标凑满3张会消除；槽位超过7格且没有消除时失败。',
     screw: '每局会选择普通模式或无尽模式，并保证每种颜色螺丝数量为3的倍数、工具盒数量正确。顶部同时出现3个随机颜色工具盒，点击可见螺丝后，同色螺丝进入对应工具盒；非当前盒颜色会进入5格临时托盘。任意工具盒收满3颗会自动打包并刷新下一个颜色。上层面板会遮挡下层螺丝；板件剩一个螺丝时会悬挂摆动，失去全部螺丝后受重力下落。普通模式清空全部面板即可过关，无尽模式会在快结束时续上下一批。',
-    popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5，8/12/16个以上大块会有额外奖励。每关步数为25-Math.floor(关卡/3)，最少20步；消除、打乱、单消都会消耗1步。无可消除组合或步数用完时本关结算，剩余10个以内有少量奖励；如果无可消除组合且还剩步数，会按未用步数奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。',
+    popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5，8/12/16个以上大块会有额外奖励。困难模式每关有步数限制，消除、打乱、单消都会消耗1步；简单模式没有步数限制，可以一直消到没有可消除组合。无可消除组合或困难模式步数用完时本关结算，剩余10个以内有少量奖励；如果无可消除组合且还剩步数，会按未用步数奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。',
     paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
     spider: '经典蜘蛛纸牌的无尽模式。十列牌堆，默认黑桃与红桃两种花色；卡牌可按点数递减叠放，不同花色可以临时混放，但只有同花色严格递减的连续牌组能整体移动。同花色K到A完整序列会自动收起到下方收藏区。牌库无限，玩家可主动发一排；每次发牌后会按完成牌组数给出步数限制，倒计时归零会强制发牌。存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
-    linklink: '限时配对消除。点击两个相同图案，若它们之间存在最多两次转弯的横竖连接路径即可消除；连接线可以从棋盘外侧一格绕行，但不能穿过图块或石块。共12关，逐步加入下落、上移、左右靠拢、集中、分散和障碍物。每关清空棋盘并达成目标分后自动进入下一关。',
+    linklink: '限时配对消除。点击两个相同图案，若它们之间存在最多两次转弯的横竖连接路径即可消除；连接线可以从棋盘外侧一格绕行，但不能穿过图块或石块。连续成功配对每满3次会小幅加时，并显示连击提示。共12关，逐步加入下落、上移、左右靠拢、集中、分散和障碍物。每关清空棋盘并达成目标分后自动进入下一关。',
     blackjack: '双人21点挑战。每一小局使用一副完整52张牌重新洗牌，开局先猜红黑抽判定牌决定本局谁先行动，然后你和Char轮流决定要牌或停牌，尽量接近21点但不能爆牌。每关双方积分从0开始竞速，先达到目标分者赢下本关；玩家连胜8关即完整通关。失败时有5次免费复活机会。',
     westernchess: '标准8×8国际象棋。你执白棋先手，{{char}}执黑棋后手。点击自己的棋子会显示合法落点，再点合法格移动；王车易位和兵升变为后已实现，不做吃过路兵。将死获胜，逼和、50回合无吃子无兵动、三次重复的简化循环检测会判平。顶部只有反悔按钮，没有其他道具。',
     chinesechess: '标准9×10中国象棋。你执红棋先手，{{char}}执黑棋后手。点击己方棋子高亮合法落点，再点合法格移动或吃子。实现车、马、相/象、仕/士、帅/将、炮、兵/卒的基础规则，包含马腿、象眼、九宫、过河兵、炮架和将帅照面限制。将死或轮到一方无合法走法时判负；顶部只有反悔按钮，没有其他道具。',
@@ -320,6 +321,10 @@ export async function initWanbanXiaowu() {
     uyangle: [
       { id:'easy', title:'普通模式', sub:'可通关的正常关卡', multiplier:1, cards:144, compact:false },
       { id:'endless', title:'无尽模式', sub:'一直玩就会一直爽！', multiplier:1.55, cards:210, compact:true, endless:true }
+    ],
+    popstar: [
+      { id:'easy', title:'简单模式', sub:'我想爽玩消消乐', multiplier:1, limitedMoves:false },
+      { id:'hard', title:'困难模式', sub:'我想要步数限制', multiplier:2, limitedMoves:true }
     ],
     sudoku: [
       { id:'easy', title:'简单', sub:'空30-35个', multiplier:1, blanks:[30,35] },
@@ -695,6 +700,20 @@ export async function initWanbanXiaowu() {
   function saveSummaryReq(v) { try { localStorage.setItem(STORAGE_SUMMARY_REQ, String(v || '')); } catch(e) {} }
   const PROGRESS_SAVE_DELAY = 700;
   function progress() { return safeObject(loadJSON(STORAGE_PROGRESS, {})); }
+  function clearSudokuStateSnapshot() { try { localStorage.removeItem(STORAGE_SUDOKU_STATE); } catch(e) {} }
+  function isValidSudokuPuzzle(puz, sol) {
+    return Array.isArray(puz) && Array.isArray(sol) && puz.length === 81 && sol.length === 81
+      && puz.filter(Boolean).length >= 17
+      && sol.every(n => Number.isInteger(n) && n >= 1 && n <= 9)
+      && puz.every((n, i) => !n || n === sol[i]);
+  }
+  function isValidSudokuProgressState(state) {
+    if (!state || !isValidSudokuPuzzle(state.puzzle, state.solution) || !Array.isArray(state.grid) || state.grid.length !== 81) return false;
+    return state.grid.every((n, i) => {
+      if (state.puzzle[i]) return n === state.puzzle[i];
+      return n === 0 || (Number.isInteger(n) && n >= 1 && n <= 9);
+    });
+  }
   function buildProgressEntry(game, state) {
     const prev = progressSaveCache[game] || progress()[game] || {};
     const startedAt = (state && state.startedAt) || prev.startedAt || gameStartAt || Date.now();
@@ -800,6 +819,7 @@ export async function initWanbanXiaowu() {
       delete progressSaveTimers[game];
     }
     delete progressSaveCache[game];
+    if (game === 'sudoku') clearSudokuStateSnapshot();
     const p = progress();
     delete p[game];
     saveJSON(STORAGE_PROGRESS, p);
@@ -886,6 +906,7 @@ export async function initWanbanXiaowu() {
   }
   function hasPlayableProgress(game, state) {
     if (!state) return false;
+    if (game === 'sudoku') return isValidSudokuProgressState(state);
     if (game === 'linklink') return !!(state.board && state.board.length && state.timeLeft > 0);
     if (game === 'wordguess') return !!(state.completed || state.clueIndex || state.revealed || (state.guesses && state.guesses.length));
     if (game === 'guessnumber') return !!(state.tries || (state.history && state.history.length));
@@ -1078,7 +1099,7 @@ export async function initWanbanXiaowu() {
     if (game === 'minesweeper') return ['时间','用时','胜负','分数','排对雷','陪伴者','日志','操作'];
     if (game === 'shuerte') return ['时间','用时','分数','尺寸','错误','最高连击','陪伴者','日志','操作'];
     if (game === 'uyangle') return ['时间','用时','分数','打乱次数','移出次数','陪伴者','日志','操作'];
-    if (game === 'popstar') return ['时间','用时','分数','关卡','剩余','陪伴者','日志','操作'];
+    if (game === 'popstar') return ['时间','用时','分数','模式','关卡','剩余','陪伴者','日志','操作'];
     if (game === 'paopao') return ['时间','用时','分数','发射','下压','陪伴者','日志','操作'];
     if (game === 'game1010') return ['时间','用时','分数','消除','放置','陪伴者','日志','操作'];
     if (game === 'turkey') return ['时间','用时','分数','消除','移动','陪伴者','日志','操作'];
@@ -1099,7 +1120,7 @@ export async function initWanbanXiaowu() {
     if (game === 'minesweeper') return base.concat([minesweeperOutcomeText(r), singleRecordPoints(r), String(extractNumber(r?.scoreText || '', /排对\s*(\d+)\s*个雷/, 0)), recordCompanionDisplay(r)]);
     if (game === 'shuerte') return base.concat([singleRecordPoints(r), String(r?.details?.size || extractNumber(r?.scoreText || '', /(\d+)×\d+/, 0)), String(r?.details?.wrong || extractNumber(r?.scoreText || '', /错误\s*(\d+)\s*次/, 0)), String(r?.details?.maxCombo || 0), recordCompanionDisplay(r)]);
     if (game === 'uyangle') return base.concat([singleRecordPoints(r), String(extractNumber(r?.scoreText || '', /打乱\s*(\d+)\s*次/, 0)), String(extractNumber(r?.scoreText || '', /移出\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
-    if (game === 'popstar') return base.concat([singleRecordPoints(r), String(r?.details?.level || extractNumber(r?.scoreText || '', /第\s*(\d+)\s*关/, 1)), String(r?.details?.remainingAtEnd ?? extractNumber(r?.scoreText || '', /剩余\s*(\d+)\s*个/, 0)), recordCompanionDisplay(r)]);
+    if (game === 'popstar') return base.concat([singleRecordPoints(r), String((r?.choice || r?.difficulty || r?.details?.mode) === 'hard' ? '困难模式' : '简单模式'), String(r?.details?.level || extractNumber(r?.scoreText || '', /第\s*(\d+)\s*关/, 1)), String(r?.details?.remainingAtEnd ?? extractNumber(r?.scoreText || '', /剩余\s*(\d+)\s*个/, 0)), recordCompanionDisplay(r)]);
     if (game === 'paopao') return base.concat([singleRecordPoints(r), String(r?.details?.shots || extractNumber(r?.scoreText || '', /发射\s*(\d+)\s*次/, 0)), String(r?.details?.pushes || extractNumber(r?.scoreText || '', /下压\s*(\d+)\s*行/, 0)), recordCompanionDisplay(r)]);
     if (game === 'game1010') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || extractNumber(r?.scoreText || '', /消除\s*(\d+)\s*行列/, 0)), String(r?.details?.placements || extractNumber(r?.scoreText || '', /放置\s*(\d+)\s*块/, 0)), recordCompanionDisplay(r)]);
     if (game === 'turkey') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || 0), String(r?.details?.moves || 0), recordCompanionDisplay(r)]);
@@ -1129,7 +1150,7 @@ export async function initWanbanXiaowu() {
     if (game === 'shuerte') return '字段说明：舒尔特方格是按顺序寻找数字的专注力游戏；尺寸表示本局选择的4×4、5×5或6×6关卡；错误是点到非目标数字次数；最高连击表示连续正确点击的最大次数。';
     if (game === 'uyangle') return '字段说明：U了个U是三消叠牌小游戏；分数由用时和打乱次数共同计算，用时越短、打乱越少，分数越高。';
     if (game === 'screw') return '字段说明：拧螺丝是颜色盒子收集和玻璃层级解谜；普通模式分数由用时、候补槽压力和增加盒子次数共同计算；无尽模式失败时按当前盒子数量结算倍率，盒子越少倍率越高。';
-    if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5，并对8个以上大块追加奖励；每关有步数限制，消除和使用道具都会消耗步数；无可消除组合或步数用完后按剩余方块和未用步数结算，累计分数达到关卡目标进入下一关。';
+    if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5，并对8个以上大块追加奖励；困难模式每关有步数限制，消除和使用道具都会消耗步数；简单模式没有步数限制，可以一直消到没有可消除组合；结算时累计分数达到关卡目标进入下一关。';
     if (game === 'paopao') return '字段说明：泡泡龙是交错网格射击生存游戏；发射表示本局射出的泡泡数量；下压表示顶部新增行并整体下移的次数，下压间隔会从10发逐步缩短到5发。';
     if (game === 'game1010') return '字段说明：1010!是10×10方块拼图；放置表示成功落下的候补方块数量，消除表示累计清掉的行/列数量。';
     if (game === 'turkey') return '字段说明：土耳其方块是8×10横向滑块无尽消除游戏；消除表示累计清掉的完整横行数量；移动表示普通有效拖动次数。';
@@ -1179,12 +1200,12 @@ export async function initWanbanXiaowu() {
     if (game === 'minesweeper') return '结果：' + (d.won ? '成功' : '失败') + '；插旗数量：' + (d.flags || 0) + '；排对的雷：' + (d.correctFlags || 0) + '个；未插旗扫雷数量：' + (d.unflaggedMines || 0) + '个；踩雷时已开格子：' + (d.openedAtBlast || d.openedSafe || 0) + '格；犹豫次数：' + (d.hesitations || 0) + '次；数字试探成功次数：' + (d.chordSuccesses || 0) + '次；不确定试探成功次数：' + (d.riskyChordSuccesses || 0) + '次。';
     if (game === 'shuerte') return '尺寸：' + (d.size || 0) + '×' + (d.size || 0) + (d.noFade ? '（盲点）' : '') + '；最终分数：' + (d.score || singleRecordPoints(rec)) + '分；用时：' + ((d.durationMs || 0) / 1000).toFixed(2) + '秒；正确点击：' + (d.correct || 0) + '次；错误点击：' + (d.wrong || 0) + '次；最高连击：' + (d.maxCombo || 0) + '；提示/聚焦/重排：' + (d.hintUsed || 0) + '/' + (d.focusUsed || 0) + '/' + (d.shuffleUsed || 0) + '次；平均反应：' + ((d.avgReactionMs || 0) / 1000).toFixed(2) + '秒。';
     if (game === 'screw') return (d.endless ? '模式：无尽模式；收纳盒子：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '个；结算盒子数：' + (d.endlessBoxCount || (3 + (d.addBoxUses || 0))) + '个；基础分：' + (d.endlessBaseScore == null ? '未记录' : d.endlessBaseScore) + '；结算倍率：×' + (d.endlessScoreMultiplier || '未记录') + '；' : '结果：' + (d.completed ? '成功' : '失败') + '；最终进度：' + (d.progress || 0) + '%；打包次数：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '次；') + '候补槽最大占用：' + (d.maxTray || 0) + '格；候补槽填满5个次数：' + (d.trayFullCount || d.trayFourCount || 0) + '次；使用增加盒子次数：' + (d.addBoxUses || 0) + '次；被遮挡螺丝点击次数：' + (d.blocked || 0) + '次；掉落玻璃数量：' + (d.fallen || 0) + '块。';
-    if (game === 'popstar') return '最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；大块额外奖励：' + (d.bigBonusTotal || 0) + '分；余步奖励：' + (d.unusedMoveBonusTotal || 0) + '分；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
+    if (game === 'popstar') return '模式：' + (d.mode === 'easy' ? '简单模式' : d.mode === 'hard' ? '困难模式' : '未记录') + '；最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；大块额外奖励：' + (d.bigBonusTotal || 0) + '分；余步奖励：' + (d.unusedMoveBonusTotal || 0) + '分；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
     if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
     if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
     if (game === 'turkey') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；累计消除：' + (d.clearedLines || 0) + '行；有效移动：' + (d.moves || 0) + '次；最大同时消除：' + (d.maxClear || 0) + '行；最大连锁：' + (d.maxChain || 0) + '轮；最大连续回合连击：' + (d.maxCombo || 0) + '；云雷/星尘/粉碎机：' + (d.thunderUsed || 0) + '/' + (d.stardustUsed || 0) + '/' + (d.hammerUsed || 0) + '次；无道具达到3000：' + (d.noTool3000 ? '是' : '否') + '。';
     if (game === 'spider') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；完成牌组：' + (d.completed || 0) + '副；黑桃：' + (d.spades || 0) + '副；红桃：' + (d.hearts || 0) + '副；最大连锁：' + (d.maxChain || 0) + '副；发牌次数：' + (d.deals || 0) + '次；有效移动：' + (d.moves || 0) + '次；撤销：' + (d.undo || 0) + '次；消除：' + (d.eliminate || 0) + '次；清空列次数：' + (d.emptyCols || 0) + '次；同屏最多空列：' + (d.maxEmptyCols || 0) + '列；命悬一线次数：' + (d.clutch || 0) + '次；糟糕发牌连续/累计记录：' + (d.badDeals || 0) + '/' + (d.badDealsTotal || 0) + '次；游戏时间灯：' + (rec.durationMs >= 20*60000 ? '长时间游玩' : rec.durationMs >= 10*60000 ? '中等时长' : '短时游玩') + '。';
-    if (game === 'linklink') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；最高连击：' + (d.maxCombo || 0) + '；提示/洗牌/冻结/魔法：' + (d.hintUsed || 0) + '/' + (d.shuffleUsed || 0) + '/' + (d.freezeUsed || 0) + '/' + (d.magicUsed || 0) + '次；自动死局洗牌：' + (d.deadShuffles || 0) + '次；最快通关：' + (d.fastClear ? '是' : '否') + '；最后一秒：' + (d.lastSecond ? '是' : '否') + '。';
+    if (game === 'linklink') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；最高连击：' + (d.maxCombo || 0) + '；连击加时：' + (d.comboTimeBonus || 0) + '秒（' + (d.comboTimeAwards || 0) + '次，规则：每3连击+2秒）；提示/洗牌/冻结/魔法：' + (d.hintUsed || 0) + '/' + (d.shuffleUsed || 0) + '/' + (d.freezeUsed || 0) + '/' + (d.magicUsed || 0) + '次；自动死局洗牌：' + (d.deadShuffles || 0) + '次；最快通关：' + (d.fastClear ? '是' : '否') + '；最后一秒：' + (d.lastSecond ? '是' : '否') + '。';
     if (game === 'blackjack') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；胜/负/平：' + (d.wins || 0) + '/' + (d.losses || 0) + '/' + (d.ties || 0) + '；Blackjack：' + (d.blackjacks || 0) + '次；玩家爆牌：' + (d.busts || 0) + '次；Char爆牌：' + (d.charBusts || 0) + '次；最高连胜：' + (d.maxStreak || 0) + '；提示/偷看/反悔/护牌：' + (d.hintUsed || 0) + '/' + (d.peekUsed || 0) + '/' + (d.undoUsed || 0) + '/' + (d.protectUsed || 0) + '次；复活：' + (d.reviveUsed || 0) + '次；先手：user ' + (d.orderUserFirst || 0) + '次 / Char ' + (d.orderCharFirst || 0) + '次。';
     if (game === 'ludo') return cheatText + 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user飞行次数：' + (d.userFlights || 0) + '次；' + (rec.companion || '{{char}}') + '飞行次数：' + (d.charFlights || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
     if (game === 'guessnumber') return '每次猜测：\n' + ((d.guesses || []).map((x,i) => (i+1) + '. 猜“' + x.guess + '”：数字对' + x.nums + '个，位置对' + x.pos + '个').join('\n') || '无');
@@ -3043,6 +3064,7 @@ export async function initWanbanXiaowu() {
       .wb-link-fill { width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,#55cbb1,#9be7d2); transition:width .18s ease; }
       .wb-link-fill.done { background:linear-gradient(90deg,#f5c94f,#ffe8a3); }
       .wb-link-time { min-width:66px; height:28px; display:grid; place-items:center; padding:0 8px; border:1px solid color-mix(in srgb,var(--wb-border) 70%,var(--wb-accent) 30%); border-radius:999px; background:color-mix(in srgb,var(--wb-panel) 76%,transparent 24%); color:var(--wb-text); font-size:12px; font-weight:1000; white-space:nowrap; }
+      .wb-link-time.bonus { border-color:#34d399; background:linear-gradient(180deg,rgba(52,211,153,.22),rgba(16,185,129,.12)); color:#047857; box-shadow:0 0 0 2px rgba(52,211,153,.18), inset 0 1px 0 rgba(255,255,255,.54); }
       .wb-link-time.warn { border-color:#f59e0b; color:#d97706; }
       .wb-link-time.danger { border-color:#ef4444; color:#ef4444; animation:wbLinkPulse .8s ease-in-out infinite alternate; }
       .wb-link-time.freeze { border-color:#60a5fa; color:#2563eb; }
@@ -11801,12 +11823,12 @@ export async function initWanbanXiaowu() {
     setTimeout(() => { const saved = gameProgress(id); if (currentGame === id && saved && hasPlayableProgress(id, saved) && !gameStarted) showProgressChoice(id, saved); }, 60);
   }
 
-  function startCurrentGame(id, savedState) {
+  function startCurrentGame(id, savedState, options) {
     if (gameStarted) return;
     const storedState = gameProgress(id);
-    const resumeState = savedState || (storedState && hasPlayableProgress(id, storedState) ? storedState : null);
+    const forceNew = !!(options && options.forceNew);
+    const resumeState = savedState || (!forceNew && storedState && hasPlayableProgress(id, storedState) ? storedState : null);
     if (!resumeState && GAME_CHOICES[id]) {
-      clearProgress(id);
       showGameChoice(id, choice => startCurrentGame(id, choiceSavePatch(id, choice)));
       return;
     }
@@ -12765,10 +12787,11 @@ function showGameRecords(game, page) {
     let st = null, selected = null, busy = false, over = false, timer = null, lastTick = Date.now(), hintPair = null, linePath = null, lineKind = '', idle8 = false, idle15 = false, frozenLeft = 0, warned30 = false, pendingRemovals = 0, fadingTiles = new Map();
     box.innerHTML = '<div class="wb-link"><div class="wb-link-top"><div class="wb-link-level"><small>当前关卡</small><b id="ll-level">第 1 关</b></div><div class="wb-link-progress"><div id="ll-progress-text">本关 0 / 1800</div><div class="wb-link-bar"><div class="wb-link-fill" id="ll-fill"></div></div></div><div class="wb-link-total"><small>累计总分</small><b id="ll-total">0</b></div><div class="wb-link-time" id="ll-time">⏱ 01:30</div></div><div class="wb-link-boardwrap"><div class="wb-link-board" id="ll-board"></div></div><div class="wb-link-tools"><button class="wb-link-tool" data-tool="hint"><i>💡</i><span class="name">提示</span><span class="badge" id="ll-hint-left">2</span></button><button class="wb-link-tool" data-tool="shuffle"><i>⇄</i><span class="name">洗牌</span><span class="badge" id="ll-shuffle-left">1</span></button><button class="wb-link-tool" data-tool="freeze"><i>❄</i><span class="name">冻结</span><span class="badge" id="ll-freeze-left">1</span></button><button class="wb-link-tool" data-tool="magic"><i>✦</i><span class="name">消除</span><span class="badge" id="ll-magic-left">0</span></button></div><div class="wb-link-rule" id="ll-rule">本关规则：完全静止</div></div>';
     qsa('.wb-link-tool', box).forEach(b => b.onclick = () => useTool(b.dataset.tool));
-    function detailsBase(){ return { score:0, level:1, maxCombo:0, hintUsed:0, shuffleUsed:0, freezeUsed:0, magicUsed:0, deadShuffles:0, deadShufflesInLevel:0, fastClear:false, lastSecond:false, completedAll:false, clearLevels:0, reviveUsed:0 }; }
+    function detailsBase(){ return { score:0, level:1, maxCombo:0, comboTimeBonus:0, comboTimeAwards:0, hintUsed:0, shuffleUsed:0, freezeUsed:0, magicUsed:0, deadShuffles:0, deadShufflesInLevel:0, fastClear:false, lastSecond:false, completedAll:false, clearLevels:0, reviveUsed:0 }; }
     function updateBest(){ const key=SCRIPT_ID + '_linklinkBest_v1', old=safeObject(loadJSON(key,{})); saveJSON(key,{ score:Math.max(Number(old.score||0),st.totalScore||0), level:Math.max(Number(old.level||0),st.level||1), maxCombo:Math.max(Number(old.maxCombo||0),st.maxCombo||0) }); }
     function newState(){ return { level:1, totalScore:0, levelScore:0, combo:0, maxCombo:0, lastSuccessAt:0, tools:{hint:2,shuffle:1,freeze:1,magic:0}, board:[], details:detailsBase(), used:{hint:0,shuffle:0,freeze:0,magic:0}, pairsCleared:0, mode:'none', startedAt:Date.now(), timeLeft:90, reviveLeft:5 }; }
     function save(force){ if(!over && st && pendingRemovals===0 && !busy) saveProgress('linklink', Object.assign({}, st, { selected:null }), force ? { immediate:true } : undefined); }
+    const comboTimeBonusFor = combo => (combo >= 3 && combo % 3 === 0 ? 2 : 0);
     function stonePositions(rows, cols, n){
       if(!n) return new Set();
       const pts=[]; const mids=[[Math.floor(rows/2)-1,Math.floor(cols/2)-1],[Math.floor(rows/2)-1,Math.floor(cols/2)],[Math.floor(rows/2),Math.floor(cols/2)-1],[Math.floor(rows/2),Math.floor(cols/2)]];
@@ -12795,6 +12818,18 @@ function showGameRecords(game, page) {
       speak('linklink','start'); if(lv.mode==='randomFixed'||lv.mode==='switch5') showToast('本关规则：' + MODE_TEXT[st.mode]); draw(); setScore('linklink', st.totalScore); lastTick=Date.now(); save(true);
     }
     function randomMode(except){ const arr=MODES.filter(x=>x!==except); return arr[Math.floor(Math.random()*arr.length)]; }
+    let comboBonusFlashUntil = 0, comboBonusFlash = 0;
+    function addComboTimeBonus(combo){
+      const bonus = comboTimeBonusFor(combo);
+      if(!bonus) return 0;
+      st.timeLeft = Math.max(0, st.timeLeft + bonus);
+      st.details.comboTimeBonus = (st.details.comboTimeBonus || 0) + bonus;
+      st.details.comboTimeAwards = (st.details.comboTimeAwards || 0) + 1;
+      comboBonusFlash = bonus;
+      comboBonusFlashUntil = Date.now() + 1200;
+      showToast('连击加时 +' + bonus + '秒');
+      return bonus;
+    }
     st=state ? Object.assign(newState(), state, { selected:null }) : newState(); st.reviveLeft = Math.max(0, Math.min(5, Number(st.reviveLeft == null ? 5 : st.reviveLeft))); if(!st.details) st.details=detailsBase(); if(!st.tools) st.tools={hint:2,shuffle:1,freeze:1,magic:st.level>=5?1:0}; if(!st.used) st.used={hint:0,shuffle:0,freeze:0,magic:0}; if(state && st.board && st.board.length){ st.rows=st.rows||st.board.length; st.cols=st.cols||(st.board[0]||[]).length; st.level=Math.max(1,Number(st.level||1)); const lv=LEVELS[levelIndex(st.level)]; st.target=st.target||lv.target||Math.floor(lv.tiles/2)*100; st.initialTime=st.initialTime||lv.time; st.mode=st.mode||lv.mode||'none'; draw(); setScore('linklink', st.totalScore||0); } else startLevel(1); timer=setInterval(tick,250); linkLinkTimer=timer; save(true);
     function tick(){ if(currentGame!=='linklink'||over){ clearInterval(timer); if(linkLinkTimer===timer) linkLinkTimer=null; return; } const now=Date.now(), dt=Math.min(.35,(now-lastTick)/1000); lastTick=now; if(gamePaused||busy) return; if(frozenLeft>0){ frozenLeft=Math.max(0,frozenLeft-dt); drawTools(); return; } st.timeLeft=Math.max(0,st.timeLeft-dt); if(st.timeLeft<=30&&!warned30){ warned30=true; speak('linklink','time_30'); } if(st.lastSuccessAt){ const idle=(now-st.lastSuccessAt)/1000; if(idle>=8&&!idle8){ idle8=true; speak('linklink','random'); } if(idle>=15&&!idle15){ idle15=true; const h=qs('[data-tool="hint"]',box); h&&h.classList.add('hint'); setTimeout(()=>h&&h.classList.remove('hint'),900); } }
       drawTop(); save(); if(st.timeLeft<=0 && tilesLeft()>0) fail(); }
@@ -12809,7 +12844,7 @@ function showGameRecords(game, page) {
     function simplifyPath(path){ const out=[]; for(let i=0;i<path.length;i++){ if(i>0&&i<path.length-1){ const p=path[i-1], c=path[i], n=path[i+1]; if((p.r===c.r&&c.r===n.r)||(p.c===c.c&&c.c===n.c)) continue; } out.push(path[i]); } return out; }
     function pathStats(path){ let turns=Math.max(0,path.length-2), len=0, outside=false; for(let i=0;i<path.length-1;i++){ len+=Math.abs(path[i].r-path[i+1].r)+Math.abs(path[i].c-path[i+1].c); } path.forEach(p=>{ if(p.r<0||p.r>=st.rows||p.c<0||p.c>=st.cols) outside=true; }); return {turns,len,outside,between:Math.max(0,len-1)}; }
     async function clickTile(r,c){ if((busy&&pendingRemovals<=0)||over||gamePaused) return; const v=st.board[r]?.[c]; if(!v||v==='#') return; const cur={r,c}; if(selected&&selected.r===r&&selected.c===c){ selected=null; draw(); return; } if(!selected){ selected=cur; draw(); return; } if(st.board[selected.r][selected.c]!==v){ selected=cur; draw(); return; } const path=findPath(selected,cur); if(!path){ markBad(selected,cur); speakMaybe('linklink','wrong',.35); selected=cur; draw(); return; } await removePair(selected,cur,path,false); }
-    async function removePair(a,b,path,magic){ if(busy||over) return; const av=st.board[a.r]?.[a.c], bv=st.board[b.r]?.[b.c]; if(!av||!bv||av==='#'||bv==='#') return; hintPair=null; selected=null; linePath=path; const activePath=path; lineKind=magic?'magic':''; draw(); await delay(110); if(st.board[a.r]?.[a.c]!==av||st.board[b.r]?.[b.c]!==bv) return; fadingTiles.set(a.r+','+a.c,av); fadingTiles.set(b.r+','+b.c,bv); st.board[a.r][a.c]=null; st.board[b.r][b.c]=null; pendingRemovals++; const now=Date.now(), ps=pathStats(path); let gain=100; if(!magic){ gain += ps.turns===0?30:(ps.turns===1?20:10); if(ps.outside) gain+=10; gain += Math.min(20, ps.between*2); if(st.lastSuccessAt){ const gap=(now-st.lastSuccessAt)/1000; if(gap<=1.2) gain+=50; else if(gap<=2.5) gain+=25; st.combo = gap<=3 ? st.combo+1 : 1; } else st.combo=1; gain += Math.min(100, Math.max(0, st.combo-1)*10); } else st.combo=Math.max(0,st.combo||0);
+    async function removePair(a,b,path,magic){ if(busy||over) return; const av=st.board[a.r]?.[a.c], bv=st.board[b.r]?.[b.c]; if(!av||!bv||av==='#'||bv==='#') return; hintPair=null; selected=null; linePath=path; const activePath=path; lineKind=magic?'magic':''; draw(); await delay(110); if(st.board[a.r]?.[a.c]!==av||st.board[b.r]?.[b.c]!==bv) return; fadingTiles.set(a.r+','+a.c,av); fadingTiles.set(b.r+','+b.c,bv); st.board[a.r][a.c]=null; st.board[b.r][b.c]=null; pendingRemovals++; const now=Date.now(), ps=pathStats(path); let gain=100; if(!magic){ gain += ps.turns===0?30:(ps.turns===1?20:10); if(ps.outside) gain+=10; gain += Math.min(20, ps.between*2); if(st.lastSuccessAt){ const gap=(now-st.lastSuccessAt)/1000; if(gap<=1.2) gain+=50; else if(gap<=2.5) gain+=25; st.combo = gap<=3 ? st.combo+1 : 1; } else st.combo=1; gain += Math.min(100, Math.max(0, st.combo-1)*10); addComboTimeBonus(st.combo); } else st.combo=Math.max(0,st.combo||0);
       st.maxCombo=Math.max(st.maxCombo,st.combo||0); st.details.maxCombo=Math.max(st.details.maxCombo||0,st.maxCombo); st.levelScore+=gain; st.totalScore+=gain; st.pairsCleared++; if(!magic) st.lastSuccessAt=now; idle8=idle15=false; if(linePath===activePath) linePath=null; if(!magic){ if(ps.turns===0) speakMaybe('linklink','straight',.25); if(ps.turns===2) speakMaybe('linklink','two_turn',.35); if(ps.outside) speakMaybe('linklink','outside',.5); if(st.combo===5) speak('linklink','combo_5'); if(st.combo===10) speak('linklink','combo_10'); if(st.combo===20) speak('linklink','combo_20'); showCombo(st.combo); }
       draw(); save(); setTimeout(()=>{ fadingTiles.delete(a.r+','+a.c); fadingTiles.delete(b.r+','+b.c); pendingRemovals=Math.max(0,pendingRemovals-1); draw(); if(pendingRemovals===0) settleAfterRemovals(); },220); }
     async function settleAfterRemovals(){ if(busy||over||pendingRemovals>0) return; const lv=LEVELS[levelIndex()], willMove=lv.mode!=='none'; if(willMove){ selected=null; await delay(20); applyAfterMove(); draw(); await delay(55); } await ensurePlayable(); if(tilesLeft()===0) await levelClear(); draw(); save(); }
@@ -12849,7 +12884,7 @@ function showGameRecords(game, page) {
     }
     function finishAll(){ over=true; clearInterval(timer); if(linkLinkTimer===timer) linkLinkTimer=null; clearProgress('linklink'); st.details.score=st.totalScore; st.details.level=12; st.details.maxCombo=st.maxCombo; setScore('linklink', Math.max(scores().linklink||0, st.totalScore)); updateBest(); showGameOver('linklink','全部通关','累计总分：' + st.totalScore + '分，最高连击：' + st.maxCombo + '，用时：' + formatDuration(Date.now()-st.startedAt), {outcome:'score',score:st.totalScore}, { details:Object.assign({},st.details,{score:st.totalScore,level:12,maxCombo:st.maxCombo,completedAll:true}) }); }
     function markBad(a,b){ draw(); [a,b].forEach(p=>{ const el=qs('.wb-link-tile[data-r="'+p.r+'"][data-c="'+p.c+'"]',box); if(el){ el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),200); } }); }
-    function drawTop(){ qs('#ll-level',box).textContent='第 ' + st.level + ' 关'; qs('#ll-progress-text',box).textContent='本关 ' + st.levelScore + ' / ' + st.target; qs('#ll-total',box).textContent=String(st.totalScore).replace(/\B(?=(\d{3})+(?!\d))/g, ','); const fill=qs('#ll-fill',box); fill.style.width=Math.min(100,st.levelScore/st.target*100)+'%'; fill.classList.toggle('done',st.levelScore>=st.target); const t=qs('#ll-time',box), left=Math.ceil(st.timeLeft); t.textContent=(frozenLeft>0?'❄ ':'⏱ ') + String(Math.floor(left/60)).padStart(2,'0') + ':' + String(left%60).padStart(2,'0'); t.className='wb-link-time ' + (frozenLeft>0?'freeze':left<=10?'danger':left<=30?'warn':''); }
+    function drawTop(){ qs('#ll-level',box).textContent='第 ' + st.level + ' 关'; qs('#ll-progress-text',box).textContent='本关 ' + st.levelScore + ' / ' + st.target; qs('#ll-total',box).textContent=String(st.totalScore).replace(/\B(?=(\d{3})+(?!\d))/g, ','); const fill=qs('#ll-fill',box); fill.style.width=Math.min(100,st.levelScore/st.target*100)+'%'; fill.classList.toggle('done',st.levelScore>=st.target); const t=qs('#ll-time',box), left=Math.ceil(st.timeLeft), bonusActive=Date.now()<comboBonusFlashUntil; t.textContent=(frozenLeft>0?'❄ ':'⏱ ') + String(Math.floor(left/60)).padStart(2,'0') + ':' + String(left%60).padStart(2,'0') + (bonusActive&&comboBonusFlash?(' +' + comboBonusFlash + '秒'):''); t.className='wb-link-time ' + (bonusActive?'bonus ':'' ) + (frozenLeft>0?'freeze':left<=10?'danger':left<=30?'warn':''); }
     function drawTools(){ ['hint','shuffle','freeze','magic'].forEach(k=>{ const el=qs('#ll-'+k+'-left',box); if(el) el.textContent=k==='freeze'&&frozenLeft>0?Math.ceil(frozenLeft):st.tools[k]; const btn=qs('[data-tool="'+k+'"]',box); if(btn) btn.disabled=(st.tools[k]||0)<=0||(k==='freeze'&&frozenLeft>0); }); }
     function draw(){ drawTop(); drawTools(); const rule=qs('#ll-rule',box), lv=LEVELS[levelIndex()]; if(rule) rule.textContent='本关规则：' + (lv.mode==='none'?'完全静止':MODE_TEXT[st.mode]||lv.name); const board=qs('#ll-board',box); board.style.setProperty('--ll-cols',st.cols); board.style.setProperty('--ll-rows',st.rows); board.style.setProperty('--ll-ratio',st.cols/st.rows); let html=''; for(let r=0;r<st.rows;r++) for(let c=0;c<st.cols;c++){ const key=r+','+c, fading=fadingTiles.get(key), v=st.board[r][c] || fading, sel=!fading&&selected&&selected.r===r&&selected.c===c, hp=!fading&&hintPair&&(hintPair.a.r===r&&hintPair.a.c===c||hintPair.b.r===r&&hintPair.b.c===c); html += '<button class="wb-link-tile '+(!v?'empty':v==='#'?'stone':fading?'gone':sel?'sel':hp?'hint':'')+'" data-r="'+r+'" data-c="'+c+'">'+(v&&v!=='#'?v:'')+'</button>'; } board.innerHTML=html; qsa('.wb-link-tile',board).forEach(el=>{ const r=+el.dataset.r,c=+el.dataset.c; el.onpointerdown=e=>{ e.preventDefault(); clickTile(r,c); }; el.onclick=e=>{ if(getHostWindow().PointerEvent) return; e.preventDefault(); clickTile(r,c); }; }); renderLinkLine(board); }
     function pointFor(board, p){
@@ -13013,7 +13048,6 @@ function showGameRecords(game, page) {
     async function doMove(from, idx, to){
       busy = true;
       pushUndo();
-      const countdownActive = allFilled();
       const moving = st.cols[from].splice(idx);
       st.cols[to].push(...moving);
       selected = null;
@@ -13021,7 +13055,7 @@ function showGameRecords(game, page) {
       await delay(80);
       st.moves++; st.details.moves = st.moves;
       st.score = Math.max(0, Number(st.score||0) - 1);
-      if(countdownActive) st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)) + 1;
+      st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)) + 1;
       await settle([from, to], true);
       await settle([], false);
       if(allFilled()) st.dealEmptyLock = false;
@@ -15617,6 +15651,8 @@ function showGameRecords(game, page) {
 
   function startPopStar(state) {
     const box = qs('#wb-gamebox');
+    const choice = choiceForState('popstar', state);
+    const limitedMoves = choice.limitedMoves !== false;
     const N = 10;
     const COLORS = [
       { id:'red', hex:'#ff5d73' },
@@ -15660,7 +15696,7 @@ function showGameRecords(game, page) {
     let nextId = Number(state?.nextId || 1);
     let level = Math.max(1, Number(state?.level || 1));
     let score = Math.max(0, Number(state?.score || 0));
-    let movesLeft = Number.isFinite(Number(state?.movesLeft)) ? Math.max(0, Number(state.movesLeft)) : moveLimit(level);
+    let movesLeft = limitedMoves ? (Number.isFinite(Number(state?.movesLeft)) ? Math.max(0, Number(state.movesLeft)) : moveLimit(level)) : null;
     let shuffleLeft = Math.max(0, Math.min(3, Number(state?.shuffleLeft == null ? 3 : state.shuffleLeft)));
     let singleLeft = Math.max(0, Math.min(3, Number(state?.singleLeft == null ? 3 : state.singleLeft)));
     let toolMode = state?.toolMode === 'single' ? 'single' : '';
@@ -15673,7 +15709,7 @@ function showGameRecords(game, page) {
       level:1, score:0, removedTotal:0, highClears:{ '5':0, '6':0, '7':0, '8plus':0 },
       clutchCount:0, highStreak:0, highComboCount:0, maxHighStreak:0, remainingCounts:{}, shuffleUsed:0, singleUsed:0,
       toolUsedAtLowRemains:false, godMove:false, clutch:false, amazingClear:false, clearAllCount:0, completed:false, remainingAtEnd:0, moveLimits:{}, unusedMoveBonusTotal:0, bigBonusTotal:0, reviveUsed:0
-    }, state?.details || {});
+    }, state?.details || {}, { mode: choice.id });
     ensurePlayableBoard();
     drawUI();
     renderBoard();
@@ -15694,7 +15730,7 @@ function showGameRecords(game, page) {
     }
     function save(){
       if(over) return;
-      saveProgress('popstar', { board, level, score, movesLeft, shuffleLeft, singleLeft, toolMode, seen, targetMetThisLevel, nextId, reviveLeft, details });
+      saveProgress('popstar', Object.assign({ board, level, score, movesLeft, shuffleLeft, singleLeft, toolMode, seen, targetMetThisLevel, nextId, reviveLeft, details }, choiceSavePatch('popstar', choice)));
     }
     function makeCell(color){ return { id:'ps' + (nextId++), color }; }
     function makeBoard(){
@@ -15808,16 +15844,16 @@ function showGameRecords(game, page) {
       levelEl.textContent = '第 ' + level + ' 关';
       scoreEl.textContent = '分数 ' + score;
       targetEl.textContent = '目标 ' + target;
-      const needPerMove = score >= target ? 0 : Math.ceil((target - score) / Math.max(1, movesLeft));
-      movesEl.textContent = score >= target ? ('步数 ' + movesLeft + '｜已达') : ('步数 ' + movesLeft + '｜需' + needPerMove + '/步');
+      const needPerMove = limitedMoves ? (score >= target ? 0 : Math.ceil((target - score) / Math.max(1, movesLeft))) : 0;
+      movesEl.textContent = limitedMoves ? (score >= target ? ('步数 ' + movesLeft + '｜已达') : ('步数 ' + movesLeft + '｜需' + needPerMove + '/步')) : '步数 无限制';
       leftEl.textContent = '剩余 ' + left;
       targetEl.classList.toggle('target-met', score >= target);
       const toolbarScore = qs('#wb-score');
       if(toolbarScore) toolbarScore.classList.toggle('target-met', score >= target);
       shuffleLeftEl.textContent = shuffleLeft;
       singleLeftEl.textContent = singleLeft;
-      if(shuffleBtn){ shuffleBtn.disabled = busy || over || shuffleLeft <= 0 || left <= 1 || movesLeft <= 0; shuffleBtn.classList.toggle('primary', toolMode === 'shuffle'); }
-      if(singleBtn){ singleBtn.disabled = busy || over || singleLeft <= 0 || left <= 0 || movesLeft <= 0; singleBtn.classList.toggle('primary', toolMode === 'single'); }
+      if(shuffleBtn){ shuffleBtn.disabled = busy || over || shuffleLeft <= 0 || left <= 1 || (limitedMoves && movesLeft <= 0); shuffleBtn.classList.toggle('primary', toolMode === 'shuffle'); }
+      if(singleBtn){ singleBtn.disabled = busy || over || singleLeft <= 0 || left <= 0 || (limitedMoves && movesLeft <= 0); singleBtn.classList.toggle('primary', toolMode === 'single'); }
       setScore('popstar', score);
     }
     function markTargetMet(){
@@ -15868,17 +15904,17 @@ function showGameRecords(game, page) {
       if(crossedOnThisMove && noMoves) details.clutch = true;
       renderBoard();
       drawUI();
-      if(noMoves || movesLeft <= 0) setTimeout(() => finishLevel(noMoves ? 'nomoves' : 'steps'), 520);
+      if(noMoves || (limitedMoves && movesLeft <= 0)) setTimeout(() => finishLevel(noMoves ? 'nomoves' : 'steps'), 520);
       else save();
     }
     function clickCell(r,c){
       if(gamePaused || busy || over) return;
-      if(movesLeft <= 0) { finishLevel('steps'); return; }
+      if(limitedMoves && movesLeft <= 0) { finishLevel('steps'); return; }
       const cell = cellAt(r,c);
       if(!cell) return;
       if(toolMode === 'single'){
         busy = true;
-        movesLeft = Math.max(0, movesLeft - 1);
+        if(limitedMoves) movesLeft = Math.max(0, movesLeft - 1);
         singleLeft--;
         details.singleUsed = (details.singleUsed || 0) + 1;
         if(remainingCount() <= 20) details.toolUsedAtLowRemains = true;
@@ -15901,7 +15937,7 @@ function showGameRecords(game, page) {
       const points = scoreFor(group.length);
       const bigBonus = bigClearBonus(group.length);
       score += points;
-      movesLeft = Math.max(0, movesLeft - 1);
+      if(limitedMoves) movesLeft = Math.max(0, movesLeft - 1);
       if(bigBonus) details.bigBonusTotal = (details.bigBonusTotal || 0) + bigBonus;
       updateStatsForClear(group.length);
       if(!seen['first_' + level]){ seen['first_' + level] = 1; speak('popstar','first_clear'); }
@@ -15919,12 +15955,12 @@ function showGameRecords(game, page) {
     }
     function shuffleBoard(){
       if(gamePaused || busy || over || shuffleLeft <= 0) return;
-      if(movesLeft <= 0) { finishLevel('steps'); return; }
+      if(limitedMoves && movesLeft <= 0) { finishLevel('steps'); return; }
       const slots = [];
       for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c]) slots.push({ r,c });
       if(slots.length <= 1) return;
       busy = true;
-      movesLeft = Math.max(0, movesLeft - 1);
+      if(limitedMoves) movesLeft = Math.max(0, movesLeft - 1);
       shuffleLeft--;
       details.shuffleUsed = (details.shuffleUsed || 0) + 1;
       if(remainingCount() <= 20) details.toolUsedAtLowRemains = true;
@@ -15940,7 +15976,7 @@ function showGameRecords(game, page) {
       setTimeout(() => {
         busy = false;
         renderBoard();
-        if(!hasMoves(board) || movesLeft <= 0) finishLevel(!hasMoves(board) ? 'nomoves' : 'steps');
+        if(!hasMoves(board) || (limitedMoves && movesLeft <= 0)) finishLevel(!hasMoves(board) ? 'nomoves' : 'steps');
         else { drawUI(); save(); }
       }, 280);
     }
@@ -15963,7 +15999,7 @@ function showGameRecords(game, page) {
       const left = remainingCount(), noMoves = !hasMoves(board), bonus = remainingBonus(left), moveBonus = unusedMoveBonus(noMoves), target = levelTarget(level), pass = score + bonus + moveBonus >= target;
       if(!pass && reviveLeft > 0){
         showPopStarRevive(() => {
-          movesLeft = Math.max(movesLeft, 5);
+          if(limitedMoves) movesLeft = Math.max(movesLeft, 5);
           if(!hasMoves(board) && remainingCount() > 1){
             const slots = [];
             for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c]) slots.push({ r,c });
@@ -15975,7 +16011,7 @@ function showGameRecords(game, page) {
           }
           busy = false;
           over = false;
-          showSettle('复活成功', '已补充5步，继续挑战');
+          showSettle('复活成功', limitedMoves ? '已补充5步，继续挑战' : '棋盘已整理，继续挑战');
           setTimeout(clearSettle, 900);
           renderBoard();
           drawUI();
@@ -15987,7 +16023,7 @@ function showGameRecords(game, page) {
       details.remainingAtEnd = left;
       if(left === 0){ details.amazingClear = true; details.clearAllCount = (details.clearAllCount || 0) + 1; }
       details.moveLimits[level] = moveLimit(level);
-      details.unusedMoveBonusTotal = (details.unusedMoveBonusTotal || 0) + moveBonus;
+      details.unusedMoveBonusTotal = (details.unusedMoveBonusTotal || 0) + (limitedMoves ? moveBonus : 0);
       showSettle(reason === 'steps' ? '步数用完' : '本关结算', '剩余 ' + left + ' 个，奖励 +' + bonus + (moveBonus ? '，余步 +' + moveBonus : ''));
       const cells = [];
       for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c]) cells.push({ r,c,cell:board[r][c] });
@@ -16003,7 +16039,8 @@ function showGameRecords(game, page) {
         score += bonus + moveBonus;
         addScorePop('+' + (bonus + moveBonus), stage.clientWidth / 2, stage.clientHeight / 2);
       }
-      details.score = score;
+      const finalScore = scoreWithChoice('popstar', score, choice);
+      details.score = finalScore;
       details.level = level;
       details.completed = pass;
       if(pass && details.toolUsedAtLowRemains) details.godMove = true;
@@ -16014,7 +16051,7 @@ function showGameRecords(game, page) {
       if(pass){
         speak('popstar','level_clear');
         level++;
-        movesLeft = moveLimit(level);
+        movesLeft = limitedMoves ? moveLimit(level) : null;
         targetMetThisLevel = false;
         board = makeBoard();
         ensurePlayableBoard();
@@ -16026,11 +16063,12 @@ function showGameRecords(game, page) {
       }
       over = true;
       clearProgress('popstar');
-      details.score = score;
+      setScore('popstar', finalScore);
+      details.score = finalScore;
       details.level = level;
       details.completed = false;
       speak('popstar','gameover');
-      showGameOver('popstar','游戏结束','本局分数：' + score + '分，第' + level + '关，目标' + target + '，剩余' + left + '个，步数' + movesLeft + '步', null, { completed:false, level, score, maxHighStreak:details.maxHighStreak || 0, clutch:!!details.clutch, godMove:!!details.godMove, details });
+      showGameOver('popstar','游戏结束','本局分数：' + finalScore + '分，第' + level + '关，目标' + target + '，剩余' + left + '个' + (limitedMoves ? ('，步数' + movesLeft + '步') : '，无限步数'), null, { completed:false, level, score:finalScore, mode:choice.id, maxHighStreak:details.maxHighStreak || 0, clutch:!!details.clutch, godMove:!!details.godMove, details:Object.assign({}, details, { score:finalScore, mode:choice.id }) });
     }
     function showSettle(title, text){
       clearSettle();
@@ -16044,7 +16082,7 @@ function showGameRecords(game, page) {
     function delay(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
     qs('#wb-popstar-shuffle', box).onclick = shuffleBoard;
     qs('#wb-popstar-single', box).onclick = () => {
-      if(gamePaused || busy || over || singleLeft <= 0 || movesLeft <= 0) return;
+        if(gamePaused || busy || over || singleLeft <= 0 || (limitedMoves && movesLeft <= 0)) return;
       toolMode = toolMode === 'single' ? '' : 'single';
       drawUI();
       toast(toolMode === 'single' ? '选择一个星星单独消除' : '已取消单消');
@@ -17006,15 +17044,16 @@ function showGameRecords(game, page) {
   function startSudoku(state) {
     const box = qs('#wb-gamebox');
     const choice = choiceForState('sudoku', state);
-    const made = state && isValidSudokuPuzzle(state.puzzle, state.solution) ? { puzzle: state.puzzle.slice(), solution: state.solution.slice() } : makeSudoku(choice);
+    const resume = isValidSudokuProgressState(state) ? state : null;
+    const made = resume && isValidSudokuPuzzle(resume.puzzle, resume.solution) ? { puzzle: resume.puzzle.slice(), solution: resume.solution.slice() } : makeSudoku(choice);
     let puzzle = made.puzzle, solution = made.solution;
-    let grid = Array.isArray(state?.grid) && state.grid.length === 81 ? state.grid.slice(0, 81) : puzzle.slice();
+    let grid = Array.isArray((resume || state)?.grid) && (resume || state).grid.length === 81 ? (resume || state).grid.slice(0, 81) : puzzle.slice();
     grid = Array.from({ length: 81 }, (_, i) => puzzle[i] || (Number.isInteger(grid[i]) && grid[i] >= 1 && grid[i] <= 9 ? grid[i] : 0));
-    let selected = Number.isInteger(state?.selected) ? state.selected : -1, hints = state?.hints || 0, over = false, seen = state?.seen || {};
-    let details = state?.details || { hints:hints, edits:0, editCounts:{}, maxEditsOneCell:0, finalErrors:0 };
+    let selected = Number.isInteger((resume || state)?.selected) ? (resume || state).selected : -1, hints = (resume || state)?.hints || 0, over = false, seen = (resume || state)?.seen || {};
+    let details = (resume || state)?.details || { hints:hints, edits:0, editCounts:{}, maxEditsOneCell:0, finalErrors:0 };
     box.innerHTML = '<div class="wb-sudoku-panel"><div class="wb-sudoku-top"><span class="wb-pill" id="wb-sudoku-clues"></span><span class="wb-pill" id="wb-sudoku-hints"></span></div><div id="wb-sudoku-board"></div><div class="wb-actions wb-sudoku-tools"><button type="button" class="wb-btn" id="wb-sudoku-erase">擦除</button><button type="button" class="wb-btn primary" id="wb-sudoku-hint">提示 <span class="wb-sudoku-badge" id="wb-sudoku-hint-badge">0</span></button></div><div class="wb-sudoku-nums">' + Array.from({length:9},(_,i)=>'<button type="button" class="wb-btn" data-n="'+(i+1)+'">'+(i+1)+'</button>').join('') + '</div></div>';
-    draw(); save();
-    function save(){ if(!over) saveProgress('sudoku', Object.assign({ puzzle, solution, grid, selected, hints, seen, details }, choiceSavePatch('sudoku', choice))); }
+    draw(); save(true);
+    function save(force){ if(!over) saveProgress('sudoku', Object.assign({ puzzle, solution, grid, selected, hints, seen, details }, choiceSavePatch('sudoku', choice)), force ? { immediate:true } : undefined); }
     function row(i){ return Math.floor(i/9); } function col(i){ return i%9; }
     function completeLine(kind, n){ for(let i=0;i<9;i++){ const idx=kind==='r'?n*9+i:i*9+n; if(grid[idx]!==solution[idx]) return false; } return true; }
     function solutionErrors(){ return grid.reduce((sum, v, i) => sum + (v && v !== solution[i] ? 1 : 0), 0); }
@@ -17053,17 +17092,16 @@ function showGameRecords(game, page) {
         const cls = ['wb-sudoku-tile', fixed?'fixed':'mutable', sel?'sel':'', peer?'peer':'', sameNum?'same':'', wrong?'wrong':''].filter(Boolean).join(' ');
         return '<button type="button" data-sudoku-cell="1" data-i="'+i+'" class="'+cls+'" style="position:absolute;left:'+((c*100)/9)+'%;top:'+((r*100)/9)+'%;width:'+(100/9)+'%;height:'+(100/9)+'%;display:flex;align-items:center;justify-content:center;margin:0;padding:0;box-sizing:border-box;border-radius:0;font-weight:900;font-size:clamp(15px,3.1vh,24px);line-height:1;background:'+bg+';color:'+color+';'+border+outline+shadow+'">'+(v ? String(v) : '')+'</button>';
       }).join('');
-      qsa('[data-sudoku-cell]', board).forEach(b=>b.onclick=()=>{ selected=+b.dataset.i; draw(); save(); });
+      qsa('[data-sudoku-cell]', board).forEach(b=>b.onclick=()=>{ selected=+b.dataset.i; draw(); save(true); });
     }
     function markEdit(i){ details.edits++; details.editCounts[i] = (details.editCounts[i] || 0) + 1; details.maxEditsOneCell = Math.max(details.maxEditsOneCell || 0, details.editCounts[i]); }
-    function input(n){ if(gamePaused||over||selected<0||puzzle[selected]) return; if(!seen.first){ seen.first=1; speak('sudoku','first_fill'); } markEdit(selected); grid[selected]=n; if(hasRuleConflict(selected)) speak('sudoku','conflict'); if(completeLine('r',row(selected))&&!seen['r'+row(selected)]){ seen['r'+row(selected)]=1; speak('sudoku','row_done'); } if(completeLine('c',col(selected))&&!seen['c'+col(selected)]){ seen['c'+col(selected)]=1; speak('sudoku','col_done'); } const blanks=grid.filter(v=>!v).length; if(blanks<=5&&!seen.near){ seen.near=1; speak('sudoku','nearly_done'); } const errors=solutionErrors(); maybeSudokuGameoverLine(blanks, errors); if(blanks===0) details.finalErrors = errors; draw(); save(); if(blanks===0 && errors===0) done(); else if(blanks===0){ speak('sudoku','complete_error'); toast('已填满，当前错误 ' + errors + ' 格，可以继续修改'); } }
-    function erase(){ if(selected<0||puzzle[selected]) return; markEdit(selected); grid[selected]=0; speak('sudoku','erase'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(); }
-    function hint(){ let i = selected>=0 && !puzzle[selected] && grid[selected]!==solution[selected] ? selected : -1; if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && v && v!==solution[k]); if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && !v); if(i<0) return; hints++; details.hints = hints; selected=i; markEdit(i); grid[i]=solution[i]; puzzle[i]=solution[i]; speak('sudoku', hints>5?'many_hints':'hint'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(); if(grid.every(Boolean) && solutionErrors()===0) done(); }
+    function input(n){ if(gamePaused||over||selected<0||puzzle[selected]) return; if(!seen.first){ seen.first=1; speak('sudoku','first_fill'); } markEdit(selected); grid[selected]=n; if(hasRuleConflict(selected)) speak('sudoku','conflict'); if(completeLine('r',row(selected))&&!seen['r'+row(selected)]){ seen['r'+row(selected)]=1; speak('sudoku','row_done'); } if(completeLine('c',col(selected))&&!seen['c'+col(selected)]){ seen['c'+col(selected)]=1; speak('sudoku','col_done'); } const blanks=grid.filter(v=>!v).length; if(blanks<=5&&!seen.near){ seen.near=1; speak('sudoku','nearly_done'); } const errors=solutionErrors(); maybeSudokuGameoverLine(blanks, errors); if(blanks===0) details.finalErrors = errors; draw(); save(true); if(blanks===0 && errors===0) done(); else if(blanks===0){ speak('sudoku','complete_error'); toast('已填满，当前错误 ' + errors + ' 格，可以继续修改'); } }
+    function erase(){ if(selected<0||puzzle[selected]) return; markEdit(selected); grid[selected]=0; speak('sudoku','erase'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(true); }
+    function hint(){ let i = selected>=0 && !puzzle[selected] && grid[selected]!==solution[selected] ? selected : -1; if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && v && v!==solution[k]); if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && !v); if(i<0) return; hints++; details.hints = hints; selected=i; markEdit(i); grid[i]=solution[i]; puzzle[i]=solution[i]; speak('sudoku', hints>5?'many_hints':'hint'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(true); if(grid.every(Boolean) && solutionErrors()===0) done(); }
     function done(){ const duration = currentGameDurationMs(), finalScore = scoreWithChoice('sudoku', sudokuScore(duration, hints), choice); setScore('sudoku', finalScore); details.finalErrors = solutionErrors(); over=true; clearProgress('sudoku'); if(!seen.gameover) speak('sudoku','gameover'); showGameOver('sudoku','数独完成','本局分数：'+finalScore+'分（'+choice.title+'），求助'+hints+'次', null, { hints, score:finalScore, difficulty:choice.title, details }); }
     qs('#wb-sudoku-erase', box).onclick=erase; qs('#wb-sudoku-hint', box).onclick=hint; qsa('.wb-sudoku-nums .wb-btn', box).forEach(b=>b.onclick=()=>input(+b.dataset.n));
     getHostDocument().onkeydown=e=>{ if(/^[1-9]$/.test(e.key)) input(+e.key); if(e.key==='Backspace'||e.key==='Delete') erase(); };
     function parseSudoku(str){ return String(str).replace(/\./g,'0').split('').map(x=>parseInt(x,10)||0); }
-    function isValidSudokuPuzzle(puz, sol){ return Array.isArray(puz) && Array.isArray(sol) && puz.length===81 && sol.length===81 && puz.filter(Boolean).length>=28 && sol.every(n=>Number.isInteger(n)&&n>=1&&n<=9) && puz.every((n,i)=>!n || n===sol[i]); }
     function makeSudoku(choiceCfg){
       const bases=[
         ['53..7....6..195....98....6.8...6...34..8.3..17...2...6.6....28....419..5....8..79','534678912672195348198342567859761423426853791713924856961537284287419635345286179'],
