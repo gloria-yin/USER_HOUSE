@@ -513,27 +513,52 @@
 .wb-reversi-cell.user span { background:#f8fafc; }
 .wb-reversi-cell.ta span { background:#111827; }
 .wb-reversi-cell.legal::after { content:''; width:28%; height:28%; border-radius:50%; background:rgba(255,255,255,.45); }
-.wb-chess-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:8px; place-items:center; overflow:hidden; }
+.wb-chess-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:5px; place-items:center; overflow:hidden; }
 .wb-chess-info { min-height:34px; display:flex; align-items:center; justify-content:center; gap:6px; text-align:center; font-weight:800; color:var(--wb-text); max-width:100%; min-width:0; flex-wrap:wrap; }
 .wb-chess-info > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.wb-chess-board { width:min(500px,100%,82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr); padding:8px; border:2px solid color-mix(in srgb,var(--wb-border) 76%,#8b5e34 24%); background:linear-gradient(135deg,#8b5e34,#52371f); box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 14px 30px rgba(15,23,42,.16); }
+.wb-chess-captures { width:min(500px,100%); min-height:23px; display:flex; align-items:center; gap:7px; padding:2px 7px; border-left:3px solid; background:color-mix(in srgb,var(--wb-panel) 82%,transparent 18%); box-sizing:border-box; overflow:hidden; }
+.wb-chess-captures.ta { border-color:#d69e2e; }
+.wb-chess-captures.user { border-color:#159c8c; }
+.wb-chess-captures-label { flex:0 0 auto; max-width:34%; color:var(--wb-sub); font-size:11px; font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wb-chess-captured-list { min-width:0; flex:1 1 auto; display:flex; align-items:center; gap:1px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+.wb-chess-captured-list::-webkit-scrollbar { display:none; }
+.wb-chess-captured-piece { flex:0 0 auto; display:inline-grid; place-items:center; line-height:1; }
+.wb-chess-captured-piece.western { width:18px; height:18px; color:var(--wb-text); font-size:20px; text-shadow:0 1px 1px rgba(0,0,0,.18); }
+.wb-chess-captured-piece.xq { width:19px; height:19px; border:1px solid currentColor; border-radius:50%; background:#fff7df; font-size:11px; font-weight:1000; }
+.wb-chess-captured-piece.xq.user { color:#7f1d1d; }
+.wb-chess-captured-piece.xq.ta { color:#1f2937; }
+.wb-chess-no-captures { color:var(--wb-muted); font-size:10px; white-space:nowrap; }
+.wb-chess-board { width:min(500px,100%,calc(100cqh - 104px)); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr); padding:8px; border:2px solid color-mix(in srgb,var(--wb-border) 76%,#8b5e34 24%); background:linear-gradient(135deg,#8b5e34,#52371f); box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 14px 30px rgba(15,23,42,.16); }
 .wb-chess-cell { position:relative; min-width:0; min-height:0; padding:0; border:0; display:grid; place-items:center; font-size:clamp(25px,7cqh,48px); line-height:1; cursor:pointer; transition:transform .12s ease, filter .12s ease, box-shadow .12s ease; }
 .wb-chess-cell.light { background:#f0d9b5; }
 .wb-chess-cell.dark { background:#b58863; }
+.wb-chess-cell span { position:relative; z-index:2; }
 .wb-chess-cell.user span { color:#fffdf7; text-shadow:0 2px 3px rgba(0,0,0,.48),0 0 1px #111; }
 .wb-chess-cell.ta span { color:#172033; text-shadow:0 1px 0 rgba(255,255,255,.55); }
+.wb-chess-cell.last-user::before,.wb-chess-cell.last-ta::before,.wb-chess-cell.last-both::before { content:''; position:absolute; inset:0; z-index:0; pointer-events:none; }
+.wb-chess-cell.last-user::before { background:rgba(20,184,166,.36); }
+.wb-chess-cell.last-ta::before { background:rgba(245,158,11,.40); }
+.wb-chess-cell.last-both::before { background:linear-gradient(135deg,rgba(20,184,166,.40) 0 50%,rgba(245,158,11,.44) 50% 100%); }
+.wb-chess-cell.last-from::before { opacity:.72; }
+.wb-chess-cell.last-to::before { box-shadow:inset 0 0 0 3px rgba(255,255,255,.46); }
 .wb-chess-cell.selected { z-index:2; box-shadow:inset 0 0 0 4px var(--wb-gold); filter:brightness(1.08); }
-.wb-chess-cell.legal::after { content:''; width:30%; height:30%; border-radius:50%; background:rgba(34,197,94,.62); box-shadow:0 0 0 4px rgba(34,197,94,.14); }
+.wb-chess-cell.legal::after { content:''; position:absolute; z-index:1; width:30%; height:30%; border-radius:50%; background:rgba(34,197,94,.62); box-shadow:0 0 0 4px rgba(34,197,94,.14); }
 .wb-chess-cell.legal.ta::after { position:absolute; inset:8%; width:auto; height:auto; border-radius:8px; background:rgba(239,68,68,.20); box-shadow:inset 0 0 0 3px rgba(239,68,68,.48); }
 .wb-chess-cell:hover:not(:disabled) { transform:scale(1.03); z-index:3; }
 .wb-chess-cell.bad { animation:wbChessBad .22s linear; }
-.wb-xq-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:8px; place-items:center; overflow:hidden; }
+.wb-xq-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:4px; place-items:center; overflow:hidden; }
 .wb-xq-info { min-height:34px; display:flex; align-items:center; justify-content:center; gap:6px; text-align:center; font-weight:800; color:var(--wb-text); max-width:100%; min-width:0; flex-wrap:wrap; }
 .wb-xq-info > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.wb-xq-board { position:relative; width:min(500px,100%,74cqh); aspect-ratio:9 / 10.72; display:grid; grid-template-columns:repeat(9,1fr); grid-template-rows:repeat(5,1fr) .72fr repeat(5,1fr); padding:8px; border:2px solid color-mix(in srgb,var(--wb-border) 70%,#a16207 30%); background:linear-gradient(180deg,#f7dfaa,#edc77c); box-shadow:inset 0 0 0 1px rgba(255,255,255,.24),0 14px 30px rgba(15,23,42,.16); overflow:hidden; }
+.wb-xq-board { position:relative; width:min(500px,100%,67cqh); aspect-ratio:9 / 10.72; display:grid; grid-template-columns:repeat(9,1fr); grid-template-rows:repeat(5,1fr) .72fr repeat(5,1fr); padding:8px; border:2px solid color-mix(in srgb,var(--wb-border) 70%,#a16207 30%); background:linear-gradient(180deg,#f7dfaa,#edc77c); box-shadow:inset 0 0 0 1px rgba(255,255,255,.24),0 14px 30px rgba(15,23,42,.16); overflow:hidden; }
 .wb-xq-cell { position:relative; z-index:1; min-width:0; min-height:0; padding:0; border:0; background:transparent; display:grid; place-items:center; cursor:pointer; transition:transform .12s ease, filter .12s ease, box-shadow .12s ease; }
-.wb-xq-cell span { width:min(84%,44px); height:min(84%,44px); border-radius:50%; display:grid; place-items:center; background:#fff7df; border:2px solid #8a5a21; color:#7f1d1d; font-weight:1000; font-size:clamp(14px,4.2cqh,28px); box-shadow:0 2px 8px rgba(70,42,12,.22); }
+.wb-xq-cell span { position:relative; z-index:2; width:min(84%,44px); height:min(84%,44px); border-radius:50%; display:grid; place-items:center; box-sizing:border-box; padding-bottom:2px; line-height:1; background:#fff7df; border:2px solid #8a5a21; color:#7f1d1d; font-weight:1000; font-size:clamp(14px,4.2cqh,28px); box-shadow:0 2px 8px rgba(70,42,12,.22); }
 .wb-xq-cell.ta span { color:#1f2937; border-color:#374151; }
+.wb-xq-cell.last-user::before,.wb-xq-cell.last-ta::before,.wb-xq-cell.last-both::before { content:''; position:absolute; inset:4%; z-index:1; box-sizing:border-box; border:3px solid transparent; border-radius:50%; pointer-events:none; }
+.wb-xq-cell.last-user::before { border-color:rgba(13,148,136,.88); box-shadow:0 0 0 2px rgba(20,184,166,.14); }
+.wb-xq-cell.last-ta::before { border-color:rgba(217,119,6,.90); box-shadow:0 0 0 2px rgba(245,158,11,.15); }
+.wb-xq-cell.last-both::before { border-color:rgba(13,148,136,.88) rgba(217,119,6,.90) rgba(217,119,6,.90) rgba(13,148,136,.88); box-shadow:0 0 0 2px rgba(100,116,139,.14); }
+.wb-xq-cell.last-from::before { opacity:.58; border-style:dashed; }
+.wb-xq-cell.last-to::before { opacity:1; }
 .wb-xq-cell.selected { z-index:2; filter:brightness(1.06); }
 .wb-xq-cell.selected span { box-shadow:0 0 0 4px var(--wb-gold),0 2px 8px rgba(70,42,12,.22); }
 .wb-xq-cell.legal::after { content:''; position:absolute; z-index:0; width:24%; height:24%; border-radius:50%; background:rgba(34,197,94,.70); box-shadow:0 0 0 4px rgba(34,197,94,.14); }

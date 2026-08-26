@@ -286,11 +286,11 @@ export async function initWanbanXiaowu() {
     paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
-    spider: '经典蜘蛛纸牌的无尽模式。十列牌堆，默认黑桃与红桃两种花色；卡牌可按点数递减叠放，不同花色可以临时混放，但只有同花色严格递减的连续牌组能整体移动。同花色K到A完整序列会自动收起到下方收藏区。牌库无限，玩家可主动发一排；每次发牌后会按完成牌组数给出步数限制，倒计时归零会强制发牌。存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
+    spider: '经典蜘蛛纸牌的无尽模式。开局可选择简单或困难：简单模式全部使用黑桃同一花色，困难模式保持黑桃与红桃两种花色。卡牌可按点数递减叠放，但只有同花色严格递减的连续牌组能整体移动；同花色K到A完整序列会自动收起。牌库无限，每次发牌后会按完成牌组数给出步数限制，倒计时归零会强制发牌。存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
     linklink: '限时配对消除。点击两个相同图案，若它们之间存在最多两次转弯的横竖连接路径即可消除；连接线可以从棋盘外侧一格绕行，但不能穿过图块或石块。连续成功配对每满3次会小幅加时，并显示连击提示。共12关，逐步加入下落、上移、左右靠拢、集中、分散和障碍物。每关清空棋盘并达成目标分后自动进入下一关。',
     blackjack: '双人21点挑战。每一小局使用一副完整52张牌重新洗牌，开局先猜红黑抽判定牌决定本局谁先行动，然后你和Char轮流决定要牌或停牌，尽量接近21点但不能爆牌。每关双方积分从0开始竞速，先达到目标分者赢下本关；玩家连胜8关即完整通关。失败时有5次免费复活机会。',
-    westernchess: '标准8×8国际象棋。你执白棋先手，{{char}}执黑棋后手。点击自己的棋子会显示合法落点，再点合法格移动；王车易位和兵升变为后已实现，不做吃过路兵。将死获胜，逼和、50回合无吃子无兵动、三次重复的简化循环检测会判平。顶部只有反悔按钮，没有其他道具。',
-    chinesechess: '标准9×10中国象棋。你执红棋先手，{{char}}执黑棋后手。点击己方棋子高亮合法落点，再点合法格移动或吃子。实现车、马、相/象、仕/士、帅/将、炮、兵/卒的基础规则，包含马腿、象眼、九宫、过河兵、炮架和将帅照面限制。将死或轮到一方无合法走法时判负；顶部只有反悔按钮，没有其他道具。',
+    westernchess: '标准8×8国际象棋。你执白棋先手，{{char}}执黑棋后手。点击自己的棋子会显示合法落点，再点合法格移动；棋盘以青绿色保留你的最近一步、金色保留{{char}}的最近一步，起点较浅、终点带边框。棋盘上方显示{{char}}吃掉的白棋，下方显示你吃掉的黑棋。王车易位和兵升变为后已实现，不做吃过路兵。将死获胜，逼和、50回合无吃子无兵动、三次重复的简化循环检测会判平。顶部只有反悔按钮，没有其他道具。',
+    chinesechess: '标准9×10中国象棋。你执红棋先手，{{char}}执黑棋后手。点击己方棋子高亮合法落点，再点合法格移动或吃子；棋盘以青绿色圆圈保留你的最近一步、金色圆圈保留{{char}}的最近一步，起点为较淡虚线、终点为实线。棋盘上方显示{{char}}吃掉的红棋，下方显示你吃掉的黑棋。实现车、马、相/象、仕/士、帅/将、炮、兵/卒的基础规则，包含马腿、象眼、九宫、过河兵、炮架和将帅照面限制。将死或轮到一方无合法走法时判负；顶部只有反悔按钮，没有其他道具。',
     tictactoe: '你和{{char}}轮流落子，谁先连成横、竖或斜向三格谁赢。棋盘下满无人连线则平局。',
     gomoku: '进入时可选择普通模式或无尽模式。普通模式任意方向先连成五子获胜；无尽模式双方各30颗棋子，连五后回收自己的五子并吃掉对方一子，直到一方棋子被吃完或双方无可用棋子。',
     territory: '在点阵之间画边，规则类似围方格。谁画下一个小方格的第4条边，谁就占领该格并继续行动。所有边画完后，占领格子多的一方获胜。',
@@ -326,6 +326,10 @@ export async function initWanbanXiaowu() {
       { id:'easy', title:'简单模式', sub:'我想爽玩消消乐', multiplier:1, limitedMoves:false },
       { id:'hard', title:'困难模式', sub:'我想要步数限制', multiplier:2, limitedMoves:true }
     ],
+    spider: [
+      { id:'easy', title:'简单', sub:'单花色，全部黑桃', multiplier:1, suits:1 },
+      { id:'hard', title:'困难', sub:'双花色，黑桃与红桃', multiplier:1, suits:2 }
+    ],
     sudoku: [
       { id:'easy', title:'简单', sub:'空30-35个', multiplier:1, blanks:[30,35] },
       { id:'medium', title:'中等', sub:'空43-48个', multiplier:1.25, blanks:[43,48] },
@@ -353,6 +357,7 @@ export async function initWanbanXiaowu() {
     const list = GAME_CHOICES[game] || [];
     let id = state?.choice || state?.difficulty || state?.gomokuMode || list[0]?.id;
     if (game === 'uyangle' && id === 'hard') id = 'endless';
+    if (game === 'spider' && !state?.choice && !state?.difficulty && Array.isArray(state?.cols)) id = 'hard';
     if (game === 'minesweeper' && !state?.difficulty && Array.isArray(state?.cells)) {
       if (state.cells.length === 16 * 16) id = 'hard';
       else if (state.cells.length === 12 * 12) id = 'medium';
@@ -387,7 +392,7 @@ export async function initWanbanXiaowu() {
     paopao: { start:'泡泡龙开局，顶部已有5行泡泡，玩家准备瞄准发射。', aim:'玩家按住并拖动，虚线轨迹正在根据墙壁反弹预测落点。', clear:'玩家成功消除同色泡泡。', clear_5:'玩家一次性消除超过5个泡泡。', drop:'失去顶部连接的泡泡悬空掉落。', danger:'泡泡群快要接近红色警戒线。', score_1000:'泡泡龙本局分数每增加1000分时触发。', bomb:'玩家使用炸弹泡泡，炸掉落点周围3格泡泡。', record:'泡泡龙刷新历史最高分。', gameover:'泡泡越过红色警戒线，泡泡龙本局结束。', random:'观看泡泡龙时的待机碎碎念。' },
     game1010: { start:'1010!开局，10×10棋盘为空，底部出现3个不可旋转方块。', place:'玩家成功放置一个候补方块。', clear:'玩家消除了一行或一列，30%概率触发。', clear_3:'玩家一次性消除超过3行/列。', score_1000:'1010!本局分数每增加1000分时触发。', tool:'玩家使用重新生成或小锤子道具。', low_space:'棋盘剩余空格少于5个，局面接近死局。', record:'1010!刷新历史最高分。', gameover:'没有任何剩余候补方块可以放入棋盘，且道具已经用完，1010!结束。', random:'观看1010!方块拼图时的碎碎念。' },
     turkey: { start:'土耳其方块开局，底部四行横向方块已经出现。', first_clear:'玩家第一次消除完整横行。', clear_2:'玩家同时消除2行。', clear_3:'玩家同时消除3行及以上。', chain_3:'同一次移动连锁达到第3轮。', combo_5:'连续5次普通移动都产生消除。', score_1000:'土耳其方块分数首次达到1000。', score_5000:'土耳其方块分数首次达到5000。', record:'土耳其方块刷新历史最高分。', top_3:'当前最高方块进入顶部3行。', top_row:'顶行已经被占用。', no_clear_8:'连续8次普通移动没有消除。', thunder:'玩家使用云雷道具。', stardust:'玩家使用星尘收集器。', hammer:'玩家使用小锤粉碎机。', danger_tool:'顶部危险时使用道具并成功存活。', gameover:'方块被推到棋盘顶部之外，土耳其方块结束。', random:'观看土耳其方块时的待机碎碎念。' },
-    spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已发好，玩家开始整理黑桃与红桃。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'玩家尝试发牌或步数倒计时归零时存在空列，需要先填满空列。', deal:'新的一排牌主动或强制发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
+    spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已按所选单花色或双花色难度发好。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'玩家尝试发牌或步数倒计时归零时存在空列，需要先填满空列。', deal:'新的一排牌主动或强制发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
     linklink: { start:'连连看新关卡开始，棋盘已经生成。', straight:'零转弯连线成功。', two_turn:'两转弯连线成功。', outside:'连接线从棋盘外侧绕行成功。', combo_5:'连连看达到5连击。', combo_10:'连连看达到10连击。', combo_20:'连连看达到20连击。', wrong:'点击了无法连接的一对。', hint:'玩家使用提示道具。', shuffle:'玩家使用洗牌道具。', dead_shuffle:'棋盘死局并自动洗牌。', freeze:'玩家使用冻结时间。', magic:'玩家使用魔法消除。', time_30:'连连看剩余30秒。', fast_clear:'剩余一半以上时间通关。', level_clear:'连连看完成普通关卡。', gameover:'连连看倒计时结束。', record:'连连看刷新历史最高分。', random:'观看连连看时的待机碎碎念。' },
     chinesechess: { start:'中国象棋开局，红黑双方在楚河汉界两侧摆好。', user_capture:'玩家吃掉{{char}}一枚棋子。', char_capture:'{{char}}吃掉玩家一枚棋子。', user_check:'玩家将军。', char_check:'{{char}}将军，玩家帅位受威胁。', cannon:'一方用炮隔子打吃。', horse:'一方用马走出关键一步。', river:'兵卒过河后开始横向施压。', face:'将帅照面被规则拦住。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一步棋，每隔3-5轮随机触发。', user_win:'玩家将死{{char}}获胜。', user_lose:'{{char}}将死玩家，玩家失败。', draw:'中国象棋平局。', random:'和user玩中国象棋时的碎碎念。' },
     westernchess: { start:'国际象棋开局，白棋和黑棋按标准阵型摆好。', char_first:'{{char}}先观察棋盘，等待玩家白棋开局。', char_second:'玩家执白棋先手。', user_capture:'玩家吃掉{{char}}一枚棋子。', char_capture:'{{char}}吃掉玩家一枚棋子。', user_check:'玩家将军。', char_check:'{{char}}将军，玩家国王受威胁。', castle:'一方完成王车易位。', promotion:'兵走到底线并自动升变为后。', queen_trade:'双方后均被交换或被吃掉。', cheat_success:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，并且本次耍赖成功；{{char}}纵容user撤回这一步。', cheat_fail:'玩家撒娇卖萌耍赖，请求{{char}}让自己撤销上一步，但本次耍赖失败；{{char}}面对user撒娇仍表示这次不允许撤回。', char_next:'{{char}}下一步棋，每隔3-5轮随机触发。', user_win:'玩家将死{{char}}获胜。', user_lose:'{{char}}将死玩家，玩家失败。', draw:'国际象棋平局。', random:'和user玩国际象棋时的碎碎念。' },
@@ -1204,7 +1209,7 @@ export async function initWanbanXiaowu() {
     if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
     if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
     if (game === 'turkey') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；累计消除：' + (d.clearedLines || 0) + '行；有效移动：' + (d.moves || 0) + '次；最大同时消除：' + (d.maxClear || 0) + '行；最大连锁：' + (d.maxChain || 0) + '轮；最大连续回合连击：' + (d.maxCombo || 0) + '；云雷/星尘/粉碎机：' + (d.thunderUsed || 0) + '/' + (d.stardustUsed || 0) + '/' + (d.hammerUsed || 0) + '次；无道具达到3000：' + (d.noTool3000 ? '是' : '否') + '。';
-    if (game === 'spider') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；完成牌组：' + (d.completed || 0) + '副；黑桃：' + (d.spades || 0) + '副；红桃：' + (d.hearts || 0) + '副；最大连锁：' + (d.maxChain || 0) + '副；发牌次数：' + (d.deals || 0) + '次；有效移动：' + (d.moves || 0) + '次；撤销：' + (d.undo || 0) + '次；消除：' + (d.eliminate || 0) + '次；清空列次数：' + (d.emptyCols || 0) + '次；同屏最多空列：' + (d.maxEmptyCols || 0) + '列；命悬一线次数：' + (d.clutch || 0) + '次；糟糕发牌连续/累计记录：' + (d.badDeals || 0) + '/' + (d.badDealsTotal || 0) + '次；游戏时间灯：' + (rec.durationMs >= 20*60000 ? '长时间游玩' : rec.durationMs >= 10*60000 ? '中等时长' : '短时游玩') + '。';
+    if (game === 'spider') return '模式：' + (d.mode === 'easy' ? '简单' : '困难') + '；最终分数：' + (d.score || singleRecordPoints(rec)) + '分；完成牌组：' + (d.completed || 0) + '副；黑桃：' + (d.spades || 0) + '副；红桃：' + (d.hearts || 0) + '副；最大连锁：' + (d.maxChain || 0) + '副；发牌次数：' + (d.deals || 0) + '次；有效移动：' + (d.moves || 0) + '次；撤销：' + (d.undo || 0) + '次；消除：' + (d.eliminate || 0) + '次；清空列次数：' + (d.emptyCols || 0) + '次；同屏最多空列：' + (d.maxEmptyCols || 0) + '列；命悬一线次数：' + (d.clutch || 0) + '次；糟糕发牌连续/累计记录：' + (d.badDeals || 0) + '/' + (d.badDealsTotal || 0) + '次；游戏时间灯：' + (rec.durationMs >= 20*60000 ? '长时间游玩' : rec.durationMs >= 10*60000 ? '中等时长' : '短时游玩') + '。';
     if (game === 'linklink') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；最高连击：' + (d.maxCombo || 0) + '；连击加时：' + (d.comboTimeBonus || 0) + '秒（' + (d.comboTimeAwards || 0) + '次，规则：每3连击+2秒）；提示/洗牌/冻结/魔法：' + (d.hintUsed || 0) + '/' + (d.shuffleUsed || 0) + '/' + (d.freezeUsed || 0) + '/' + (d.magicUsed || 0) + '次；自动死局洗牌：' + (d.deadShuffles || 0) + '次；最快通关：' + (d.fastClear ? '是' : '否') + '；最后一秒：' + (d.lastSecond ? '是' : '否') + '。';
     if (game === 'blackjack') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；胜/负/平：' + (d.wins || 0) + '/' + (d.losses || 0) + '/' + (d.ties || 0) + '；Blackjack：' + (d.blackjacks || 0) + '次；玩家爆牌：' + (d.busts || 0) + '次；Char爆牌：' + (d.charBusts || 0) + '次；最高连胜：' + (d.maxStreak || 0) + '；提示/偷看/反悔/护牌：' + (d.hintUsed || 0) + '/' + (d.peekUsed || 0) + '/' + (d.undoUsed || 0) + '/' + (d.protectUsed || 0) + '次；复活：' + (d.reviveUsed || 0) + '次；先手：user ' + (d.orderUserFirst || 0) + '次 / Char ' + (d.orderCharFirst || 0) + '次。';
     if (game === 'ludo') return cheatText + 'user让' + (rec.companion || '{{char}}') + '回家次数：' + (d.userCaptures || 0) + '次；' + (rec.companion || '{{char}}') + '让user回家次数：' + (d.charCaptures || 0) + '次；user飞行次数：' + (d.userFlights || 0) + '次；' + (rec.companion || '{{char}}') + '飞行次数：' + (d.charFlights || 0) + '次；user连续投中6最大次数：' + (d.userMaxSixStreak || 0) + '次；' + (rec.companion || '{{char}}') + '连续投中6最大次数：' + (d.charMaxSixStreak || 0) + '次；结算时输家停机坪棋子：' + (d.loserHangar || 0) + '个，路上棋子：' + (d.loserOnBoard || 0) + '个。';
@@ -2162,11 +2167,44 @@ export async function initWanbanXiaowu() {
     if (msg.is_user === false) return true;
     return false;
   }
-  function handleHostMessageReceived(messageId, type) {
-    if (!settings().messageNotify) return;
+  function hostMessageStableKey(messageId, msg, text) {
+    const raw = String(text || '');
+    let hash = 5381;
+    for (let i = 0; i < raw.length; i++) hash = ((hash << 5) + hash) ^ raw.charCodeAt(i);
+    const id = msg?.id ?? msg?.send_date ?? msg?.swipe_id ?? messageId ?? 'latest';
+    return String(id) + ':' + raw.length + ':' + (hash >>> 0).toString(36);
+  }
+  function recordPetWalkRpGeneration(messageId, msg, text) {
+    if (!settings().petDesktopEnabled || !String(text || '').trim()) return;
+    let state = petTestState();
+    if (state.stage === 'egg' || state.ended) return;
+    const key = hostMessageStableKey(messageId, msg, text);
+    if (!key || state.lastWalkRpMessageKey === key) return;
+    state.lastWalkRpMessageKey = key;
+    const total = Math.max(0, Number(state.walkRpGenerationCount || 0)) + 1;
+    const rewards = Math.floor(total / 3);
+    state.walkRpGenerationCount = total % 3;
+    if (rewards > 0) {
+      const before = Number(state.growth || 0);
+      state.growth = Math.min(petStageCap(state.stage), before + rewards);
+      const added = Math.max(0, Number(state.growth || 0) - before);
+      const today = todayKey();
+      const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days?.[today] || {});
+      day.outing = Number(day.outing || 0) + rewards;
+      day.growth = Number(day.growth || 0) + added;
+      day.snapshot = petSnapshotData(state);
+      state.days = Object.assign({}, state.days || {}, { [today]:day });
+      petToastGrowth('遛弯阅读正文', added);
+    }
+    state = updatePetPendingStories(state, petTestInfoCache || { side_story:[] });
+    savePetTestState(state);
+  }
+  function handleHostMessageReceived(messageId, type, countPetGrowth = true) {
     const msg = messageFromHost(messageId);
     if (!isAssistantMessage(msg)) return;
     const text = msg ? String(msg.message || msg.mes || msg.text || '') : '';
+    if (countPetGrowth) recordPetWalkRpGeneration(messageId, msg, text);
+    if (!settings().messageNotify) return;
     sendMessageFinishedNotification(messageId, text);
   }
   function bindMessageNotifyEvents() {
@@ -2178,14 +2216,14 @@ export async function initWanbanXiaowu() {
     const updateNames = [eventTypes.MESSAGE_UPDATED, eventTypes.MESSAGE_SWIPED, eventTypes.CHARACTER_MESSAGE_RENDERED, 'MESSAGE_UPDATED', 'MESSAGE_SWIPED', 'CHARACTER_MESSAGE_RENDERED'].filter(Boolean);
     if (eventSource && typeof eventSource.on === 'function') {
       eventSource.on(eventName, handleHostMessageReceived);
-      updateNames.forEach(name => { try { eventSource.on(name, handleHostMessageReceived); } catch(e) {} });
+      updateNames.forEach(name => { try { eventSource.on(name, (id, type) => handleHostMessageReceived(id, type, false)); } catch(e) {} });
       messageNotifyBound = true;
       startMessageNotifyPolling();
       return;
     }
     if (eventSource && typeof eventSource.addEventListener === 'function') {
       eventSource.addEventListener(eventName, e => handleHostMessageReceived(e && e.detail && e.detail.message_id, e && e.detail && e.detail.type));
-      updateNames.forEach(name => { try { eventSource.addEventListener(name, e => handleHostMessageReceived(e && e.detail && e.detail.message_id, e && e.detail && e.detail.type)); } catch(err) {} });
+      updateNames.forEach(name => { try { eventSource.addEventListener(name, e => handleHostMessageReceived(e && e.detail && e.detail.message_id, e && e.detail && e.detail.type, false)); } catch(err) {} });
       messageNotifyBound = true;
       startMessageNotifyPolling();
       return;
@@ -2202,7 +2240,7 @@ export async function initWanbanXiaowu() {
     if (messageNotifyPollTimer) return;
     let pendingSig = '', pendingAt = 0;
     messageNotifyPollTimer = setInterval(() => {
-      if (!settings().messageNotify) return;
+      if (!settings().messageNotify && !settings().petDesktopEnabled) return;
       const msg = messageFromHost(null);
       if (!isAssistantMessage(msg)) return;
       const id = msg.id ?? msg.swipe_id ?? msg.send_date ?? 'latest';
@@ -2210,7 +2248,7 @@ export async function initWanbanXiaowu() {
       if (!text.trim()) return;
       const sig = String(id) + '::' + text;
       if (sig !== pendingSig) { pendingSig = sig; pendingAt = Date.now(); return; }
-      if (Date.now() - pendingAt >= 1400) sendMessageFinishedNotification(id, text);
+      if (Date.now() - pendingAt >= 1400) handleHostMessageReceived(id, undefined, !messageNotifyBound);
     }, 1200);
   }
 
@@ -3478,28 +3516,53 @@ export async function initWanbanXiaowu() {
       .wb-reversi-cell.user span { background:#f8fafc; }
       .wb-reversi-cell.ta span { background:#111827; }
       .wb-reversi-cell.legal::after { content:''; width:28%; height:28%; border-radius:50%; background:rgba(255,255,255,.45); }
-      .wb-chess-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:8px; place-items:center; overflow:hidden; }
+      .wb-chess-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:5px; place-items:center; overflow:hidden; }
       .wb-chess-info { min-height:34px; display:flex; align-items:center; justify-content:center; gap:6px; text-align:center; font-weight:800; color:var(--wb-text); max-width:100%; min-width:0; flex-wrap:wrap; }
       .wb-chess-info > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .wb-chess-board { width:min(500px,100%,82cqh); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr); padding:8px; border:2px solid color-mix(in srgb,var(--wb-border) 76%,#8b5e34 24%); background:linear-gradient(135deg,#8b5e34,#52371f); box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 14px 30px rgba(15,23,42,.16); }
+      .wb-chess-captures { width:min(500px,100%); min-height:23px; display:flex; align-items:center; gap:7px; padding:2px 7px; border-left:3px solid; background:color-mix(in srgb,var(--wb-panel) 82%,transparent 18%); box-sizing:border-box; overflow:hidden; }
+      .wb-chess-captures.ta { border-color:#d69e2e; }
+      .wb-chess-captures.user { border-color:#159c8c; }
+      .wb-chess-captures-label { flex:0 0 auto; max-width:34%; color:var(--wb-sub); font-size:11px; font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wb-chess-captured-list { min-width:0; flex:1 1 auto; display:flex; align-items:center; gap:1px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+      .wb-chess-captured-list::-webkit-scrollbar { display:none; }
+      .wb-chess-captured-piece { flex:0 0 auto; display:inline-grid; place-items:center; line-height:1; }
+      .wb-chess-captured-piece.western { width:18px; height:18px; color:var(--wb-text); font-size:20px; text-shadow:0 1px 1px rgba(0,0,0,.18); }
+      .wb-chess-captured-piece.xq { width:19px; height:19px; border:1px solid currentColor; border-radius:50%; background:#fff7df; font-size:11px; font-weight:1000; }
+      .wb-chess-captured-piece.xq.user { color:#7f1d1d; }
+      .wb-chess-captured-piece.xq.ta { color:#1f2937; }
+      .wb-chess-no-captures { color:var(--wb-muted); font-size:10px; white-space:nowrap; }
+      .wb-chess-board { width:min(500px,100%,calc(100cqh - 104px)); aspect-ratio:1 / 1; display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr); padding:8px; border:2px solid color-mix(in srgb,var(--wb-border) 76%,#8b5e34 24%); background:linear-gradient(135deg,#8b5e34,#52371f); box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 14px 30px rgba(15,23,42,.16); }
       .wb-chess-cell { position:relative; min-width:0; min-height:0; padding:0; border:0; display:grid; place-items:center; font-size:clamp(25px,7cqh,48px); line-height:1; cursor:pointer; transition:transform .12s ease, filter .12s ease, box-shadow .12s ease; }
       .wb-chess-cell.light { background:#f0d9b5; }
       .wb-chess-cell.dark { background:#b58863; }
+      .wb-chess-cell span { position:relative; z-index:2; }
       .wb-chess-cell.user span { color:#fffdf7; text-shadow:0 2px 3px rgba(0,0,0,.48),0 0 1px #111; }
       .wb-chess-cell.ta span { color:#172033; text-shadow:0 1px 0 rgba(255,255,255,.55); }
+      .wb-chess-cell.last-user::before,.wb-chess-cell.last-ta::before,.wb-chess-cell.last-both::before { content:''; position:absolute; inset:0; z-index:0; pointer-events:none; }
+      .wb-chess-cell.last-user::before { background:rgba(20,184,166,.36); }
+      .wb-chess-cell.last-ta::before { background:rgba(245,158,11,.40); }
+      .wb-chess-cell.last-both::before { background:linear-gradient(135deg,rgba(20,184,166,.40) 0 50%,rgba(245,158,11,.44) 50% 100%); }
+      .wb-chess-cell.last-from::before { opacity:.72; }
+      .wb-chess-cell.last-to::before { box-shadow:inset 0 0 0 3px rgba(255,255,255,.46); }
       .wb-chess-cell.selected { z-index:2; box-shadow:inset 0 0 0 4px var(--wb-gold); filter:brightness(1.08); }
-      .wb-chess-cell.legal::after { content:''; width:30%; height:30%; border-radius:50%; background:rgba(34,197,94,.62); box-shadow:0 0 0 4px rgba(34,197,94,.14); }
+      .wb-chess-cell.legal::after { content:''; position:absolute; z-index:1; width:30%; height:30%; border-radius:50%; background:rgba(34,197,94,.62); box-shadow:0 0 0 4px rgba(34,197,94,.14); }
       .wb-chess-cell.legal.ta::after { position:absolute; inset:8%; width:auto; height:auto; border-radius:8px; background:rgba(239,68,68,.20); box-shadow:inset 0 0 0 3px rgba(239,68,68,.48); }
       .wb-chess-cell:hover:not(:disabled) { transform:scale(1.03); z-index:3; }
       .wb-chess-cell.bad { animation:wbChessBad .22s linear; }
       @keyframes wbChessBad { 0%,100%{ transform:translateX(0); } 25%{ transform:translateX(-4px); } 75%{ transform:translateX(4px); } }
-      .wb-xq-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:8px; place-items:center; overflow:hidden; }
+      .wb-xq-panel { width:100%; height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:4px; place-items:center; overflow:hidden; }
       .wb-xq-info { min-height:34px; display:flex; align-items:center; justify-content:center; gap:6px; text-align:center; font-weight:800; color:var(--wb-text); max-width:100%; min-width:0; flex-wrap:wrap; }
       .wb-xq-info > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .wb-xq-board { position:relative; width:min(500px,100%,74cqh); aspect-ratio:9 / 10.72; display:grid; grid-template-columns:repeat(9,1fr); grid-template-rows:repeat(5,1fr) .72fr repeat(5,1fr); padding:8px; border:2px solid color-mix(in srgb,var(--wb-border) 70%,#a16207 30%); background:linear-gradient(180deg,#f7dfaa,#edc77c); box-shadow:inset 0 0 0 1px rgba(255,255,255,.24),0 14px 30px rgba(15,23,42,.16); overflow:hidden; }
+      .wb-xq-board { position:relative; width:min(500px,100%,67cqh); aspect-ratio:9 / 10.72; display:grid; grid-template-columns:repeat(9,1fr); grid-template-rows:repeat(5,1fr) .72fr repeat(5,1fr); padding:8px; border:2px solid color-mix(in srgb,var(--wb-border) 70%,#a16207 30%); background:linear-gradient(180deg,#f7dfaa,#edc77c); box-shadow:inset 0 0 0 1px rgba(255,255,255,.24),0 14px 30px rgba(15,23,42,.16); overflow:hidden; }
       .wb-xq-cell { position:relative; z-index:1; min-width:0; min-height:0; padding:0; border:0; background:transparent; display:grid; place-items:center; cursor:pointer; transition:transform .12s ease, filter .12s ease, box-shadow .12s ease; }
-      .wb-xq-cell span { width:min(84%,44px); height:min(84%,44px); border-radius:50%; display:grid; place-items:center; background:#fff7df; border:2px solid #8a5a21; color:#7f1d1d; font-weight:1000; font-size:clamp(14px,4.2cqh,28px); box-shadow:0 2px 8px rgba(70,42,12,.22); }
+      .wb-xq-cell span { position:relative; z-index:2; width:min(84%,44px); height:min(84%,44px); border-radius:50%; display:grid; place-items:center; box-sizing:border-box; padding-bottom:2px; line-height:1; background:#fff7df; border:2px solid #8a5a21; color:#7f1d1d; font-weight:1000; font-size:clamp(14px,4.2cqh,28px); box-shadow:0 2px 8px rgba(70,42,12,.22); }
       .wb-xq-cell.ta span { color:#1f2937; border-color:#374151; }
+      .wb-xq-cell.last-user::before,.wb-xq-cell.last-ta::before,.wb-xq-cell.last-both::before { content:''; position:absolute; inset:4%; z-index:1; box-sizing:border-box; border:3px solid transparent; border-radius:50%; pointer-events:none; }
+      .wb-xq-cell.last-user::before { border-color:rgba(13,148,136,.88); box-shadow:0 0 0 2px rgba(20,184,166,.14); }
+      .wb-xq-cell.last-ta::before { border-color:rgba(217,119,6,.90); box-shadow:0 0 0 2px rgba(245,158,11,.15); }
+      .wb-xq-cell.last-both::before { border-color:rgba(13,148,136,.88) rgba(217,119,6,.90) rgba(217,119,6,.90) rgba(13,148,136,.88); box-shadow:0 0 0 2px rgba(100,116,139,.14); }
+      .wb-xq-cell.last-from::before { opacity:.58; border-style:dashed; }
+      .wb-xq-cell.last-to::before { opacity:1; }
       .wb-xq-cell.selected { z-index:2; filter:brightness(1.06); }
 .wb-xq-cell.selected span { box-shadow:0 0 0 4px var(--wb-gold),0 2px 8px rgba(70,42,12,.22); }
       .wb-xq-cell.legal::after { content:''; position:absolute; z-index:0; width:24%; height:24%; border-radius:50%; background:rgba(34,197,94,.70); box-shadow:0 0 0 4px rgba(34,197,94,.14); }
@@ -6079,7 +6142,8 @@ export async function initWanbanXiaowu() {
     return {
       stage:'egg', route:'common', growth:0, fullness:80, happiness:80, location:'home',
       completedMain:[], completedSide:[], storyRecords:[], logs:{}, days:{}, sideCounts:{}, sideTriggered:[], archives:[],
-      pendingStories:[], eggInteractions:0, feedCount:0, petCount:0, pokeCount:0, outingCount:0, lastEggPetGrowthAt:0, lastWalkRewardAt:0,
+      pendingStories:[], eggInteractions:0, feedCount:0, petCount:0, pokeCount:0, outingCount:0, lastEggPetGrowthAt:0,
+      walkRpGenerationCount:0, lastWalkRpMessageKey:'',
       activeStory:null, dismissedStories:[], endingReady:false, finalConfirmed:false, ended:false, startedAt:now, firstVisitDate:todayKey(), lastVisitDate:todayKey(), lastDecayAt:now, lastInteractionAt:now
     };
   }
@@ -6150,7 +6214,6 @@ export async function initWanbanXiaowu() {
     const next = Object.assign(defaultPetTestState(), state || {});
     const now = Date.now();
     const today = todayKey();
-    const todayDay = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, next.days[today] || {});
     if (!next.firstVisitDate) next.firstVisitDate = today;
     if (next.lastVisitDate && next.lastVisitDate !== today && next.firstVisitDate !== today && !next.ended) {
       const beforeGrowth = Number(next.growth || 0);
@@ -6172,30 +6235,14 @@ export async function initWanbanXiaowu() {
       next.lastDecayAt = now;
     }
     if (!next.lastInteractionAt) next.lastInteractionAt = now;
-    if (settings().petDesktopEnabled && next.stage !== 'egg' && !next.ended) {
-      const started = Number(next.lastWalkRewardAt || now);
-      const chunks = Math.floor((now - started) / 600000);
-      if (chunks > 0) {
-        const add = chunks * 2;
-        const beforeGrowth = Number(next.growth || 0);
-        next.growth = Math.min(petStageCap(next.stage), beforeGrowth + add);
-        const added = Math.max(0, Number(next.growth || 0) - beforeGrowth);
-        todayDay.outing = Number(todayDay.outing || 0) + chunks;
-        todayDay.growth = Number(todayDay.growth || 0) + added;
-        next.lastWalkRewardAt = started + chunks * 600000;
-        next.days = Object.assign({}, next.days || {}, { [today]:todayDay });
-        petToastGrowth('遛弯陪伴', added);
-      } else if (!next.lastWalkRewardAt) {
-        next.lastWalkRewardAt = now;
-      }
-    }
     return next;
   }
   function petStatePersistKey(state) {
     const s = state || {};
     return JSON.stringify({
       stage:s.stage, route:s.route, growth:Number(s.growth || 0), fullness:Number(s.fullness || 0), happiness:Number(s.happiness || 0),
-      lastVisitDate:s.lastVisitDate || '', lastDecayAt:Number(s.lastDecayAt || 0), lastWalkRewardAt:Number(s.lastWalkRewardAt || 0),
+      lastVisitDate:s.lastVisitDate || '', lastDecayAt:Number(s.lastDecayAt || 0),
+      walkRpGenerationCount:Number(s.walkRpGenerationCount || 0), lastWalkRpMessageKey:s.lastWalkRpMessageKey || '',
       days:s.days || {}, sideCounts:s.sideCounts || {}, sideTriggered:s.sideTriggered || [], pendingStories:s.pendingStories || []
     });
   }
@@ -6452,7 +6499,11 @@ export async function initWanbanXiaowu() {
       day.poke++;
     } else if (action === 'outing') {
       state.outingCount = Number(state.outingCount || 0) + 1;
-      if (state.stage !== 'egg') state.lastWalkRewardAt = Date.now();
+      if (state.stage !== 'egg') {
+        const latest = messageFromHost(null);
+        const text = latest ? String(latest.message || latest.mes || latest.text || '') : '';
+        if (isAssistantMessage(latest) && text.trim()) state.lastWalkRpMessageKey = hostMessageStableKey(null, latest, text);
+      }
       day.outing++;
     } else if (action === 'play') {
       if (state.stage !== 'egg') state.happiness = Math.min(100, Number(state.happiness || 0) + 5);
@@ -8991,13 +9042,13 @@ export async function initWanbanXiaowu() {
       '<h3>## 3. 主页面怎么看？</h3>',
       '<ul><li><strong>顶部栏：</strong>左上角返回；右上角有教程和重开；中间显示“角色的小屋”，旁边的小三角可以打开选择饲养员。</li><li><strong>状态栏：</strong>显示宠物名称、阶段、当前场景和时间。旁边的' + mark('名片按钮', 'blue') + '可以查看宠物品种、姓名、性别、性格、灵息、收养人和第几只宠物。</li><li><strong>进度条：</strong>' + mark('成长值', 'green') + '决定阶段推进与主线触发；' + mark('饱食度') + '会通过喂食恢复；' + mark('开心值', 'pink') + '会通过抚摸、游戏等恢复。蛋形态只有成长值。</li><li><strong>中间场景：</strong>显示当前地点和宠物。宠物待机时会做动作；有语录时，宠物旁会出现小对话云朵。</li><li><strong>切换场景：</strong>左下侧的' + mark('切换场景', 'blue') + '拉手可以展开场景抽屉。未解锁场景会有锁，继续养宠后会逐步开放。</li><li><strong>底部对话框：</strong>平时显示角色语录；进入剧情时变成 RPG 对话框。文字满两行会自动分页，点击页面任意位置继续。</li></ul>',
       '<h3>## 4. 右侧按钮分别做什么？</h3>',
-      '<ul><li><strong>遛弯：</strong>会询问是否开启桌宠模式。确认后退出小屋，宠物会以桌宠形式陪你停留在插件页面，遛弯在线每 10 分钟增加成长值。</li><li><strong>喂食：</strong>增加饱食度；如果饱食度确实被补充，也会增加成长值。会触发吃饭动作、宠物语录和可能的支线事件。</li><li><strong>抚摸：</strong>增加开心值；如果开心值确实被补充，也会增加成长值。蛋形态每 10 分钟可通过抚摸获得成长。</li><li><strong>写日志：</strong>打开手账式日志页。可以选择模型、补充今天做了什么，AI 会结合世界观、宠物名片、当天互动和剧情生成日记。</li><li><strong>记录：</strong>查看日期记录、日志记录、剧情记录。日期会按当天累计成长值变色；日志和剧情会保留当时的时间、宠物阶段和快照。</li><li><strong>开挂模式：</strong>试用/调试用金币按钮，点击增加 5 点成长值，方便测试剧情和阶段推进。</li></ul>',
+      '<ul><li><strong>遛弯：</strong>会询问是否开启桌宠模式。确认后退出小屋；遛弯期间每生成 3 次 RP 正文增加 1 点成长值，单纯挂机不会增加。</li><li><strong>喂食：</strong>增加饱食度；如果饱食度确实被补充，也会增加成长值。会触发吃饭动作、宠物语录和可能的支线事件。</li><li><strong>抚摸：</strong>增加开心值；如果开心值确实被补充，也会增加成长值。蛋形态每 10 分钟可通过抚摸获得成长。</li><li><strong>写日志：</strong>打开手账式日志页。可以选择模型、补充今天做了什么，AI 会结合世界观、宠物名片、当天互动和剧情生成日记。</li><li><strong>记录：</strong>查看日期记录、日志记录、剧情记录。日期会按当天累计成长值变色；日志和剧情会保留当时的时间、宠物阶段和快照。</li><li><strong>开挂模式：</strong>试用/调试用金币按钮，点击增加 5 点成长值，方便测试剧情和阶段推进。</li></ul>',
       '<h3>## 5. 剧情怎么触发？</h3>',
       '<ul><li><strong>主线剧情：</strong>通常由' + mark('成长值', 'green') + '和' + mark('阶段', 'blue') + '触发，例如蛋的觉醒、破壳、幼年成长、成年选择、灵息结局等。</li><li><strong>支线剧情：</strong>可能由' + mark('喂食/抚摸/遛弯', 'pink') + '、玩游戏、' + mark('时间/地点', 'blue') + '、概率或累计次数触发。有些事件会先进入“已触发”状态，等你回到合适场景或时间才弹出。</li><li><strong>触发弹窗：</strong>出现剧情时会先弹出小提示，显示主线/支线、剧情名和简介。你可以进入剧情，也可以放弃；放弃也会存档。</li><li><strong>剧情模式：</strong>进入后右侧交互按钮和场景切换会隐藏，上方显示“剧情模式中”。点击任意位置推进，剧情结束后点击回到小屋并保存。</li><li><strong>剧情回放：</strong>在剧情记录里可以点击放映机按钮回放已完成剧情，不会重复改变成长数据。</li></ul>',
       '<h3>## 6. 日志和记录有什么用？</h3>',
       '<ul><li><strong>写日志：</strong>适合每天结束时生成一篇手账。日志会保存日期、宠物名称、宠物形态、标签、我们的关系、特别记忆存档、标题和正文。</li><li><strong>覆盖规则：</strong>同一天如果已经有日志，再保存会提示是否覆盖当天日志。</li><li><strong>日期记录：</strong>像日历一样查看成长。' + mark('当天累计成长', 'green') + '越多，日期颜色越明显；下方会列出喂食、抚摸、遛弯、游戏等加分标签。</li><li><strong>日志记录：</strong>按日期和时间列出所有日志，点击后以同样的手账版式查看。</li><li><strong>剧情记录：</strong>按日期和时间列出主线/支线剧情，保留标题、summary、触发条件和正文，并用不同颜色区分角色姓名卡片。</li><li><strong>多宠物记录：</strong>正式模式下，一个角色养过的' + mark('所有宠物', 'pink') + '都会归入该角色记录里，便于回顾第 1 只、第 2 只……宠物的全部旅程。</li></ul>',
       '<h3>## 7. 桌宠模式怎么玩？</h3>',
-      '<ul><li><strong>开启：</strong>点击“遛弯”并确认后，会离开灵息小窝，宠物作为可拖动桌宠陪在插件页面上。进入灵息小窝会退出桌宠模式。</li><li><strong>拖动：</strong>无论状态栏、聊天框是否打开，都可以拖动宠物移动位置。</li><li><strong>戳一戳：</strong>点击宠物会展开扇形按钮：互动、状态、聊天、回家；再次点击宠物会收起。</li><li><strong>互动：</strong>互动下方有喂食、抚摸、玩球。喂食/抚摸会更新数值；玩球超过 3 次可增加成长值。</li><li><strong>状态：</strong>显示宠物名、' + mark('灵息状态', 'blue') + '、成长/饱食/开心进度，界面很小巧，适合边玩边看。</li><li><strong>聊天：</strong>宠物会作为 {{user}} 的宠物和旁观者，结合最近剧情评论或聊天，回复约 50 字左右。</li><li><strong>回家：</strong>关闭桌宠并返回养宠页面。</li></ul>',
+      '<ul><li><strong>开启：</strong>点击“遛弯”并确认后，会离开灵息小窝，宠物作为可拖动桌宠陪在插件页面上。进入灵息小窝会退出桌宠模式。</li><li><strong>正文成长：</strong>桌宠开启期间，每生成 3 次 RP 正文增加 1 点成长值；计数按正文完成事件累计，不按在线时长计算。</li><li><strong>拖动：</strong>无论状态栏、聊天框是否打开，都可以拖动宠物移动位置。</li><li><strong>戳一戳：</strong>点击宠物会展开扇形按钮：互动、状态、聊天、回家；再次点击宠物会收起。</li><li><strong>互动：</strong>互动下方有喂食、抚摸、玩球。喂食/抚摸会更新数值；玩球超过 3 次可增加成长值。</li><li><strong>状态：</strong>显示宠物名、' + mark('灵息状态', 'blue') + '、成长/饱食/开心进度，界面很小巧，适合边玩边看。</li><li><strong>聊天：</strong>宠物会作为 {{user}} 的宠物和旁观者，结合最近剧情评论或聊天，回复约 50 字左右。</li><li><strong>回家：</strong>关闭桌宠并返回养宠页面。</li></ul>',
       '<h3>## 8. 新手目标</h3>',
       '<ul><li>每天进小屋看看宠物，喂食、抚摸或遛弯。</li><li>关注成长值，成长值满时通常会触发阶段剧情。</li><li>偶尔切换场景，部分支线需要特定地点或时间。</li><li>剧情后写一篇日志，记录今天发生了什么。</li><li>最终把宠物养大，让它成为属于你们的灵息宠物，或者陪它选择普通但温柔的生活。</li></ul>',
       '</div>'
@@ -12980,7 +13031,8 @@ function showGameRecords(game, page) {
 
   function startSpider(state) {
     const box = qs('#wb-gamebox');
-    const SUITS = ['S','H'];
+    const choice = choiceForState('spider', state || {});
+    const SUITS = choice.id === 'easy' ? ['S'] : ['S','H'];
     const SUIT_TXT = { S:'♠', H:'♥' };
     const RANK_TXT = { 1:'A', 11:'J', 12:'Q', 13:'K' };
     const MAX_COL = 30;
@@ -12991,7 +13043,8 @@ function showGameRecords(game, page) {
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const makeBatch = () => {
       const arr = [];
-      SUITS.forEach(suit => { for (let n=0;n<4;n++) for (let r=1;r<=13;r++) arr.push(newCard(suit, r, false)); });
+      const copiesPerSuit = Math.floor(8 / SUITS.length);
+      SUITS.forEach(suit => { for (let n=0;n<copiesPerSuit;n++) for (let r=1;r<=13;r++) arr.push(newCard(suit, r, false)); });
       return shuffleArray(arr);
     };
     const initial = () => {
@@ -13003,14 +13056,14 @@ function showGameRecords(game, page) {
         if (cols[col].length < counts[col]) { const c = deck.shift(); c.face = cols[col].length === counts[col] - 1; cols[col].push(c); left--; }
         col = (col + 1) % 10;
       }
-      return { cols, deck, score:0, level:1, moves:0, completed:[], stepsSinceDeal:0, tools:{undo:1, eliminate:5}, details:{ hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, emptied:{}, dealEmptyLock:false, dangerPeak:false };
+      return Object.assign({ cols, deck, score:0, level:1, moves:0, completed:[], stepsSinceDeal:0, tools:{undo:1, eliminate:5}, details:{ mode:choice.id, hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, emptied:{}, dealEmptyLock:false, dangerPeak:false }, choiceSavePatch('spider', choice));
     };
     let st = state && Array.isArray(state.cols) ? Object.assign(initial(), state) : initial();
     st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false })));
     st.deck = Array.isArray(st.deck) ? st.deck : makeBatch();
     st.completed = Array.isArray(st.completed) ? st.completed : [];
     st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {});
-    st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {});
+    st.details = Object.assign({ mode:choice.id, hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {});
     st.emptied = st.emptied || {};
     st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0));
     let selected = null, busy = false, over = false, drag = null, eliminateMode = false, hintMode = false;
@@ -13030,12 +13083,12 @@ function showGameRecords(game, page) {
     function save(){ if(!over) saveProgress('spider', Object.assign({}, st, { selected:null })); }
     function snapshot(){ return JSON.parse(JSON.stringify(Object.assign({}, st, { selected:null }))); }
     function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length > 80) undoStack.shift(); }
-    function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)); }
+    function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ mode:choice.id, hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)); }
     function undoMove(){ if(busy || over || gamePaused || !undoStack.length) return; restoreState(undoStack.pop()); selected=null; eliminateMode=false; hintMode=false; st.score=Math.max(0,Number(st.score||0)-2); st.details.undo=(st.details.undo||0)+1; speak('spider','undo'); showSpiderToast('已撤销，分数-2'); draw(); save(); }
     function toggleHint(){ if(busy || over || gamePaused) return; selected=null; eliminateMode=false; if(hintMode){ hintMode=false; draw(); return; } st.score=Math.max(0,Number(st.score||0)-2); hintMode=true; showSpiderToast('可移动牌已标蓝，分数-2'); draw(); save(); }
     function toggleEliminate(){ if(busy || over || gamePaused || (st.tools.eliminate||0)<=0) return; selected=null; hintMode=false; eliminateMode=!eliminateMode; draw(); showSpiderToast(eliminateMode ? '选择同花色连续牌组，再点一次消除' : '取消消除'); }
     function requestEndSpiderGame(){ if(busy || over) return; showConfirm('结束本局', '确定要提前结束无尽蜘蛛纸牌吗？本局会结算并可开启下一把。', endSpiderGame); }
-    function endSpiderGame(){ if(busy || over) return; over=true; selected=null; hintMode=false; eliminateMode=false; clearProgress('spider'); setScore('spider', Math.max(scores().spider || 0, st.score)); speak('spider','gameover'); draw(); showGameOver('spider','提前结束','本局分数：' + st.score + '分，完成' + st.completed.length + '副', { outcome:'score', score:st.score }, { details:Object.assign({}, st.details, { score:st.score, completed:st.completed.length }) }); }
+    function endSpiderGame(){ if(busy || over) return; over=true; selected=null; hintMode=false; eliminateMode=false; clearProgress('spider'); setScore('spider', Math.max(scores().spider || 0, st.score)); speak('spider','gameover'); draw(); showGameOver('spider','提前结束','本局分数：' + st.score + '分（' + choice.title + '），完成' + st.completed.length + '副', { outcome:'score', score:st.score }, { difficulty:choice.title, details:Object.assign({}, st.details, { mode:choice.id, score:st.score, completed:st.completed.length }) }); }
     function ensureDeck(n=30){ while(st.deck.length < n) st.deck.push(...makeBatch()); }
     function topCard(i){ const c=st.cols[i]; return c[c.length-1]; }
     function isRun(col, idx){ const arr = st.cols[col]; if (!arr[idx] || !arr[idx].face) return false; for(let i=idx;i<arr.length;i++) if(!arr[i].face) return false; for(let i=idx;i<arr.length-1;i++) if(arr[i].suit !== arr[i+1].suit || arr[i].rank !== arr[i+1].rank + 1) return false; return true; }
@@ -17716,12 +17769,19 @@ function showGameRecords(game, page) {
       return b;
     };
     let board = Array.isArray(state?.board) && state.board.length === 90 ? state.board.slice() : startBoard();
+    const inferCaptured = victimPrefix => {
+      const remaining = board.reduce((counts, p) => { if(p && p[0] === victimPrefix) counts[p] = (counts[p] || 0) + 1; return counts; }, {});
+      return startBoard().filter(p => p && p[0] === victimPrefix && (remaining[p] ? (remaining[p]--, false) : true));
+    };
     let turn = state?.turn || 'user', selected = Number.isInteger(state?.selected) ? state.selected : -1;
     let over = false, busy = false, halfmove = Math.max(0, Number(state?.halfmove || 0));
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     let details = Object.assign({ rounds:0, userCaptures:0, charCaptures:0, userChecks:0, charChecks:0, cannonHits:0, horseMoves:0, riverCross:0, faceBlocks:0, endReason:'', materialSwing:0 }, state?.details || {});
+    let lastMoves = Object.assign({ user:null, ta:null }, state?.lastMoves || {});
+    let capturedByUser = Array.isArray(state?.capturedByUser) ? state.capturedByUser.filter(p => glyph[p]) : inferCaptured('b');
+    let capturedByTa = Array.isArray(state?.capturedByTa) ? state.capturedByTa.filter(p => glyph[p]) : inferCaptured('r');
     let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
-    box.innerHTML = '<div class="wb-xq-panel"><div class="wb-xq-info"><span id="wb-xq-text"></span><button type="button" class="wb-btn primary wb-cheat-btn wb-cheat-compact" id="wb-cheat">反悔 <span class="wb-sudoku-badge" id="wb-cheat-left">' + Math.max(0, Math.min(CHEAT_MAX, Number(cheatLeft || 0))) + '</span></button></div><div class="wb-xq-board" id="wb-xq-board"></div></div>';
+    box.innerHTML = '<div class="wb-xq-panel"><div class="wb-xq-info"><span id="wb-xq-text"></span><button type="button" class="wb-btn primary wb-cheat-btn wb-cheat-compact" id="wb-cheat">反悔 <span class="wb-sudoku-badge" id="wb-cheat-left">' + Math.max(0, Math.min(CHEAT_MAX, Number(cheatLeft || 0))) + '</span></button></div><div class="wb-chess-captures ta"><span class="wb-chess-captures-label">' + esc(role) + ' 吃掉</span><div class="wb-chess-captured-list" id="wb-xq-char-captures"></div></div><div class="wb-xq-board" id="wb-xq-board"></div><div class="wb-chess-captures user"><span class="wb-chess-captures-label">你吃掉</span><div class="wb-chess-captured-list" id="wb-xq-user-captures"></div></div></div>';
     qs('#wb-cheat', box).onclick = cheatUndo;
     draw(); save();
     function x(i){ return i % 9; } function y(i){ return Math.floor(i / 9); } function idx(a,b){ return b * 9 + a; }
@@ -17732,7 +17792,7 @@ function showGameRecords(game, page) {
     function inside(a,b){ return a >= 0 && a < 9 && b >= 0 && b < 10; }
     function palace(side,a,b){ return a >= 3 && a <= 5 && (side === 'user' ? b >= 7 && b <= 9 : b >= 0 && b <= 2); }
     function crossed(side,b){ return side === 'user' ? b <= 4 : b >= 5; }
-    function snapshot(){ return { board:board.slice(), turn, selected, halfmove, taMoves, nextCharLineAt, details:cloneCheatState(details) }; }
+    function snapshot(){ return { board:board.slice(), turn, selected, halfmove, taMoves, nextCharLineAt, details:cloneCheatState(details), lastMoves:cloneCheatState(lastMoves), capturedByUser:capturedByUser.slice(), capturedByTa:capturedByTa.slice() }; }
     function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
     function cheatUndo(){
       if(gamePaused || over || busy || cheatLeft <= 0 || !undoStack.length) return;
@@ -17740,10 +17800,10 @@ function showGameRecords(game, page) {
       cheatAttempted = true;
       if(cheatAttemptResult('chinesechess', box, false) !== 'success'){ draw(); save(); return; }
       const snap = undoStack.pop();
-      restoreCheatSnapshot(snap, s => { board=s.board; turn=s.turn; selected=s.selected; halfmove=s.halfmove || 0; taMoves=s.taMoves || 0; nextCharLineAt=s.nextCharLineAt || nextCharLineTurn(taMoves); details=s.details || details; });
-      busy = false; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); if(turn === 'ta') setTimeout(ai, 650);
+      restoreCheatSnapshot(snap, s => { board=s.board; turn=s.turn; selected=s.selected; halfmove=s.halfmove || 0; taMoves=s.taMoves || 0; nextCharLineAt=s.nextCharLineAt || nextCharLineTurn(taMoves); details=s.details || details; lastMoves=Object.assign({user:null,ta:null},s.lastMoves||{}); capturedByUser=Array.isArray(s.capturedByUser)?s.capturedByUser:inferCaptured('b'); capturedByTa=Array.isArray(s.capturedByTa)?s.capturedByTa:inferCaptured('r'); });
+      busy = false; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); if(turn === 'ta') setTimeout(ai, 0);
     }
-    function save(){ if(!over) saveProgress('chinesechess', { board, turn, selected:-1, halfmove, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }); }
+    function save(){ if(!over) saveProgress('chinesechess', { board, turn, selected:-1, halfmove, taMoves, nextCharLineAt, details, lastMoves, capturedByUser, capturedByTa, cheatLeft, cheatAttempted, undoStack }); }
     function kingsFace(b){ const r=b.findIndex(p=>p==='rK'), k=b.findIndex(p=>p==='bK'); if(r<0||k<0||x(r)!==x(k)) return false; const a=x(r); for(let yy=Math.min(y(r),y(k))+1; yy<Math.max(y(r),y(k)); yy++) if(b[idx(a,yy)]) return false; return true; }
     function add(out,b,from,to){ if(to < 0 || to >= 90) return; const p=b[from], t=b[to]; if(!t || sideOf(t)!==sideOf(p)) out.push({ from, to, capture:t || '' }); }
     function rawMoves(b, side){
@@ -17778,6 +17838,8 @@ function showGameRecords(game, page) {
       if(over || busy || gamePaused) return false;
       const p=board[m.from], cap=board[m.to], beforeY=y(m.from);
       if(side==='user'){ pushUndo(); markFirstMoverUserAction(); }
+      lastMoves[side] = { from:m.from, to:m.to };
+      if(cap) (side==='user' ? capturedByUser : capturedByTa).push(cap);
       applyMoveTo(board,m); selected=-1; halfmove=(cap || type(p)==='P') ? 0 : halfmove + 1; details.rounds=(details.rounds||0)+1;
       details.materialSwing += (cap ? value[type(cap)] || 0 : 0) * (side === 'user' ? 1 : -1);
       if(cap){ if(side==='user'){ details.userCaptures++; speak('chinesechess','user_capture'); } else { details.charCaptures++; speak('chinesechess','char_capture'); } if(type(p)==='C'){ details.cannonHits++; speak('chinesechess','cannon'); } }
@@ -17787,10 +17849,11 @@ function showGameRecords(game, page) {
       if(checking){ if(side==='user'){ details.userChecks++; speak('chinesechess','user_check'); } else { details.charChecks++; speak('chinesechess','char_check'); } }
       if(!moves.length) return finish(side==='user'?'user_win':'ta_win', side==='user'?'你赢了':'游戏结束', checking?'将死':'困毙', moveLabel(m,p,cap));
       if(halfmove>=120) return finish('draw','平局','长回合未吃子', moveLabel(m,p,cap));
-      turn=other; if(side==='ta' && shouldCharNext() && !checking && !cap) speak('chinesechess','char_next'); draw(); save(); if(turn==='ta') setTimeout(ai,650); return true;
+      turn=other; if(side==='ta' && shouldCharNext() && !checking && !cap) speak('chinesechess','char_next'); draw(); save(); if(turn==='ta') setTimeout(ai,0); return true;
     }
     function finish(result,title,reason,last){
       over=true; details.endReason=reason; clearProgress('chinesechess');
+      draw();
       const meta={ rounds:details.rounds||0, userCaptures:details.userCaptures||0, taCaptures:details.charCaptures||0, cheatUsed:details.cheatUsed||0, materialSwing:details.materialSwing||0, details };
       if(result==='user_win'){ const cur=scores().chinesechess; setScore('chinesechess', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('chinesechess','user_win'); }
       else if(result==='ta_win'){ addTaWin('chinesechess'); speak('chinesechess','user_lose'); }
@@ -17853,10 +17916,19 @@ function showGameRecords(game, page) {
       const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你吃' + (details.userCaptures||0) + ' / ' + role + '吃' + (details.charCaptures||0);
       const info=qs('#wb-xq-text', box); if(info) info.textContent=(turn==='user'?'你的回合':role+'思考中') + (inCheck(board, turn)?' · 被将军':'') + ' · 回合 ' + (details.rounds||0);
       refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused || over || busy);
+      const captureHTML = pieces => pieces.length ? pieces.map(p=>'<span class="wb-chess-captured-piece xq ' + sideOf(p) + '" title="' + esc(glyph[p] || p) + '">' + (glyph[p] || '') + '</span>').join('') : '<span class="wb-chess-no-captures">尚未吃子</span>';
+      const charCaptures=qs('#wb-xq-char-captures',box); if(charCaptures) charCaptures.innerHTML=captureHTML(capturedByTa);
+      const userCaptures=qs('#wb-xq-user-captures',box); if(userCaptures) userCaptures.innerHTML=captureHTML(capturedByUser);
       const moves=selected>=0?legalMoves('user').filter(m=>m.from===selected):[], legal=new Set(moves.map(m=>m.to));
       const brd=qs('#wb-xq-board', box); if(!brd) return;
+      const moveClass=i=>{
+        const user=lastMoves.user && (lastMoves.user.from===i||lastMoves.user.to===i), ta=lastMoves.ta && (lastMoves.ta.from===i||lastMoves.ta.to===i);
+        const from=(lastMoves.user&&lastMoves.user.from===i)||(lastMoves.ta&&lastMoves.ta.from===i);
+        const to=(lastMoves.user&&lastMoves.user.to===i)||(lastMoves.ta&&lastMoves.ta.to===i);
+        return (user&&ta?' last-both':user?' last-user':ta?' last-ta':'') + (from?' last-from':'') + (to?' last-to':'');
+      };
       const lines='<svg class="wb-xq-lines" viewBox="0 0 900 1072" aria-hidden="true"><g stroke="rgba(98,63,22,.62)" stroke-width="3" fill="none" stroke-linecap="round"><path d="M50 50H850M50 150H850M50 250H850M50 350H850M50 450H850M50 622H850M50 722H850M50 822H850M50 922H850M50 1022H850"/><path d="M50 50V450M150 50V450M250 50V450M350 50V450M450 50V450M550 50V450M650 50V450M750 50V450M850 50V450M50 622V1022M150 622V1022M250 622V1022M350 622V1022M450 622V1022M550 622V1022M650 622V1022M750 622V1022M850 622V1022"/><path d="M350 50L550 250M550 50L350 250M350 822L550 1022M550 822L350 1022"/></g></svg>';
-      brd.innerHTML=lines + board.map((p,i)=>'<button class="wb-xq-cell' + (i===selected?' selected':'') + (legal.has(i)?' legal':'') + (sideOf(p)==='user'?' user':sideOf(p)==='ta'?' ta':'') + '" data-i="' + i + '" type="button" style="grid-column:' + (x(i)+1) + ';grid-row:' + (y(i)+1+(y(i)>=5?1:0)) + '">' + (p?'<span>'+glyph[p]+'</span>':'') + '</button>').join('') + '<div class="wb-xq-river"><span>楚河</span><span>汉界</span></div>';
+      brd.innerHTML=lines + board.map((p,i)=>'<button class="wb-xq-cell' + moveClass(i) + (i===selected?' selected':'') + (legal.has(i)?' legal':'') + (sideOf(p)==='user'?' user':sideOf(p)==='ta'?' ta':'') + '" data-i="' + i + '" type="button" style="grid-column:' + (x(i)+1) + ';grid-row:' + (y(i)+1+(y(i)>=5?1:0)) + '">' + (p?'<span>'+glyph[p]+'</span>':'') + '</button>').join('') + '<div class="wb-xq-river"><span>楚河</span><span>汉界</span></div>';
       qsa('.wb-xq-cell', brd).forEach(btn=>btn.onclick=()=>select(+btn.dataset.i));
     }
   }
@@ -17869,6 +17941,10 @@ function showGameRecords(game, page) {
     const value = { P:100, N:320, B:330, R:500, Q:900, K:20000 };
     const startBoard = () => ['bR','bN','bB','bQ','bK','bB','bN','bR','bP','bP','bP','bP','bP','bP','bP','bP','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','wP','wP','wP','wP','wP','wP','wP','wP','wR','wN','wB','wQ','wK','wB','wN','wR'];
     let board = Array.isArray(state?.board) && state.board.length === 64 ? state.board.slice() : startBoard();
+    const inferCaptured = victimPrefix => {
+      const remaining = board.reduce((counts, p) => { if(p && p[0] === victimPrefix) counts[p] = (counts[p] || 0) + 1; return counts; }, {});
+      return startBoard().filter(p => p && p[0] === victimPrefix && (remaining[p] ? (remaining[p]--, false) : true));
+    };
     let turn = state?.turn || 'user';
     let selected = Number.isInteger(state?.selected) ? state.selected : -1;
     let moved = Object.assign({ wK:false, wRa:false, wRh:false, bK:false, bRa:false, bRh:false }, state?.moved || {});
@@ -17877,8 +17953,11 @@ function showGameRecords(game, page) {
     let over = false, busy = false;
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     let details = Object.assign({ rounds:0, userCaptures:0, charCaptures:0, userChecks:0, charChecks:0, castles:0, promotions:0, queenTrade:false, endReason:'', materialSwing:0 }, state?.details || {});
+    let lastMoves = Object.assign({ user:null, ta:null }, state?.lastMoves || {});
+    let capturedByUser = Array.isArray(state?.capturedByUser) ? state.capturedByUser.filter(p => glyph[p]) : inferCaptured('b');
+    let capturedByTa = Array.isArray(state?.capturedByTa) ? state.capturedByTa.filter(p => glyph[p]) : inferCaptured('w');
     let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
-    box.innerHTML = '<div class="wb-chess-panel"><div class="wb-chess-info"><span id="wb-chess-text"></span><button type="button" class="wb-btn primary wb-cheat-btn wb-cheat-compact" id="wb-cheat">反悔 <span class="wb-sudoku-badge" id="wb-cheat-left">' + Math.max(0, Math.min(CHEAT_MAX, Number(cheatLeft || 0))) + '</span></button></div><div class="wb-chess-board" id="wb-chess-board"></div></div>';
+    box.innerHTML = '<div class="wb-chess-panel"><div class="wb-chess-info"><span id="wb-chess-text"></span><button type="button" class="wb-btn primary wb-cheat-btn wb-cheat-compact" id="wb-cheat">反悔 <span class="wb-sudoku-badge" id="wb-cheat-left">' + Math.max(0, Math.min(CHEAT_MAX, Number(cheatLeft || 0))) + '</span></button></div><div class="wb-chess-captures ta"><span class="wb-chess-captures-label">' + esc(role) + ' 吃掉</span><div class="wb-chess-captured-list" id="wb-chess-char-captures"></div></div><div class="wb-chess-board" id="wb-chess-board"></div><div class="wb-chess-captures user"><span class="wb-chess-captures-label">你吃掉</span><div class="wb-chess-captured-list" id="wb-chess-user-captures"></div></div></div>';
     qs('#wb-cheat', box).onclick = cheatUndo;
     draw(); save();
     function x(i){ return i % 8; } function y(i){ return Math.floor(i / 8); } function idx(a,b){ return b * 8 + a; }
@@ -17887,7 +17966,7 @@ function showGameRecords(game, page) {
     function foe(side){ return side === 'user' ? 'ta' : 'user'; }
     function type(p){ return p ? p[1] : ''; }
     function inside(a,b){ return a >= 0 && a < 8 && b >= 0 && b < 8; }
-    function snapshot(){ return { board:board.slice(), turn, selected, moved:cloneCheatState(moved), history:history.slice(), halfmove, taMoves, nextCharLineAt, details:cloneCheatState(details) }; }
+    function snapshot(){ return { board:board.slice(), turn, selected, moved:cloneCheatState(moved), history:history.slice(), halfmove, taMoves, nextCharLineAt, details:cloneCheatState(details), lastMoves:cloneCheatState(lastMoves), capturedByUser:capturedByUser.slice(), capturedByTa:capturedByTa.slice() }; }
     function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
     function cheatUndo(){
       if(gamePaused || over || busy || cheatLeft <= 0 || !undoStack.length) return;
@@ -17895,11 +17974,11 @@ function showGameRecords(game, page) {
       cheatAttempted = true;
       if(cheatAttemptResult('westernchess', box, false) !== 'success'){ draw(); save(); return; }
       const snap = undoStack.pop();
-      restoreCheatSnapshot(snap, s => { board=s.board; turn=s.turn; selected=s.selected; moved=s.moved; history=s.history || []; halfmove=s.halfmove || 0; taMoves=s.taMoves || 0; nextCharLineAt=s.nextCharLineAt || nextCharLineTurn(taMoves); details=s.details || details; });
+      restoreCheatSnapshot(snap, s => { board=s.board; turn=s.turn; selected=s.selected; moved=s.moved; history=s.history || []; halfmove=s.halfmove || 0; taMoves=s.taMoves || 0; nextCharLineAt=s.nextCharLineAt || nextCharLineTurn(taMoves); details=s.details || details; lastMoves=Object.assign({user:null,ta:null},s.lastMoves||{}); capturedByUser=Array.isArray(s.capturedByUser)?s.capturedByUser:inferCaptured('b'); capturedByTa=Array.isArray(s.capturedByTa)?s.capturedByTa:inferCaptured('w'); });
       busy = false; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save();
       if(turn === 'ta') setTimeout(ai, 650);
     }
-    function save(){ if(!over) saveProgress('westernchess', { board, turn, selected:-1, moved, history, halfmove, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }); }
+    function save(){ if(!over) saveProgress('westernchess', { board, turn, selected:-1, moved, history, halfmove, taMoves, nextCharLineAt, details, lastMoves, capturedByUser, capturedByTa, cheatLeft, cheatAttempted, undoStack }); }
     function castleKeyForSquare(sq){ return sq === 60 ? 'wK' : sq === 56 ? 'wRa' : sq === 63 ? 'wRh' : sq === 4 ? 'bK' : sq === 0 ? 'bRa' : sq === 7 ? 'bRh' : ''; }
     function applyMoveTo(b, m){
       const p = b[m.from], cap = b[m.to];
@@ -17964,6 +18043,8 @@ function showGameRecords(game, page) {
       if(over || busy || gamePaused) return false;
       const p = board[m.from], cap = board[m.to], wasPawn = type(p) === 'P';
       if(side === 'user'){ pushUndo(); markFirstMoverUserAction(); }
+      lastMoves[side] = { from:m.from, to:m.to };
+      if(cap) (side === 'user' ? capturedByUser : capturedByTa).push(cap);
       markMoved(m, p, cap); applyMoveTo(board, m); selected = -1;
       halfmove = (cap || wasPawn) ? 0 : halfmove + 1;
       details.rounds = (details.rounds || 0) + 1;
@@ -17986,6 +18067,7 @@ function showGameRecords(game, page) {
     }
     function finish(result, title, reason, last){
       over = true; details.endReason = reason; clearProgress('westernchess');
+      draw();
       const meta = { rounds:details.rounds || 0, userCaptures:details.userCaptures || 0, taCaptures:details.charCaptures || 0, cheatUsed:details.cheatUsed || 0, materialSwing:details.materialSwing || 0, details };
       if(result === 'user_win'){ const cur=scores().westernchess; setScore('westernchess', ((cur && typeof cur === 'object' ? cur.user : cur) || 0) + 1); speak('westernchess','user_win'); }
       else if(result === 'ta_win'){ addTaWin('westernchess'); speak('westernchess','user_lose'); }
@@ -18070,12 +18152,21 @@ function showGameRecords(game, page) {
       const info=qs('#wb-chess-text', box);
       if(info) info.textContent=(turn === 'user' ? '你的回合' : role + '思考中') + (inCheck(board, turn) ? ' · 被将军' : '') + ' · 回合 ' + (details.rounds || 0);
       refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused || over || busy);
+      const captureHTML = pieces => pieces.length ? pieces.map(p=>'<span class="wb-chess-captured-piece western" title="' + esc(p) + '">' + (glyph[p] || '') + '</span>').join('') : '<span class="wb-chess-no-captures">尚未吃子</span>';
+      const charCaptures=qs('#wb-chess-char-captures',box); if(charCaptures) charCaptures.innerHTML=captureHTML(capturedByTa);
+      const userCaptures=qs('#wb-chess-user-captures',box); if(userCaptures) userCaptures.innerHTML=captureHTML(capturedByUser);
       const moves = selected >= 0 ? legalMoves('user').filter(m => m.from === selected) : [];
       const legal = new Set(moves.map(m => m.to));
       const brd=qs('#wb-chess-board', box); if(!brd) return;
+      const moveClass=i=>{
+        const user=lastMoves.user && (lastMoves.user.from===i||lastMoves.user.to===i), ta=lastMoves.ta && (lastMoves.ta.from===i||lastMoves.ta.to===i);
+        const from=(lastMoves.user&&lastMoves.user.from===i)||(lastMoves.ta&&lastMoves.ta.from===i);
+        const to=(lastMoves.user&&lastMoves.user.to===i)||(lastMoves.ta&&lastMoves.ta.to===i);
+        return (user&&ta?' last-both':user?' last-user':ta?' last-ta':'') + (from?' last-from':'') + (to?' last-to':'');
+      };
       brd.innerHTML = board.map((p,i) => {
         const dark = (x(i) + y(i)) % 2 ? ' dark' : ' light';
-        return '<button class="wb-chess-cell' + dark + (i===selected?' selected':'') + (legal.has(i)?' legal':'') + (sideOf(p)==='user'?' user':sideOf(p)==='ta'?' ta':'') + '" data-i="' + i + '" type="button">' + (p ? '<span>' + glyph[p] + '</span>' : '') + '</button>';
+        return '<button class="wb-chess-cell' + dark + moveClass(i) + (i===selected?' selected':'') + (legal.has(i)?' legal':'') + (sideOf(p)==='user'?' user':sideOf(p)==='ta'?' ta':'') + '" data-i="' + i + '" type="button">' + (p ? '<span>' + glyph[p] + '</span>' : '') + '</button>';
       }).join('');
       qsa('.wb-chess-cell', brd).forEach(btn => btn.onclick = () => select(+btn.dataset.i));
     }
