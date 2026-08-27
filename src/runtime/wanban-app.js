@@ -1,6 +1,8 @@
 import { getRequestHeaders } from '../../../../../../script.js';
 import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
+import { createZumaGame } from '../games/zuma.js';
+import { createWaterSortGame } from '../games/water-sort.js';
 
 // Runtime migrated from 益智小游戏/玩伴小屋V1.0.1.json.
 // Keep this file behavior-compatible with the original script; split new code into src/* modules when extending.
@@ -109,6 +111,7 @@ export async function initWanbanXiaowu() {
 
   let currentTab = 'single';
   let currentGame = null;
+  let activeGameController = null;
   let snakeTimer = null;
   let tetrisTimer = null;
   let watermelonTimer = null;
@@ -195,6 +198,8 @@ export async function initWanbanXiaowu() {
     spider: { id: 'spider', name: '无尽蜘蛛纸牌', mode: 'single', unit: '分', icon: '蛛', iconImage: GAME_ICON_BASE + 'spider.png' },
     linklink: { id: 'linklink', name: '连连看', mode: 'single', unit: '分', icon: '连', iconImage: GAME_ICON_BASE + 'lian.png' },
     shuerte: { id: 'shuerte', name: '舒尔特方格', mode: 'single', unit: '分', icon: '舒', iconImage: GAME_ICON_BASE + 'shuerte.png' },
+    zuma: { id: 'zuma', name: '祖玛', mode: 'single', unit: '分', icon: '珠', iconImage: GAME_ICON_BASE + 'zuma.png' },
+    watersort: { id: 'watersort', name: '倒瓶子', mode: 'single', unit: '分', icon: '瓶', iconImage: GAME_ICON_BASE + 'watersort.png' },
     ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: GAME_ICON_BASE + 'ludo.jpg' },
     guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: GAME_ICON_BASE + 'guessnumber.jpg' },
     wordguess: { id: 'wordguess', name: '我说你猜', mode: 'double', unit: '胜', icon: '谜', iconImage: GAME_ICON_BASE + 'wordguess.jpg' },
@@ -284,6 +289,8 @@ export async function initWanbanXiaowu() {
     screw: '每局会选择普通模式或无尽模式，并保证每种颜色螺丝数量为3的倍数、工具盒数量正确。顶部同时出现3个随机颜色工具盒，点击可见螺丝后，同色螺丝进入对应工具盒；非当前盒颜色会进入5格临时托盘。任意工具盒收满3颗会自动打包并刷新下一个颜色。上层面板会遮挡下层螺丝；板件剩一个螺丝时会悬挂摆动，失去全部螺丝后受重力下落。普通模式清空全部面板即可过关，无尽模式会在快结束时续上下一批。',
     popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5，8/12/16个以上大块会有额外奖励。困难模式每关有步数限制，消除、打乱、单消都会消耗1步；简单模式没有步数限制，可以一直消到没有可消除组合。无可消除组合或困难模式步数用完时本关结算，剩余10个以内有少量奖励；如果无可消除组合且还剩步数，会按未用步数奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。',
     paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
+    zuma: '青蛙位于轨道中央，按住棋盘瞄准、拖动调整方向，松手后吐出彩珠；发射瞬间青蛙口中的珠子会立即切换为下一颗。整局只有一条持续运动的珠链，没有关卡或轮次；入口会按珠链前进距离持续补入新珠子，累计生成后颜色从4种逐步增加到最多6种。彩珠撞到珠链后会插入，连续3颗及以上同色珠会先膨胀爆裂并淡出，随后前方珠链平滑回退；回退接合后如果再次凑成同色三消，会继续播放爆裂和回退连锁。清空整条珠链奖励600分，之后仍会继续生成新珠子，只有珠链进入终点洞口才结束。珠链较短时会适当减速；速度也会按每450分、累计消除22颗以及当前超过24颗的珠链数量继续提升，最高84。下方炸弹可炸掉命中点附近5颗珠，减速可让珠链减速8秒，彩虹珠会变成命中珠子的颜色。',
+    watersort: '点击一个非空瓶子，再点击目标瓶子，将源瓶顶部连续同色的水一次倒入目标瓶。目标瓶必须为空，或顶部颜色相同，并且仍有容量；每瓶最多4层。所有非空瓶都装满4层同色水即可进入下一关，关卡无限生成。颜色会从3种逐步增加到最多10种，第9关起初始空瓶由2只减为1只，反向打乱深度也会逐步提高并继续验证解序列。撤回会逐关补充，提示每2关补充，额外空瓶每5关补充；可随时点击结算结束本局。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
     spider: '经典蜘蛛纸牌的无尽模式。开局可选择简单或困难：简单模式全部使用黑桃同一花色，困难模式保持黑桃与红桃两种花色。卡牌可按点数递减叠放，但只有同花色严格递减的连续牌组能整体移动；同花色K到A完整序列会自动收起。牌库无限，每次发牌后会按完成牌组数给出步数限制，倒计时归零会强制发牌。存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
@@ -390,6 +397,8 @@ export async function initWanbanXiaowu() {
     screw: { start:'拧螺丝开局，玩家需要按颜色盒子收集螺丝并清空玻璃面板。', match:'玩家完成一次三颗同色螺丝打包；每次打包后有30%概率触发。', add_box:'玩家点击增加盒子按钮，本局盒子上限增加但最终分数降低。', progress_50:'拧螺丝进度首次达到50%。', progress_80:'拧螺丝进度首次达到80%。', tray_4:'5个候补槽已经填满，下一颗不能进盒的螺丝会导致失败。', record:'拧螺丝刷新历史最高分。', gameover:'候补槽已满后又点击了无法直接进入工具盒的螺丝，拧螺丝失败。', random:'观看拧螺丝时的碎碎念。' },
     popstar: { start:'消灭星星开局，10×10彩色星星棋盘已生成。', first_clear:'当前关第一次消除星星。', small_clear:'玩家只消除了2个星星。', high_clear:'玩家一次消除4个及以上星星，获得较高分数。', level_clear:'玩家通过当前关。', record:'消灭星星刷新历史最高分。', cheat:'玩家使用打乱或单消道具。', target_met:'玩家当前累计分数首次达到本关通关分数。', gameover:'消灭星星没有可消除组合且分数未达到本关目标。', random:'观看消灭星星时的碎碎念。' },
     paopao: { start:'泡泡龙开局，顶部已有5行泡泡，玩家准备瞄准发射。', aim:'玩家按住并拖动，虚线轨迹正在根据墙壁反弹预测落点。', clear:'玩家成功消除同色泡泡。', clear_5:'玩家一次性消除超过5个泡泡。', drop:'失去顶部连接的泡泡悬空掉落。', danger:'泡泡群快要接近红色警戒线。', score_1000:'泡泡龙本局分数每增加1000分时触发。', bomb:'玩家使用炸弹泡泡，炸掉落点周围3格泡泡。', record:'泡泡龙刷新历史最高分。', gameover:'泡泡越过红色警戒线，泡泡龙本局结束。', random:'观看泡泡龙时的待机碎碎念。' },
+    zuma: { start:'祖玛无尽模式开局，青蛙准备向持续移动的珠链发射彩珠。', resume:'继续祖玛无尽模式存档。', shoot:'玩家从青蛙口中发射普通彩珠。', swap:'玩家交换当前珠和下一颗珠。', clear:'玩家消除3到4颗同色珠，彩珠播放爆裂淡出后珠链开始回退。', clear_5:'玩家一次消除5颗以上同色珠，彩珠播放爆裂淡出后珠链开始回退。', chain:'珠链平滑回退接合后再次形成同色三消，继续播放爆裂和回退连锁。', miss:'玩家发射的珠子没有击中珠链。', danger:'珠链前端已经接近终点洞口。', bomb:'炸弹命中但只清除少量珠子。', bomb_big:'炸弹命中并清除5颗珠子。', slow:'玩家使用减速道具，珠链减速8秒。', rainbow:'彩虹珠命中后变为目标颜色。', spawn_pressure:'珠链入口累计生成的珠子跨过新的50颗节点。', clear_all:'玩家清空整条珠链获得600分，入口仍会继续生成新珠子。', speed_up:'祖玛动态速度跨过新的阶段。', record:'祖玛刷新历史最高分。', gameover:'珠链进入终点洞口，祖玛无尽模式结束。', random:'观看祖玛时的待机碎碎念。' },
+    watersort: { start:'倒瓶子无尽模式开局，彩色水层已经按可解顺序打乱。', resume:'继续倒瓶子无尽模式存档。', pour:'玩家把顶部水层倒入空瓶。', merge:'玩家把水倒到顶部同色的目标瓶。', streak:'玩家连续3步以上合并同色水。', invalid:'玩家选择了颜色不匹配或已满的目标瓶。', undo:'玩家使用撤回道具。', hint:'玩家使用提示并高亮一对建议瓶子。', extra:'玩家增加一个额外空瓶。', reset:'玩家重置当前关。', perfect:'玩家未使用道具完成当前关。', level_clear:'玩家把当前关所有非空瓶整理成满瓶单色。', level_up:'倒瓶子进入下一关并增加颜色、减少空瓶或加深打乱。', settle:'玩家主动结算倒瓶子无尽模式。', record:'倒瓶子刷新历史最高分。', random:'观看倒瓶子时的待机碎碎念。' },
     game1010: { start:'1010!开局，10×10棋盘为空，底部出现3个不可旋转方块。', place:'玩家成功放置一个候补方块。', clear:'玩家消除了一行或一列，30%概率触发。', clear_3:'玩家一次性消除超过3行/列。', score_1000:'1010!本局分数每增加1000分时触发。', tool:'玩家使用重新生成或小锤子道具。', low_space:'棋盘剩余空格少于5个，局面接近死局。', record:'1010!刷新历史最高分。', gameover:'没有任何剩余候补方块可以放入棋盘，且道具已经用完，1010!结束。', random:'观看1010!方块拼图时的碎碎念。' },
     turkey: { start:'土耳其方块开局，底部四行横向方块已经出现。', first_clear:'玩家第一次消除完整横行。', clear_2:'玩家同时消除2行。', clear_3:'玩家同时消除3行及以上。', chain_3:'同一次移动连锁达到第3轮。', combo_5:'连续5次普通移动都产生消除。', score_1000:'土耳其方块分数首次达到1000。', score_5000:'土耳其方块分数首次达到5000。', record:'土耳其方块刷新历史最高分。', top_3:'当前最高方块进入顶部3行。', top_row:'顶行已经被占用。', no_clear_8:'连续8次普通移动没有消除。', thunder:'玩家使用云雷道具。', stardust:'玩家使用星尘收集器。', hammer:'玩家使用小锤粉碎机。', danger_tool:'顶部危险时使用道具并成功存活。', gameover:'方块被推到棋盘顶部之外，土耳其方块结束。', random:'观看土耳其方块时的待机碎碎念。' },
     spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已按所选单花色或双花色难度发好。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'玩家尝试发牌或步数倒计时归零时存在空列，需要先填满空列。', deal:'新的一排牌主动或强制发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
@@ -599,7 +608,7 @@ export async function initWanbanXiaowu() {
   }
   function scores() {
     const loaded = safeObject(loadJSON(STORAGE_SCORES, {}));
-    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, shuerte: 0, uyangle: 0, screw: 0, popstar: 0, paopao: 0, game1010: 0, turkey: 0, spider: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 }, westernchess: { user: 0, ta: 0 }, chinesechess: { user: 0, ta: 0 } };
+    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, shuerte: 0, uyangle: 0, screw: 0, popstar: 0, paopao: 0, zuma: 0, watersort: 0, game1010: 0, turkey: 0, spider: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 }, westernchess: { user: 0, ta: 0 }, chinesechess: { user: 0, ta: 0 } };
     ['ludo','guessnumber','wordguess','tictactoe','gomoku','territory','oldmaid','reversi','bombnumber','connect4d','draughts','westernchess','chinesechess'].forEach(k => { if (typeof loaded[k] === 'number') loaded[k] = { user: loaded[k], ta: 0 }; });
     return Object.assign(base, loaded);
   }
@@ -926,6 +935,8 @@ export async function initWanbanXiaowu() {
     if (game === 'screw') return !!(state.panels && state.panels.some(p => !p.gone)) || !!(state.tray && state.tray.length);
     if (game === 'popstar') return !!state.score || Number(state.level || 1) > 1 || !!(state.board && state.board.some(row => row && row.some(Boolean)));
     if (game === 'paopao') return !!state.score || !!state.shots || !!(state.bubbles && state.bubbles.length); 
+    if (game === 'zuma') return !!state.score || !!(state.details && (state.details.shots || state.details.totalBallsGenerated)) || !!(state.chain && state.chain.length);
+    if (game === 'watersort') return !!state.score || Number(state.level || 1) > 1 || !!state.moves || !!(state.bottles && state.bottles.length);
     if (game === 'game1010') return !!state.score || !!(state.grid && state.grid.some(row => row && row.some(Boolean))) || !!(state.pieces && state.pieces.some(p => p && !p.used));
     if (game === 'turkey') return !!state.score || !!state.moves || !!(state.blocks && state.blocks.length);
     if (game === 'blackjack') return !!(state.level && (state.round || state.total || state.userScore || state.charScore || (state.user && state.user.length) || (state.char && state.char.length)));
@@ -1106,6 +1117,8 @@ export async function initWanbanXiaowu() {
     if (game === 'uyangle') return ['时间','用时','分数','打乱次数','移出次数','陪伴者','日志','操作'];
     if (game === 'popstar') return ['时间','用时','分数','模式','关卡','剩余','陪伴者','日志','操作'];
     if (game === 'paopao') return ['时间','用时','分数','发射','下压','陪伴者','日志','操作'];
+    if (game === 'zuma') return ['时间','用时','分数','消除','最高连锁','陪伴者','日志','操作'];
+    if (game === 'watersort') return ['时间','用时','总分','关卡','总步数','陪伴者','日志','操作'];
     if (game === 'game1010') return ['时间','用时','分数','消除','放置','陪伴者','日志','操作'];
     if (game === 'turkey') return ['时间','用时','分数','消除','移动','陪伴者','日志','操作'];
     if (game === 'spider') return ['时间','用时','分数','完成','发牌','陪伴者','日志','操作'];
@@ -1127,6 +1140,8 @@ export async function initWanbanXiaowu() {
     if (game === 'uyangle') return base.concat([singleRecordPoints(r), String(extractNumber(r?.scoreText || '', /打乱\s*(\d+)\s*次/, 0)), String(extractNumber(r?.scoreText || '', /移出\s*(\d+)\s*次/, 0)), recordCompanionDisplay(r)]);
     if (game === 'popstar') return base.concat([singleRecordPoints(r), String((r?.choice || r?.difficulty || r?.details?.mode) === 'hard' ? '困难模式' : '简单模式'), String(r?.details?.level || extractNumber(r?.scoreText || '', /第\s*(\d+)\s*关/, 1)), String(r?.details?.remainingAtEnd ?? extractNumber(r?.scoreText || '', /剩余\s*(\d+)\s*个/, 0)), recordCompanionDisplay(r)]);
     if (game === 'paopao') return base.concat([singleRecordPoints(r), String(r?.details?.shots || extractNumber(r?.scoreText || '', /发射\s*(\d+)\s*次/, 0)), String(r?.details?.pushes || extractNumber(r?.scoreText || '', /下压\s*(\d+)\s*行/, 0)), recordCompanionDisplay(r)]);
+    if (game === 'zuma') return base.concat([singleRecordPoints(r), String(r?.details?.cleared || extractNumber(r?.scoreText || '', /消除\s*(\d+)\s*颗/, 0)), String(r?.details?.maxCombo || 0), recordCompanionDisplay(r)]);
+    if (game === 'watersort') return base.concat([singleRecordPoints(r), String(r?.details?.level || extractNumber(r?.scoreText || '', /(\d+)\s*关/, 1)), String(r?.details?.totalMoves || 0), recordCompanionDisplay(r)]);
     if (game === 'game1010') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || extractNumber(r?.scoreText || '', /消除\s*(\d+)\s*行列/, 0)), String(r?.details?.placements || extractNumber(r?.scoreText || '', /放置\s*(\d+)\s*块/, 0)), recordCompanionDisplay(r)]);
     if (game === 'turkey') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || 0), String(r?.details?.moves || 0), recordCompanionDisplay(r)]);
     if (game === 'spider') return base.concat([singleRecordPoints(r), String(r?.details?.completed ?? extractNumber(r?.scoreText || '', /完成\s*(\d+)\s*副/, 0)), String(r?.details?.deals || 0), recordCompanionDisplay(r)]);
@@ -1157,6 +1172,8 @@ export async function initWanbanXiaowu() {
     if (game === 'screw') return '字段说明：拧螺丝是颜色盒子收集和玻璃层级解谜；普通模式分数由用时、候补槽压力和增加盒子次数共同计算；无尽模式失败时按当前盒子数量结算倍率，盒子越少倍率越高。';
     if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5，并对8个以上大块追加奖励；困难模式每关有步数限制，消除和使用道具都会消耗步数；简单模式没有步数限制，可以一直消到没有可消除组合；结算时累计分数达到关卡目标进入下一关。';
     if (game === 'paopao') return '字段说明：泡泡龙是交错网格射击生存游戏；发射表示本局射出的泡泡数量；下压表示顶部新增行并整体下移的次数，下压间隔会从10发逐步缩短到5发。';
+    if (game === 'zuma') return '字段说明：祖玛是没有关卡或轮次的单珠链无尽三消射击；消除表示本局累计消掉的彩珠数；最高连锁表示一次射击后连续触发同色消除的最大次数。消除会先播放爆裂淡出，再让前方珠链平滑回退并判定下一次连锁。入口会持续补入新珠，珠链较短时会适当减速，移动速度也会随分数、累计消除彩珠数和当前珠链数量变化，最高封顶84。';
+    if (game === 'watersort') return '字段说明：倒瓶子是无限关卡颜色水层排序解谜；关卡表示主动结算时所在关卡；总步数是全部已完成关卡和当前关累计的有效倒水次数。颜色最多10种，第9关起只有1个初始空瓶，题面始终保留经过验证的解序列。';
     if (game === 'game1010') return '字段说明：1010!是10×10方块拼图；放置表示成功落下的候补方块数量，消除表示累计清掉的行/列数量。';
     if (game === 'turkey') return '字段说明：土耳其方块是8×10横向滑块无尽消除游戏；消除表示累计清掉的完整横行数量；移动表示普通有效拖动次数。';
     if (game === 'spider') return '字段说明：无尽蜘蛛纸牌是十列整理游戏；完成表示收起的同花色K到A完整牌组数量；发牌表示主动或自动向十列新增一排牌的次数。';
@@ -1207,6 +1224,8 @@ export async function initWanbanXiaowu() {
     if (game === 'screw') return (d.endless ? '模式：无尽模式；收纳盒子：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '个；结算盒子数：' + (d.endlessBoxCount || (3 + (d.addBoxUses || 0))) + '个；基础分：' + (d.endlessBaseScore == null ? '未记录' : d.endlessBaseScore) + '；结算倍率：×' + (d.endlessScoreMultiplier || '未记录') + '；' : '结果：' + (d.completed ? '成功' : '失败') + '；最终进度：' + (d.progress || 0) + '%；打包次数：' + (d.matches || Math.floor((d.packed || 0) / 3) || 0) + '次；') + '候补槽最大占用：' + (d.maxTray || 0) + '格；候补槽填满5个次数：' + (d.trayFullCount || d.trayFourCount || 0) + '次；使用增加盒子次数：' + (d.addBoxUses || 0) + '次；被遮挡螺丝点击次数：' + (d.blocked || 0) + '次；掉落玻璃数量：' + (d.fallen || 0) + '块。';
     if (game === 'popstar') return '模式：' + (d.mode === 'easy' ? '简单模式' : d.mode === 'hard' ? '困难模式' : '未记录') + '；最终关卡：第' + (d.level || 1) + '关；最终分数：' + (d.score || 0) + '分；消除星星总数：' + (d.removedTotal || 0) + '个；高分方块统计：5个' + (d.highClears?.['5'] || 0) + '次，6个' + (d.highClears?.['6'] || 0) + '次，7个' + (d.highClears?.['7'] || 0) + '次，8个及以上' + (d.highClears?.['8plus'] || 0) + '次；大块额外奖励：' + (d.bigBonusTotal || 0) + '分；余步奖励：' + (d.unusedMoveBonusTotal || 0) + '分；命悬一线次数：' + (d.clutchCount || 0) + '次；连消高分次数：' + (d.highComboCount || 0) + '次；连续高分消除最大次数：' + (d.maxHighStreak || 0) + '次；使用打乱：' + (d.shuffleUsed || 0) + '次；使用单消：' + (d.singleUsed || 0) + '次；剩余方块统计：' + finalCountText(d.remainingCounts, '剩余') + '；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
     if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
+    if (game === 'zuma') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；射失：' + (d.misses || 0) + '次；消除彩珠：' + (d.cleared || 0) + '颗；累计生成彩珠：' + (d.totalBallsGenerated || 0) + '颗；清空珠链：' + (d.clearAllCount || 0) + '次；最高速度：' + (d.maxSpeed || 0) + '；最高连锁：×' + (d.maxCombo || 0) + '；接近洞口：' + (d.dangerCount || 0) + '次；炸弹/减速/彩虹：' + (d.bombUsed || 0) + '/' + (d.slowUsed || 0) + '/' + (d.rainbowUsed || 0) + '次。';
+    if (game === 'watersort') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；完成关卡：' + (d.levelsCleared || 0) + '关；有效倒水：' + (d.totalMoves || 0) + '步；同色合并：' + (d.sameColorPours || 0) + '次；最高连续高效合并：' + (d.maxEfficientStreak || 0) + '；最高颜色数：' + (d.maxColors || d.colorCount || 0) + '色；单空瓶通关：' + (d.oneEmptyLevels || 0) + '关；无道具完美关：' + (d.perfectLevels || 0) + '关；提示/撤回/加空瓶/重置：' + (d.hintsUsed || 0) + '/' + (d.undosUsed || 0) + '/' + (d.extraUsed || 0) + '/' + (d.resets || 0) + '次。';
     if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
     if (game === 'turkey') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；累计消除：' + (d.clearedLines || 0) + '行；有效移动：' + (d.moves || 0) + '次；最大同时消除：' + (d.maxClear || 0) + '行；最大连锁：' + (d.maxChain || 0) + '轮；最大连续回合连击：' + (d.maxCombo || 0) + '；云雷/星尘/粉碎机：' + (d.thunderUsed || 0) + '/' + (d.stardustUsed || 0) + '/' + (d.hammerUsed || 0) + '次；无道具达到3000：' + (d.noTool3000 ? '是' : '否') + '。';
     if (game === 'spider') return '模式：' + (d.mode === 'easy' ? '简单' : '困难') + '；最终分数：' + (d.score || singleRecordPoints(rec)) + '分；完成牌组：' + (d.completed || 0) + '副；黑桃：' + (d.spades || 0) + '副；红桃：' + (d.hearts || 0) + '副；最大连锁：' + (d.maxChain || 0) + '副；发牌次数：' + (d.deals || 0) + '次；有效移动：' + (d.moves || 0) + '次；撤销：' + (d.undo || 0) + '次；消除：' + (d.eliminate || 0) + '次；清空列次数：' + (d.emptyCols || 0) + '次；同屏最多空列：' + (d.maxEmptyCols || 0) + '列；命悬一线次数：' + (d.clutch || 0) + '次；糟糕发牌连续/累计记录：' + (d.badDeals || 0) + '/' + (d.badDealsTotal || 0) + '次；游戏时间灯：' + (rec.durationMs >= 20*60000 ? '长时间游玩' : rec.durationMs >= 10*60000 ? '中等时长' : '短时游玩') + '。';
@@ -1403,6 +1422,22 @@ export async function initWanbanXiaowu() {
         'paopao_clear_all：竟然全部消除。泡泡龙某次射击后把场上所有泡泡全部清空，重点写满屏泡泡掉光/消光后的爽感。',
         'normal：普通小剧场。没有命中特殊条件时，根据分数、下压次数、消除和掉落自然复盘。'
       ].join('\n');
+      if (game === 'zuma') return [
+        'zuma_chain_master：连锁大师小剧场。祖玛单次射击触发3轮以上连锁。',
+        'zuma_clutch：洞口救险小剧场。珠链至少3次逼近终点洞口，重点写即将进洞时的紧张。',
+        'zuma_sharpshooter：神射手小剧场。至少发射30次且射失不超过1次。',
+        'zuma_toolbox：道具大师小剧场。同一局使用过炸弹、减速和彩虹三种道具。',
+        'zuma_endurance：无尽坚守小剧场。玩家在一局中累计坚守到珠链生成150颗。',
+        'normal：普通小剧场。根据累计生成和消除珠数、最高速度、射击、射失、连锁和道具使用自然复盘。'
+      ].join('\n');
+      if (game === 'watersort') return [
+        'watersort_perfect：完美整理小剧场。至少6关没有使用提示、撤回、空瓶或重置。',
+        'watersort_efficient：一气呵成小剧场。连续5步以上把水倒到顶部同色的瓶子里。',
+        'watersort_no_hint：不看答案小剧场。完成至少10关且整局没有使用提示。',
+        'watersort_extra_save：多瓶救场小剧场。使用额外空瓶后仍完成至少10关。',
+        'watersort_endurance：无尽整理小剧场。一局完成至少20关。',
+        'normal：普通小剧场。根据到达关卡、颜色数、单空瓶关、总步数、完美关和道具使用自然复盘。'
+      ].join('\n');
       if (game === 'game1010') return [
         'record：破纪录小剧场。刷新当前游戏历史最高分。',
         'game1010_strategy：运筹帷幄小剧场。1010!一次消除超过4行/列，重点写user提前规划空位、一块落下后行列同时清空。',
@@ -1597,6 +1632,22 @@ export async function initWanbanXiaowu() {
     if (game === 'paopao' && (meta.dropTotal || meta.details?.dropTotal || 0) >= 5) candidates.push('paopao_drop');
     if (game === 'paopao' && (meta.bombBad || meta.details?.bombBad)) candidates.push('paopao_bomb_fail');
     if (game === 'paopao' && (meta.amazingClear || meta.details?.amazingClear || meta.clearAllCount || meta.details?.clearAllCount)) candidates.push('paopao_clear_all');
+    if (game === 'zuma') {
+      const d = meta.details || meta;
+      if ((d.maxCombo || meta.maxCombo || 0) >= 3) candidates.push('zuma_chain_master');
+      if ((d.dangerCount || 0) >= 3) candidates.push('zuma_clutch');
+      if ((d.shots || 0) >= 30 && (d.misses || 0) <= 1) candidates.push('zuma_sharpshooter');
+      if ((d.bombUsed || 0) > 0 && (d.slowUsed || 0) > 0 && (d.rainbowUsed || 0) > 0) candidates.push('zuma_toolbox');
+      if ((d.totalBallsGenerated || 0) >= 150) candidates.push('zuma_endurance');
+    }
+    if (game === 'watersort') {
+      const d = meta.details || meta;
+      if ((d.perfectLevels || 0) >= 6) candidates.push('watersort_perfect');
+      if ((d.maxEfficientStreak || 0) >= 5) candidates.push('watersort_efficient');
+      if ((d.levelsCleared || 0) >= 10 && (d.hintsUsed || 0) === 0) candidates.push('watersort_no_hint');
+      if ((d.levelsCleared || 0) >= 10 && (d.extraUsed || 0) > 0) candidates.push('watersort_extra_save');
+      if ((d.levelsCleared || 0) >= 20) candidates.push('watersort_endurance');
+    }
     if (game === 'game1010' && (meta.maxClear || meta.details?.maxClear || 0) > 4) candidates.push('game1010_strategy');
     if (game === 'game1010' && (meta.toolExhaustLose || meta.details?.toolExhaustLose)) candidates.push('game1010_bad_luck');
     if (game === 'game1010' && (meta.lowSpaceCount || meta.details?.lowSpaceCount || 0) > 3) candidates.push('game1010_clutch');
@@ -1717,6 +1768,16 @@ export async function initWanbanXiaowu() {
       ,paopao_drop: '泡泡掉下来啦'
       ,paopao_bomb_fail: '不明所以小剧场'
       ,paopao_clear_all: '竟然全部消除'
+      ,zuma_chain_master: '连锁大师小剧场'
+      ,zuma_clutch: '洞口救险小剧场'
+      ,zuma_sharpshooter: '神射手小剧场'
+      ,zuma_toolbox: '道具大师小剧场'
+      ,zuma_endurance: '无尽坚守小剧场'
+      ,watersort_perfect: '完美整理小剧场'
+      ,watersort_efficient: '一气呵成小剧场'
+      ,watersort_no_hint: '不看答案小剧场'
+      ,watersort_extra_save: '多瓶救场小剧场'
+      ,watersort_endurance: '无尽整理小剧场'
       ,game1010_strategy: '运筹帷幄小剧场'
       ,game1010_bad_luck: '倒霉小剧场'
       ,game1010_clutch: '命悬一线小剧场'
@@ -2252,7 +2313,7 @@ export async function initWanbanXiaowu() {
     }, 1200);
   }
 
-  function stopGame() { flushAllProgressSaves(); commitGameActiveDuration(true); clearGameDurationRewardTimer(); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (screwTimer) clearInterval(screwTimer); if (linkLinkTimer) clearInterval(linkLinkTimer); if (shuerteTimer) clearInterval(shuerteTimer); if (randomLineTimer) clearInterval(randomLineTimer); if (singleDialogueTimer) clearTimeout(singleDialogueTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = screwTimer = linkLinkTimer = shuerteTimer = randomLineTimer = null; singleDialogueTimer = null; singleDialogueQueue = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
+  function stopGame() { if (activeGameController) { try { activeGameController.save?.(); activeGameController.destroy?.(); } catch(e) {} activeGameController = null; } flushAllProgressSaves(); commitGameActiveDuration(true); clearGameDurationRewardTimer(); if (snakeTimer) clearInterval(snakeTimer); if (tetrisTimer) clearInterval(tetrisTimer); if (watermelonTimer) clearInterval(watermelonTimer); if (jumpTimer) clearInterval(jumpTimer); if (screwTimer) clearInterval(screwTimer); if (linkLinkTimer) clearInterval(linkLinkTimer); if (shuerteTimer) clearInterval(shuerteTimer); if (randomLineTimer) clearInterval(randomLineTimer); if (singleDialogueTimer) clearTimeout(singleDialogueTimer); snakeTimer = tetrisTimer = watermelonTimer = jumpTimer = screwTimer = linkLinkTimer = shuerteTimer = randomLineTimer = null; singleDialogueTimer = null; singleDialogueQueue = null; firstMoverAwaitingUserAction = false; hideGamePauseOverlay(); getHostDocument().onkeydown = null; gameStarted = false; gamePaused = true; gameActiveStartedAt = 0; }
   function showGamePauseOverlay() {
     const box = qs('#wb-gamebox');
     if (!box || qs('#wb-pause-overlay', box)) return;
@@ -10728,6 +10789,8 @@ export async function initWanbanXiaowu() {
       if (game === 'screw') return [['score','screw_success'], ['score','screw_fail'], ['score','record'], ['score','super_good'], ['score','screw_regret'], ['score','long_run']];
       if (game === 'popstar') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','super_bad'], ['score','popstar_clutch'], ['score','popstar_godmove'], ['score','popstar_clear_all'], ['score','long_run']];
       if (game === 'paopao') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','paopao_clutch'], ['score','paopao_drop'], ['score','paopao_bomb_fail'], ['score','paopao_clear_all'], ['score','long_run']];
+      if (game === 'zuma') return [['score','normal'], ['score','record'], ['score','zuma_chain_master'], ['score','zuma_clutch'], ['score','zuma_sharpshooter'], ['score','zuma_toolbox'], ['score','zuma_endurance'], ['score','long_run']];
+      if (game === 'watersort') return [['score','normal'], ['score','record'], ['score','watersort_perfect'], ['score','watersort_efficient'], ['score','watersort_no_hint'], ['score','watersort_extra_save'], ['score','watersort_endurance'], ['score','long_run']];
       if (game === 'game1010') return [['score','normal'], ['score','record'], ['score','game1010_strategy'], ['score','game1010_bad_luck'], ['score','game1010_clutch'], ['score','long_run']];
       if (game === 'turkey') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','turkey_hot'], ['score','turkey_endure'], ['score','turkey_minimal'], ['score','turkey_clutch'], ['score','turkey_clear_all'], ['score','bad_luck'], ['score','turkey_tools'], ['score','long_run']];
       if (game === 'spider') return [['score','normal'], ['score','record'], ['score','spider_chain_master'], ['score','spider_four_empty'], ['score','spider_clear_table'], ['score','spider_clutch'], ['score','super_good'], ['score','bad_luck'], ['score','long_run']];
@@ -10848,8 +10911,18 @@ export async function initWanbanXiaowu() {
       ,popstar_godmove:'神之一手小剧场。消灭星星剩余20个以内使用打乱或单消道具并通关；重点写残局靠道具救活、星星重新连起来的反转。'
       ,popstar_clear_all:'竟然全部消除小剧场。消灭星星本关结算时剩余0个星星；重点写棋盘被清空、最后几颗星星消失后的惊喜。'
       ,paopao_clear_all:'竟然全部消除小剧场。泡泡龙一次射击后场上所有泡泡都被消掉或掉落；重点写满屏泡泡清空的爽感和{{char}}的惊讶。'
-      ,shuerte_focus:'专注小剧场。舒尔特方格最高连击超过半盘，重点写user视线扫描稳定、连续找到数字的专注感。'
-      ,shuerte_regret:'遗憾小剧场。舒尔特方格最后3格以内连续点错，重点写临门一脚手滑和{{char}}安慰鼓励。'
+	      ,shuerte_focus:'专注小剧场。舒尔特方格最高连击超过半盘，重点写user视线扫描稳定、连续找到数字的专注感。'
+	      ,shuerte_regret:'遗憾小剧场。舒尔特方格最后3格以内连续点错，重点写临门一脚手滑和{{char}}安慰鼓励。'
+	      ,zuma_chain_master:'祖玛无尽模式单次射击触发3轮以上连锁，重点写珠链连续回收和消除。'
+	      ,zuma_clutch:'祖玛无尽模式至少3次逼近终点洞口，重点写救险时的紧张。'
+	      ,zuma_sharpshooter:'祖玛无尽模式至少发射30次且射失不超过1次，重点写精准预判。'
+	      ,zuma_toolbox:'祖玛无尽模式同局用过炸弹、减速和彩虹，重点写三种道具的配合。'
+	      ,zuma_endurance:'祖玛无尽模式累计生成至少150颗珠子，重点写速度越来越快时user仍然坚持。'
+	      ,watersort_perfect:'倒瓶子无尽模式至少6关未使用辅助，重点写独立整理复杂水层。'
+	      ,watersort_efficient:'倒瓶子连续5步以上合并同色水，重点写一气呵成的整理过程。'
+	      ,watersort_no_hint:'倒瓶子无尽模式完成至少10关且从未提示，重点写user不看答案。'
+	      ,watersort_extra_save:'倒瓶子无尽模式使用额外空瓶并完成至少10关，重点写单空瓶难关被救回。'
+	      ,watersort_endurance:'倒瓶子无尽模式完成至少20关，重点写颜色和空瓶压力提高后仍持续整理。'
     };
     const sceneText = jobs.map(([outcome, special]) => {
       const resultText = outcome === 'score' ? '单人分数结算' : formatRecordResultForPrompt(outcome);
@@ -11922,6 +11995,8 @@ export async function initWanbanXiaowu() {
     if (id === 'screw') startScrew(resumeState);
     if (id === 'popstar') startPopStar(resumeState);
     if (id === 'paopao') startPaopao(resumeState);
+    if (id === 'zuma') activeGameController = createZumaGame(resumeState, modularGameEnvironment(id));
+    if (id === 'watersort') activeGameController = createWaterSortGame(resumeState, modularGameEnvironment(id));
     if (id === 'game1010') startGame1010(resumeState);
     if (id === 'turkey') startTurkey(resumeState);
     if (id === 'spider') startSpider(resumeState);
@@ -11945,6 +12020,21 @@ export async function initWanbanXiaowu() {
     if (id === 'chinesechess') startChineseChess(resumeState);
     if (id === 'tetris') startTetris(resumeState);
     scheduleFitGameSurface();
+  }
+  function modularGameEnvironment(id) {
+    return {
+      root:qs('#wb-gamebox'),
+      document:getHostDocument(),
+      window:getHostWindow(),
+      save:(state, force) => saveProgress(id, state, force ? { immediate:true } : undefined),
+      clear:() => clearProgress(id),
+      setScore:value => setScore(id, value),
+      finish:(title, scoreText, result, meta) => showGameOver(id, title, scoreText, result, meta),
+      speak:event => speak(id, event),
+      toast,
+      isPaused:() => gamePaused,
+      isActive:() => currentGame === id && gameStarted,
+    };
   }
   function togglePause() {
     if (!gameStarted) return;
@@ -17888,28 +17978,31 @@ function showGameRecords(game, page) {
       return score;
     }
     function scoreMove(m,b=board){ const p=b[m.from], cap=b[m.to], nb=b.slice(); applyMoveTo(nb,m); const see=(cap?(value[type(cap)]||0)*10-(value[type(p)]||0):0), check=inCheck(nb,'user')?500:0; return see + check + evalXq(nb) + Math.random()*3; }
+    function orderXqMoves(moves,b){
+      return moves.map((m,i)=>({ m, i, score:scoreMove(m,b) })).sort((a,z)=>z.score-a.score || a.i-z.i).map(item=>item.m);
+    }
     function searchXq(b, side, depth, alpha, beta, ply){
+      if(depth<=0) return evalXq(b);
       const moves=legalMovesFor(b, side);
       if(!moves.length) return side==='ta' ? -30000 + ply : 30000 - ply;
-      if(depth<=0) return evalXq(b);
-      moves.sort((a,bm)=>scoreMove(bm,b)-scoreMove(a,b));
+      const orderedMoves=depth>1 ? orderXqMoves(moves,b) : moves;
       if(side==='ta'){
         let best=-Infinity;
-        for(const m of moves){ const nb=b.slice(); applyMoveTo(nb,m); const v=searchXq(nb,'user',depth-1,alpha,beta,ply+1); if(v>best) best=v; if(v>alpha) alpha=v; if(alpha>=beta) break; }
+        for(const m of orderedMoves){ const nb=b.slice(); applyMoveTo(nb,m); const v=searchXq(nb,'user',depth-1,alpha,beta,ply+1); if(v>best) best=v; if(v>alpha) alpha=v; if(alpha>=beta) break; }
         return best;
       }
       let best=Infinity;
-      for(const m of moves){ const nb=b.slice(); applyMoveTo(nb,m); const v=searchXq(nb,'ta',depth-1,alpha,beta,ply+1); if(v<best) best=v; if(v<beta) beta=v; if(alpha>=beta) break; }
+      for(const m of orderedMoves){ const nb=b.slice(); applyMoveTo(nb,m); const v=searchXq(nb,'ta',depth-1,alpha,beta,ply+1); if(v<best) best=v; if(v<beta) beta=v; if(alpha>=beta) break; }
       return best;
     }
     function ai(){
       if(over||gamePaused||busy||turn!=='ta') return;
       const moves=legalMoves('ta');
       if(!moves.length) return finish(inCheck(board,'ta')?'user_win':'ta_win', inCheck(board,'ta')?'你赢了':'游戏结束', inCheck(board,'ta')?'将死':'困毙');
-      const depth=moves.length>42?2:3;
-      moves.sort((a,b)=>scoreMove(b)-scoreMove(a));
-      let best=moves[0], bestScore=-Infinity;
-      for(const m of moves){ const nb=board.slice(); applyMoveTo(nb,m); const v=searchXq(nb,'user',depth-1,-Infinity,Infinity,1) + Math.random()*2; if(v>bestScore){ bestScore=v; best=m; } }
+      const depth=2;
+      const orderedMoves=orderXqMoves(moves,board);
+      let best=orderedMoves[0], bestScore=-Infinity;
+      for(const m of orderedMoves){ const nb=board.slice(); applyMoveTo(nb,m); const v=searchXq(nb,'user',depth-1,-Infinity,Infinity,1) + Math.random()*2; if(v>bestScore){ bestScore=v; best=m; } }
       doMove(best,'ta');
     }
     function draw(){
