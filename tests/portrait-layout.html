@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pet portrait layout regression</title>
+<style>
+  .scene { position:relative; height:auto; aspect-ratio:1; background:#e6edd9; }
+  #desktop { width:520px; } #mobile { width:280px; }
+</style>
+<div class="scene" id="desktop"><img class="wb-pet-npc-portrait" src="../assets/pets/portraits/shenqibai/neutral.png" alt=""></div>
+<div class="scene" id="mobile"><img class="wb-pet-npc-portrait" src="../assets/pets/portraits/shenqibai/smile.png" alt=""></div>
+<pre id="result">PENDING</pre>
+<script type="module">
+  try {
+    const runtime = await (await fetch('../src/runtime/wanban-app.js')).text();
+    const css = runtime.match(/\.wb-pet-npc-portrait \{[^}]+\}/)?.[0];
+    if (!css) throw new Error('Missing runtime portrait styles');
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    const results = [];
+    for (const scene of document.querySelectorAll('.scene')) {
+      const image = scene.querySelector('img');
+      await image.decode();
+      const parent = scene.getBoundingClientRect();
+      const portrait = image.getBoundingClientRect();
+      if (image.naturalWidth !== 128 || image.naturalHeight !== 128) throw new Error('Wrong image dimensions');
+      if (Math.abs(parent.right - portrait.right) > 1 || Math.abs(parent.bottom - portrait.bottom) > 1) throw new Error('Portrait is not flush to bottom right');
+      if (Math.abs(portrait.width / parent.width - 1 / 3) > .001 || Math.abs(portrait.width - portrait.height) > 1) throw new Error('Wrong portrait proportions');
+      if (getComputedStyle(image).pointerEvents !== 'none') throw new Error('Portrait blocks story taps');
+      results.push(scene.id + ': PASS (' + Math.round(portrait.width) + 'px)');
+    }
+    document.querySelector('#result').textContent = results.join('\n');
+    document.body.dataset.result = 'PASS';
+  } catch (error) {
+    document.body.dataset.result = 'FAIL';
+    document.querySelector('#result').textContent = String(error);
+  }
+</script>

@@ -1,0 +1,31 @@
+.wb-redpanda {
+  width: 128px;
+  height: 128px;
+  background-repeat:no-repeat;
+  background-size:400% 100%;
+  image-rendering:auto;
+  animation:wbRedpandaFrames 2s steps(4) infinite;
+}
+
+.wb-redpanda.baby.normal { background-image:url('./baby/normal.png'); }
+.wb-redpanda.baby.happy { background-image:url('./baby/happy.png'); }
+.wb-redpanda.baby.eat { background-image:url('./baby/eat.png'); }
+.wb-redpanda.baby.sleep { background-image:url('./baby/sleep.png'); }
+.wb-redpanda.baby.sad { background-image:url('./baby/sad.png'); }
+
+.wb-redpanda.adult.normal { background-image:url('./adult/normal.png'); }
+.wb-redpanda.adult.happy { background-image:url('./adult/happy.png'); }
+.wb-redpanda.adult.eat { background-image:url('./adult/eat.png'); }
+.wb-redpanda.adult.sleep { background-image:url('./adult/sleep.png'); }
+.wb-redpanda.adult.sad { background-image:url('./adult/sad.png'); }
+
+.wb-redpanda.magic.normal { background-image:url('./magic/normal.png'); }
+.wb-redpanda.magic.happy { background-image:url('./magic/happy.png'); }
+.wb-redpanda.magic.eat { background-image:url('./magic/eat.png'); }
+.wb-redpanda.magic.sleep { background-image:url('./magic/sleep.png'); }
+.wb-redpanda.magic.sad { background-image:url('./magic/sad.png'); }
+
+@keyframes wbRedpandaFrames {
+  from { background-position-x:0; }
+  to { background-position-x:100%; }
+}

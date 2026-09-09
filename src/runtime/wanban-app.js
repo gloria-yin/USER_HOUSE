@@ -3,6 +3,9 @@ import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 import { createZumaGame } from '../games/zuma.js';
 import { createWaterSortGame } from '../games/water-sort.js';
+import { createFlappyBirdGame } from '../games/flappy-bird.js';
+import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js';
+import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
 
 // Runtime migrated from 益智小游戏/玩伴小屋V1.0.1.json.
 // Keep this file behavior-compatible with the original script; split new code into src/* modules when extending.
@@ -84,6 +87,7 @@ export async function initWanbanXiaowu() {
   const STORAGE_LINE_PRESET_SELECTION = SCRIPT_ID + '_linePresetSelection_v1';
   const STORAGE_API_PRESETS = SCRIPT_ID + '_apiPresets_v1';
   const STORAGE_WORLD_PRESETS = SCRIPT_ID + '_worldPresets_v1';
+  const STORAGE_ROLE_CONTEXTS = SCRIPT_ID + '_roleContexts_v2';
   const STORAGE_SUMMARIES = SCRIPT_ID + '_summaries_v1';
   const STORAGE_SUMMARY_REQ = SCRIPT_ID + '_summaryReq_v1';
   const STORAGE_PROGRESS = SCRIPT_ID + '_progress_v1';
@@ -134,6 +138,7 @@ export async function initWanbanXiaowu() {
   let firstMoverAwaitingUserAction = false;
   let currentRoundRecord = false;
   let currentRoundLineEvents = [];
+  let currentRoundRoleContext = null;
   let currentRoundTheaterInfo = null;
   let progressSaveTimers = {};
   let progressSaveCache = {};
@@ -164,6 +169,35 @@ export async function initWanbanXiaowu() {
 
   const GAME_ICON_BASE = new URL('../../assets/game-icons/', import.meta.url).href;
   const PET_ASSET_BASE = new URL('../../assets/pets/', import.meta.url).href;
+  const PET_EGG_OPTIONS = Object.freeze([
+    { id:'blue', label:'蓝色蛋' },
+    { id:'purple', label:'紫色蛋' },
+    { id:'pink', label:'粉色蛋' },
+    { id:'green', label:'绿色蛋' },
+    { id:'gold', label:'金色蛋' },
+    { id:'white', label:'白色蛋' }
+  ]);
+  const PET_EGG_IDS = Object.freeze(PET_EGG_OPTIONS.map(item => item.id));
+  const PET_EGG_LABELS = Object.freeze(Object.fromEntries(PET_EGG_OPTIONS.map(item => [item.id, item.label])));
+  const PET_SPECIES_OPTIONS = Object.freeze([
+    { id:'rabbit', label:'兔子' },
+    { id:'dog', label:'小狗' },
+    { id:'cat', label:'猫咪' },
+    { id:'bird', label:'飞鸟' },
+    { id:'bala', label:'水豚' },
+    { id:'fox', label:'狐狸' },
+    { id:'otter', label:'水獭' },
+    { id:'hedgehog', label:'刺猬' },
+    { id:'redpanda', label:'小熊猫' },
+    { id:'alpaca', label:'羊驼' },
+    { id:'sikadeer', label:'梅花鹿' }
+  ]);
+  const PET_SPECIES_IDS = Object.freeze(PET_SPECIES_OPTIONS.map(item => item.id));
+  const PET_SPECIES_LABELS = Object.freeze(Object.fromEntries(PET_SPECIES_OPTIONS.map(item => [item.id, item.label])));
+  const PET_DEFAULT_STORY_NAMES = Object.freeze({
+    rabbit:'芽芽', dog:'阿巡', cat:'铃雪', bird:'岚羽', bala:'溪团', fox:'灯尾',
+    otter:'沫沫', hedgehog:'栗团', redpanda:'枫团', alpaca:'云糕', sikadeer:'星枝'
+  });
   const FOX_ASSET_BASE = PET_ASSET_BASE + 'fox/';
   const FOX_HOUSE_DAY_URL = PET_ASSET_BASE + 'scene/house-day.png';
   const APP_ICON_URL = GAME_ICON_BASE + 'wanban.png';
@@ -200,6 +234,7 @@ export async function initWanbanXiaowu() {
     shuerte: { id: 'shuerte', name: '舒尔特方格', mode: 'single', unit: '分', icon: '舒', iconImage: GAME_ICON_BASE + 'shuerte.png' },
     zuma: { id: 'zuma', name: '祖玛', mode: 'single', unit: '分', icon: '珠', iconImage: GAME_ICON_BASE + 'zuma.png' },
     watersort: { id: 'watersort', name: '倒瓶子', mode: 'single', unit: '分', icon: '瓶', iconImage: GAME_ICON_BASE + 'watersort.png' },
+    flappybird: { id: 'flappybird', name: '像素鸟', mode: 'single', unit: '分', icon: '鸟', iconImage: GAME_ICON_BASE + 'flappybird.png' },
     ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: GAME_ICON_BASE + 'ludo.jpg' },
     guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: GAME_ICON_BASE + 'guessnumber.jpg' },
     wordguess: { id: 'wordguess', name: '我说你猜', mode: 'double', unit: '胜', icon: '谜', iconImage: GAME_ICON_BASE + 'wordguess.jpg' },
@@ -290,7 +325,8 @@ export async function initWanbanXiaowu() {
     popstar: '10×10彩色星星棋盘。点击2个及以上上下左右相连的同色星星即可消除，得分为消除数量×消除数量×5，8/12/16个以上大块会有额外奖励。困难模式每关有步数限制，消除、打乱、单消都会消耗1步；简单模式没有步数限制，可以一直消到没有可消除组合。无可消除组合或困难模式步数用完时本关结算，剩余10个以内有少量奖励；如果无可消除组合且还剩步数，会按未用步数奖励。累计分数达到当前关目标就进入下一关，否则游戏结束。',
     paopao: '交错网格泡泡射击。按住或拖动瞄准，松开发射；泡泡会在左右墙反弹，撞到天花板或现有泡泡后吸附到最近空槽。3个及以上同色相连会消除，不再连着顶部的泡泡会掉落得分。初始每发射10次顶部压下一行，每下压3行后间隔减少1次，最低固定为5次；场上只剩5个以内会立刻补压一行。任意泡泡越过红色警戒线即结束。每局有5个炸弹，炸弹会消除落点周围3格泡泡。',
     zuma: '青蛙位于轨道中央，按住棋盘瞄准、拖动调整方向，松手后吐出彩珠；发射瞬间青蛙口中的珠子会立即切换为下一颗。整局只有一条持续运动的珠链，没有关卡或轮次；入口会按珠链前进距离持续补入新珠子，累计生成后颜色从4种逐步增加到最多6种。彩珠撞到珠链后会插入，连续3颗及以上同色珠会先膨胀爆裂并淡出，随后前方珠链平滑回退；回退接合后如果再次凑成同色三消，会继续播放爆裂和回退连锁。清空整条珠链奖励600分，之后仍会继续生成新珠子，只有珠链进入终点洞口才结束。珠链较短时会适当减速；速度也会按每450分、累计消除22颗以及当前超过24颗的珠链数量继续提升，最高84。下方炸弹可炸掉命中点附近5颗珠，减速可让珠链减速8秒，彩虹珠会变成命中珠子的颜色。',
-    watersort: '点击一个非空瓶子，再点击目标瓶子，将源瓶顶部连续同色的水一次倒入目标瓶。目标瓶必须为空，或顶部颜色相同，并且仍有容量；每瓶最多4层。所有非空瓶都装满4层同色水即可进入下一关，关卡无限生成。颜色会从3种逐步增加到最多10种，第9关起初始空瓶由2只减为1只，反向打乱深度也会逐步提高并继续验证解序列。撤回会逐关补充，提示每2关补充，额外空瓶每5关补充；可随时点击结算结束本局。',
+    watersort: '点击一个非空瓶子，再点击目标瓶子，将源瓶顶部连续同色的水一次倒入目标瓶。目标瓶必须为空，或顶部颜色相同，并且仍有容量；每瓶最多4层。所有非空瓶都装满4层同色水即可进入下一关。每3关提升一档，从3色5瓶逐档增加到18色20瓶。水量随机分散到所有瓶子，不固定留空瓶，也不预先完成整瓶同色水。每关只能加1瓶，开局最多20瓶，加瓶后总数最多21。21瓶按7×3显示，其他数量按容器宽高动态排列和缩放。初始撤回10、提示5、空瓶5；每关补撤回1，每2关补提示1，每3关补空瓶1。第118关达到最高结构档，第121关起维持专家难度并持续生成不同题面。所有新题和提示均验证完整通关路径，求解失败不扣提示。返回或关闭保存当前关进度，重置同题不补发道具；结算才结束本局。',
+    flappybird: '单人无尽像素飞行游戏。电脑按空格键，手机或鼠标点击画面，每次让小鸟向上拍翅；不操作时小鸟会在重力下下坠。完整穿过一组上下管道得1分，碰到管道、画面顶部或地面立即结束。前10分保持接近经典的入门速度，随后管道逐步加速、缝隙缓慢缩小、间距缓慢缩短，到达可玩上限后保持稳定无尽难度。没有道具和复活，每组管道只计分一次。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
     spider: '经典蜘蛛纸牌的无尽模式。开局可选择简单或困难：简单模式全部使用黑桃同一花色，困难模式保持黑桃与红桃两种花色。卡牌可按点数递减叠放，但只有同花色严格递减的连续牌组能整体移动；同花色K到A完整序列会自动收起。牌库无限，每次发牌后会按完成牌组数给出步数限制，倒计时归零会强制发牌。存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
@@ -398,7 +434,8 @@ export async function initWanbanXiaowu() {
     popstar: { start:'消灭星星开局，10×10彩色星星棋盘已生成。', first_clear:'当前关第一次消除星星。', small_clear:'玩家只消除了2个星星。', high_clear:'玩家一次消除4个及以上星星，获得较高分数。', level_clear:'玩家通过当前关。', record:'消灭星星刷新历史最高分。', cheat:'玩家使用打乱或单消道具。', target_met:'玩家当前累计分数首次达到本关通关分数。', gameover:'消灭星星没有可消除组合且分数未达到本关目标。', random:'观看消灭星星时的碎碎念。' },
     paopao: { start:'泡泡龙开局，顶部已有5行泡泡，玩家准备瞄准发射。', aim:'玩家按住并拖动，虚线轨迹正在根据墙壁反弹预测落点。', clear:'玩家成功消除同色泡泡。', clear_5:'玩家一次性消除超过5个泡泡。', drop:'失去顶部连接的泡泡悬空掉落。', danger:'泡泡群快要接近红色警戒线。', score_1000:'泡泡龙本局分数每增加1000分时触发。', bomb:'玩家使用炸弹泡泡，炸掉落点周围3格泡泡。', record:'泡泡龙刷新历史最高分。', gameover:'泡泡越过红色警戒线，泡泡龙本局结束。', random:'观看泡泡龙时的待机碎碎念。' },
     zuma: { start:'祖玛无尽模式开局，青蛙准备向持续移动的珠链发射彩珠。', resume:'继续祖玛无尽模式存档。', shoot:'玩家从青蛙口中发射普通彩珠。', swap:'玩家交换当前珠和下一颗珠。', clear:'玩家消除3到4颗同色珠，彩珠播放爆裂淡出后珠链开始回退。', clear_5:'玩家一次消除5颗以上同色珠，彩珠播放爆裂淡出后珠链开始回退。', chain:'珠链平滑回退接合后再次形成同色三消，继续播放爆裂和回退连锁。', miss:'玩家发射的珠子没有击中珠链。', danger:'珠链前端已经接近终点洞口。', bomb:'炸弹命中但只清除少量珠子。', bomb_big:'炸弹命中并清除5颗珠子。', slow:'玩家使用减速道具，珠链减速8秒。', rainbow:'彩虹珠命中后变为目标颜色。', spawn_pressure:'珠链入口累计生成的珠子跨过新的50颗节点。', clear_all:'玩家清空整条珠链获得600分，入口仍会继续生成新珠子。', speed_up:'祖玛动态速度跨过新的阶段。', record:'祖玛刷新历史最高分。', gameover:'珠链进入终点洞口，祖玛无尽模式结束。', random:'观看祖玛时的待机碎碎念。' },
-    watersort: { start:'倒瓶子无尽模式开局，彩色水层已经按可解顺序打乱。', resume:'继续倒瓶子无尽模式存档。', pour:'玩家把顶部水层倒入空瓶。', merge:'玩家把水倒到顶部同色的目标瓶。', streak:'玩家连续3步以上合并同色水。', invalid:'玩家选择了颜色不匹配或已满的目标瓶。', undo:'玩家使用撤回道具。', hint:'玩家使用提示并高亮一对建议瓶子。', extra:'玩家增加一个额外空瓶。', reset:'玩家重置当前关。', perfect:'玩家未使用道具完成当前关。', level_clear:'玩家把当前关所有非空瓶整理成满瓶单色。', level_up:'倒瓶子进入下一关并增加颜色、减少空瓶或加深打乱。', settle:'玩家主动结算倒瓶子无尽模式。', record:'倒瓶子刷新历史最高分。', random:'观看倒瓶子时的待机碎碎念。' },
+    watersort: { start:'倒瓶子无尽模式开局，彩色水层已经按可解顺序打乱。', resume:'继续倒瓶子无尽模式存档。', pour:'玩家把顶部水层倒入空瓶。', merge:'玩家把水倒到顶部同色的目标瓶。', streak:'玩家连续3步以上合并同色水。', invalid:'玩家选择了颜色不匹配或已满的目标瓶。', undo:'玩家使用撤回道具。', hint:'玩家使用提示并高亮一对建议瓶子。', extra:'玩家增加一个额外空瓶。', reset:'玩家重置当前关。', perfect:'玩家未使用道具完成当前关。', level_clear:'玩家把当前关所有非空瓶整理成满瓶单色。', level_up:'倒瓶子进入下一关，每3关提升一档，增加颜色或提高颜色遮挡和分散程度。', settle:'玩家主动结算倒瓶子无尽模式。', record:'倒瓶子刷新历史最高分。', random:'观看倒瓶子时的待机碎碎念。' },
+    flappybird: { start:'像素鸟已在起点就绪，第一次空格或点击将让它起飞。', resume:'继续像素鸟无尽模式存档，鸟和管道从暂停的位置恢复。', flap:'玩家拍翅调整鸟的高度。', score:'玩家安全穿过一组管道并得1分。', streak:'玩家连续穿过了5的倍数组管道。', close_call:'鸟以不超过8像素的余量贴近管道边缘通过。', speed_up:'像素鸟进入新的难度速度阶段。', high_score:'玩家的本局分数达到10、25、50或100分里程碑。', crash:'鸟碰到管道、顶部或地面，本局结束。', record:'像素鸟刷新历史最高分。', random:'观看像素鸟飞行时的待机碎碎念。' },
     game1010: { start:'1010!开局，10×10棋盘为空，底部出现3个不可旋转方块。', place:'玩家成功放置一个候补方块。', clear:'玩家消除了一行或一列，30%概率触发。', clear_3:'玩家一次性消除超过3行/列。', score_1000:'1010!本局分数每增加1000分时触发。', tool:'玩家使用重新生成或小锤子道具。', low_space:'棋盘剩余空格少于5个，局面接近死局。', record:'1010!刷新历史最高分。', gameover:'没有任何剩余候补方块可以放入棋盘，且道具已经用完，1010!结束。', random:'观看1010!方块拼图时的碎碎念。' },
     turkey: { start:'土耳其方块开局，底部四行横向方块已经出现。', first_clear:'玩家第一次消除完整横行。', clear_2:'玩家同时消除2行。', clear_3:'玩家同时消除3行及以上。', chain_3:'同一次移动连锁达到第3轮。', combo_5:'连续5次普通移动都产生消除。', score_1000:'土耳其方块分数首次达到1000。', score_5000:'土耳其方块分数首次达到5000。', record:'土耳其方块刷新历史最高分。', top_3:'当前最高方块进入顶部3行。', top_row:'顶行已经被占用。', no_clear_8:'连续8次普通移动没有消除。', thunder:'玩家使用云雷道具。', stardust:'玩家使用星尘收集器。', hammer:'玩家使用小锤粉碎机。', danger_tool:'顶部危险时使用道具并成功存活。', gameover:'方块被推到棋盘顶部之外，土耳其方块结束。', random:'观看土耳其方块时的待机碎碎念。' },
     spider: { start:'无尽蜘蛛纸牌开局，十列牌堆已按所选单花色或双花色难度发好。', complete_spade:'玩家收起一副完整黑桃K到A。', complete_heart:'玩家收起一副完整红桃K到A。', chain_3:'同一次结算连续收起三副以上完整牌组。', collection_10:'已完成牌组收藏区累计达到10副的倍数。', empty_col:'玩家清空一整列，获得整理空间。', auto_3:'玩家尝试发牌或步数倒计时归零时存在空列，需要先填满空列。', deal:'新的一排牌主动或强制发到十列底部。', undo:'玩家使用撤销道具回到上一步。', eliminate:'玩家使用消除道具移除一摞同花色连续牌组。', danger:'任意牌列达到30张临界高度。', bad_deal:'连续发牌后没有明显可移动组合，局面很倒霉。', clear_table:'十列牌堆全部清空，即将重新发牌继续无尽模式。', record:'无尽蜘蛛纸牌刷新历史最高分。', gameover:'牌列超过安全高度，无尽蜘蛛纸牌本局结束。', random:'观看无尽蜘蛛纸牌时的待机碎碎念。' },
@@ -608,7 +645,7 @@ export async function initWanbanXiaowu() {
   }
   function scores() {
     const loaded = safeObject(loadJSON(STORAGE_SCORES, {}));
-    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, shuerte: 0, uyangle: 0, screw: 0, popstar: 0, paopao: 0, zuma: 0, watersort: 0, game1010: 0, turkey: 0, spider: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 }, westernchess: { user: 0, ta: 0 }, chinesechess: { user: 0, ta: 0 } };
+    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, shuerte: 0, uyangle: 0, screw: 0, popstar: 0, paopao: 0, zuma: 0, watersort: 0, flappybird: 0, game1010: 0, turkey: 0, spider: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 }, westernchess: { user: 0, ta: 0 }, chinesechess: { user: 0, ta: 0 } };
     ['ludo','guessnumber','wordguess','tictactoe','gomoku','territory','oldmaid','reversi','bombnumber','connect4d','draughts','westernchess','chinesechess'].forEach(k => { if (typeof loaded[k] === 'number') loaded[k] = { user: loaded[k], ta: 0 }; });
     return Object.assign(base, loaded);
   }
@@ -618,20 +655,20 @@ export async function initWanbanXiaowu() {
   function saveRoleLines(v) { saveJSON(STORAGE_ROLE_LINES, v); }
   function linePresetSelection() { return safeObject(loadJSON(STORAGE_LINE_PRESET_SELECTION, {})); }
   function saveLinePresetSelection(v) { saveJSON(STORAGE_LINE_PRESET_SELECTION, v); }
-  function normalizePresetName(name) { return String(name || '默认语录').trim().slice(0, 24) || '默认语录'; }
+  function normalizePresetName(name) { return String(name || '默认语录').trim() || '默认语录'; }
   function roleLineScopeForName(game, name) { return String(name || companionName()).trim() + '::' + game; }
   function roleLineScope(game) { return roleLineScopeForName(game, companionName()); }
   function currentLinePreset(game) { const sel = linePresetSelection(); return normalizePresetName(sel[roleLineScope(game)] || companionName()); }
-  function activeGameRoleName(game) { const id = game || currentGame; return id && GAME_META[id] ? normalizePresetName(currentLinePreset(id)) : companionName(); }
+  function activeGameRoleName(game) { const id = game || currentGame; if (gameStarted && id === currentGame && currentRoundRoleContext) return currentRoundRoleContext.charName; return id && GAME_META[id] ? normalizePresetName(currentLinePreset(id)) : companionName(); }
   function setCurrentLinePreset(game, name) { const sel = linePresetSelection(); sel[roleLineScope(game)] = normalizePresetName(name); saveLinePresetSelection(sel); }
-  function roleLineSet(game, preset) { const all = roleLines(); const name = normalizePresetName(preset || currentLinePreset(game)); const scope = all[roleLineScope(game)] || {}; const direct = scope[name]; if (direct) return direct; const roleScope = all[roleLineScopeForName(game, name)] || {}; return roleScope[name] || Object.keys(roleScope).map(k => roleScope[k]).find(v => validLineSet(game, v)) || null; }
+  function roleLineSet(game, preset) { const name = normalizePresetName(preset || activeGameRoleName(game)); return roleLineSetForName(game, name, name); }
   function roleLineSetForName(game, roleName, preset) { const all = roleLines(); const scope = all[roleLineScopeForName(game, roleName)] || {}; return scope[normalizePresetName(preset || roleName)] || null; }
-	  function activeLineSet(game) { return Object.assign({}, DEFAULT_LINES[game] || {}, lines()[game] || {}, roleLineSet(game) || {}); }
+	  function activeLineSet(game) { return Object.assign({}, DEFAULT_LINES[game] || {}, roleLineSet(game) || {}); }
   function presetNamesForGame(game) { const scope = roleLines()[roleLineScope(game)] || {}; const names = Object.keys(scope).filter(Boolean).concat(roleNamesForLineStorage()); const current = normalizePresetName(companionName()); if (!names.includes(current)) names.unshift(current); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
   function saveRoleLineSet(game, preset, data) { const all = roleLines(); const scopeKey = roleLineScope(game); if (!all[scopeKey]) all[scopeKey] = {}; all[scopeKey][normalizePresetName(preset)] = data; saveRoleLines(all); }
   function saveRoleLineSetForName(game, roleName, preset, data) { const all = roleLines(); const scopeKey = roleLineScopeForName(game, roleName); if (!all[scopeKey]) all[scopeKey] = {}; all[scopeKey][normalizePresetName(preset || roleName)] = data; saveRoleLines(all); }
   function saveTheaterCache() { saveJSON(STORAGE_THEATERS, theaterCache || {}); }
-  function roleNamesForLineStorage() { const names = [companionName()]; worldPresets().forEach(x => { if (x && x.name) names.push(x.name); }); Object.keys(roleLines()).forEach(k => { const name = String(k).split('::')[0]; if (name) names.push(name); }); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
+  function roleNamesForLineStorage() { const names = [companionName(), ...Object.keys(safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {})))]; worldPresets().forEach(x => { if (x && x.name) names.push(x.name); }); Object.keys(roleLines()).forEach(k => { const name = String(k).split('::')[0]; if (name) names.push(name); }); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
   function validLineSet(game, set) {
     if (!set || typeof set !== 'object' || Array.isArray(set)) return false;
     const keys = Object.keys(DEFAULT_LINES[game] || {});
@@ -692,7 +729,49 @@ export async function initWanbanXiaowu() {
     return { apiUrl:cfg.apiUrl || '', apiKey:cfg.apiKey || '', apiModel:cfg.apiModel || '' };
   }
   function worldPresets() { return safeArray(loadJSON(STORAGE_WORLD_PRESETS, [])); }
-  function saveWorldPresets(v) { saveJSON(STORAGE_WORLD_PRESETS, v); }
+  function saveWorldPresets(v) {
+    const previous = worldPresets();
+    const snapshots = v.map(pr => Object.assign({}, pr, captureRoleContext(pr, pr.charName || pr.name)));
+    saveJSON(STORAGE_WORLD_PRESETS, snapshots);
+    snapshots.forEach((pr, index) => {
+      const old = previous.find(item => item.name === pr.name);
+      if (!old || JSON.stringify(old) !== JSON.stringify(v[index])) saveRoleContext(pr);
+    });
+  }
+  function saveRoleContext(role) {
+    const all = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}));
+    all[role.charName] = isolatedRole(role);
+    saveJSON(STORAGE_ROLE_CONTEXTS, all);
+  }
+  function hostCharacterForRole(name, avatar) {
+    const ctx = getHostContext() || {};
+    const chars = Array.isArray(ctx.characters) ? ctx.characters : [];
+    if (avatar) return chars.find(c => (c.avatar || c.data?.avatar) === avatar) || null;
+    const matches = chars.filter(c => String(c.data?.name || c.name || '') === name);
+    return matches.length === 1 ? matches[0] : null;
+  }
+  function hostRoleName() {
+    const ctx = getHostContext() || {};
+    const char = ctx.characters?.[ctx.characterId] || ctx.character;
+    return String(char?.data?.name || char?.name || ctx.name2 || '');
+  }
+  function captureRoleContext(source, name) {
+    const role = isolatedRole(source, name);
+    const card = hostCharacterForRole(role.charName, role.characterAvatar);
+    const isCurrent = role.charName === hostRoleName() && !getHostContext()?.groupId;
+    if (source.roleContextVersion !== 2) {
+      role.characterAvatar = card?.avatar || card?.data?.avatar || '';
+      role.characterCardSnapshot = card ? JSON.parse(JSON.stringify(card.data || card)) : role.characterCardSnapshot;
+      if (role.charDescMode !== 'manual' && card) role.charDescriptionSnapshot = characterCardText(card);
+      role.defaultAvatarUrl = findCharacterAvatarByName(role.charName) || role.defaultAvatarUrl;
+      role.userDescriptionSnapshot = role.userDescSource === 'auto' && isCurrent
+        ? (readCurrentUserPersonaFromST() || role.userPersona) : role.userPersona;
+      if (role.userName === '{{user}}' && isCurrent) role.userName = readCurrentUserNameFromST() || '{{user}}';
+      role.summarySnapshot = role.summarySnapshot || summarySnapshotFromId(role.summaryId);
+      role.chatSnapshot = role.injectChat && isCurrent ? recentChatText(8) : '';
+    }
+    return role;
+  }
   function worldPresetForRole(roleName) {
     const name = normalizePresetName(roleName || companionName());
     return worldPresets().find(x => normalizePresetName(x && x.name) === name) || null;
@@ -700,9 +779,29 @@ export async function initWanbanXiaowu() {
   function rolePromptConfig(roleName, baseCfg, extra) {
     const role = normalizePresetName(roleName || companionName());
     const pr = worldPresetForRole(role);
-    const cfg = Object.assign({}, baseCfg || settings(), pr || {}, extra || {});
-    cfg.charName = role;
-    return cfg;
+    const stored = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}))[role];
+    const base = baseCfg || settings();
+    const source = (extra && extra.name ? extra : null)
+      || (gameStarted && currentRoundRoleContext?.charName === role ? currentRoundRoleContext : null)
+      || stored || pr || (role === companionName() ? base : {});
+    const snapshot = captureRoleContext(source, role);
+    if (!stored) saveRoleContext(snapshot);
+    const cfg = withRoleContext(base, snapshot);
+    return extra && extra.name ? cfg : Object.assign(cfg, extra || {}, { charName:role, roleContextVersion:2 });
+  }
+  function roleGenerationInput(cfg) {
+    if (cfg.roleContextVersion !== 2) return '';
+    return [
+      '【本次独立角色快照】',
+      '{{char}}：' + cfg.charName,
+      '{{user}}：' + cfg.userName,
+      '角色完整设定：\n' + currentCharDescription(cfg),
+      '用户设定：\n' + currentUserDescription(cfg),
+      '角色世界书：\n' + (selectedWorldText(cfg) || cfg.worldText || '无'),
+      '角色总结：\n' + (selectedSummaryText(cfg) || '无'),
+      '角色聊天：\n' + (cfg.injectChat ? (cfg.chatSnapshot || '无') : '不注入'),
+      '角色语言：' + (cfg.specialLanguageEnabled ? cfg.specialLanguage : '无额外要求')
+    ].join('\n');
   }
   function applyRoleToAllGames(roleName) {
     const role = normalizePresetName(roleName || companionName());
@@ -731,7 +830,7 @@ export async function initWanbanXiaowu() {
   function buildProgressEntry(game, state) {
     const prev = progressSaveCache[game] || progress()[game] || {};
     const startedAt = (state && state.startedAt) || prev.startedAt || gameStartAt || Date.now();
-    const extra = game === currentGame ? { lineEvents: currentRoundLineEvents.slice(-120) } : {};
+    const extra = game === currentGame ? { lineEvents: currentRoundLineEvents.slice(-120), roleContext:currentRoundRoleContext } : {};
     const durationMs = game === currentGame ? currentGameDurationMs() : (state && state.durationMs) || prev.durationMs || 0;
     const petRewardNextMs = game === currentGame ? gamePetRewardNextMs : (state && state.petRewardNextMs) || prev.petRewardNextMs || nextPetGameRewardThreshold(durationMs);
     return Object.assign({ savedAt: Date.now(), startedAt }, extra, state || {}, { durationMs, petRewardNextMs });
@@ -937,6 +1036,7 @@ export async function initWanbanXiaowu() {
     if (game === 'paopao') return !!state.score || !!state.shots || !!(state.bubbles && state.bubbles.length); 
     if (game === 'zuma') return !!state.score || !!(state.details && (state.details.shots || state.details.totalBallsGenerated)) || !!(state.chain && state.chain.length);
     if (game === 'watersort') return !!state.score || Number(state.level || 1) > 1 || !!state.moves || !!(state.bottles && state.bottles.length);
+    if (game === 'flappybird') return !!state.started && !state.over && !!state.bird;
     if (game === 'game1010') return !!state.score || !!(state.grid && state.grid.some(row => row && row.some(Boolean))) || !!(state.pieces && state.pieces.some(p => p && !p.used));
     if (game === 'turkey') return !!state.score || !!state.moves || !!(state.blocks && state.blocks.length);
     if (game === 'blackjack') return !!(state.level && (state.round || state.total || state.userScore || state.charScore || (state.user && state.user.length) || (state.char && state.char.length)));
@@ -1051,7 +1151,7 @@ export async function initWanbanXiaowu() {
   function recordGameResult(game, title, scoreText, explicitResult, meta) {
     commitGameActiveDuration(false);
     const all = records(); const g = GAME_META[game] || { name: game, mode: 'single' }; const result = explicitResult || inferResult(game, title, scoreText);
-    const item = { id:'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), playedAt: new Date().toLocaleString(), savedAt: Date.now(), durationMs: currentGameDurationMs(), game: g.name, result, scoreText: displayCharTextForGame(scoreText || '', game), companion: displayCharNameForGame(game), details: meta && meta.details ? meta.details : null, log: '' };
+    const item = { id:'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), playedAt: new Date().toLocaleString(), savedAt: Date.now(), durationMs: currentGameDurationMs(), game: g.name, result, scoreText: displayCharTextForGame(scoreText || '', game), companion: displayCharNameForGame(game), details: meta && meta.details ? meta.details : null, log: '', roleContext:currentRoundRoleContext ? isolatedRole(currentRoundRoleContext) : null };
     if (!all[game]) all[game] = []; all[game].unshift(item); all[game] = all[game].slice(0, 100); saveRecords(all); petApplyGameReward(g, result, item.durationMs, currentRoundRecord); return item;
   }
   function formatDuration(ms) { const sec = Math.max(0, Math.round((ms || 0) / 1000)); const m = Math.floor(sec / 60), s = sec % 60; return (m ? m + '分' : '') + s + '秒'; }
@@ -1119,6 +1219,7 @@ export async function initWanbanXiaowu() {
     if (game === 'paopao') return ['时间','用时','分数','发射','下压','陪伴者','日志','操作'];
     if (game === 'zuma') return ['时间','用时','分数','消除','最高连锁','陪伴者','日志','操作'];
     if (game === 'watersort') return ['时间','用时','总分','关卡','总步数','陪伴者','日志','操作'];
+    if (game === 'flappybird') return ['时间','用时','分数','穿管','擦边','陪伴者','日志','操作'];
     if (game === 'game1010') return ['时间','用时','分数','消除','放置','陪伴者','日志','操作'];
     if (game === 'turkey') return ['时间','用时','分数','消除','移动','陪伴者','日志','操作'];
     if (game === 'spider') return ['时间','用时','分数','完成','发牌','陪伴者','日志','操作'];
@@ -1142,6 +1243,7 @@ export async function initWanbanXiaowu() {
     if (game === 'paopao') return base.concat([singleRecordPoints(r), String(r?.details?.shots || extractNumber(r?.scoreText || '', /发射\s*(\d+)\s*次/, 0)), String(r?.details?.pushes || extractNumber(r?.scoreText || '', /下压\s*(\d+)\s*行/, 0)), recordCompanionDisplay(r)]);
     if (game === 'zuma') return base.concat([singleRecordPoints(r), String(r?.details?.cleared || extractNumber(r?.scoreText || '', /消除\s*(\d+)\s*颗/, 0)), String(r?.details?.maxCombo || 0), recordCompanionDisplay(r)]);
     if (game === 'watersort') return base.concat([singleRecordPoints(r), String(r?.details?.level || extractNumber(r?.scoreText || '', /(\d+)\s*关/, 1)), String(r?.details?.totalMoves || 0), recordCompanionDisplay(r)]);
+    if (game === 'flappybird') return base.concat([singleRecordPoints(r), String(r?.details?.pipesPassed ?? extractNumber(r?.scoreText || '', /穿过\s*(\d+)\s*组/, 0)), String(r?.details?.closeCalls || 0), recordCompanionDisplay(r)]);
     if (game === 'game1010') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || extractNumber(r?.scoreText || '', /消除\s*(\d+)\s*行列/, 0)), String(r?.details?.placements || extractNumber(r?.scoreText || '', /放置\s*(\d+)\s*块/, 0)), recordCompanionDisplay(r)]);
     if (game === 'turkey') return base.concat([singleRecordPoints(r), String(r?.details?.clearedLines || 0), String(r?.details?.moves || 0), recordCompanionDisplay(r)]);
     if (game === 'spider') return base.concat([singleRecordPoints(r), String(r?.details?.completed ?? extractNumber(r?.scoreText || '', /完成\s*(\d+)\s*副/, 0)), String(r?.details?.deals || 0), recordCompanionDisplay(r)]);
@@ -1173,7 +1275,8 @@ export async function initWanbanXiaowu() {
     if (game === 'popstar') return '字段说明：消灭星星是10×10连通消除游戏；一次消除n个星星得分n×n×5，并对8个以上大块追加奖励；困难模式每关有步数限制，消除和使用道具都会消耗步数；简单模式没有步数限制，可以一直消到没有可消除组合；结算时累计分数达到关卡目标进入下一关。';
     if (game === 'paopao') return '字段说明：泡泡龙是交错网格射击生存游戏；发射表示本局射出的泡泡数量；下压表示顶部新增行并整体下移的次数，下压间隔会从10发逐步缩短到5发。';
     if (game === 'zuma') return '字段说明：祖玛是没有关卡或轮次的单珠链无尽三消射击；消除表示本局累计消掉的彩珠数；最高连锁表示一次射击后连续触发同色消除的最大次数。消除会先播放爆裂淡出，再让前方珠链平滑回退并判定下一次连锁。入口会持续补入新珠，珠链较短时会适当减速，移动速度也会随分数、累计消除彩珠数和当前珠链数量变化，最高封顶84。';
-    if (game === 'watersort') return '字段说明：倒瓶子是无限关卡颜色水层排序解谜；关卡表示主动结算时所在关卡；总步数是全部已完成关卡和当前关累计的有效倒水次数。颜色最多10种，第9关起只有1个初始空瓶，题面始终保留经过验证的解序列。';
+    if (game === 'watersort') return '字段说明：倒瓶子是无限关卡颜色水层排序解谜；关卡表示主动结算时所在关卡；总步数是全部已完成关卡和当前关累计的有效倒水次数。每3关提升一档，从3色5瓶逐档增加到18色20瓶。水量随机分配，不固定留空瓶，且没有已完成的满瓶同色水。每关最多加1瓶，总数最多21；21瓶使用7×3布局。第118关达到最高结构档，第121关起维持专家档并继续出题。参考解经过验证，但不是最短步数证明；旧存档允许保留原题和半满瓶。';
+    if (game === 'flappybird') return '字段说明：像素鸟是空格或点击拍翅的单人无尽游戏；完整穿过一组上下管道得1分，穿管是已计分的管道组数，擦边是鸟以不超过8像素余量贴近管道边缘通过的次数。';
     if (game === 'game1010') return '字段说明：1010!是10×10方块拼图；放置表示成功落下的候补方块数量，消除表示累计清掉的行/列数量。';
     if (game === 'turkey') return '字段说明：土耳其方块是8×10横向滑块无尽消除游戏；消除表示累计清掉的完整横行数量；移动表示普通有效拖动次数。';
     if (game === 'spider') return '字段说明：无尽蜘蛛纸牌是十列整理游戏；完成表示收起的同花色K到A完整牌组数量；发牌表示主动或自动向十列新增一排牌的次数。';
@@ -1226,6 +1329,7 @@ export async function initWanbanXiaowu() {
     if (game === 'paopao') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；下压：' + (d.pushes || 0) + '行；主动消除：' + (d.cleared || 0) + '个；悬空掉落：' + (d.dropTotal || 0) + '个；接近警戒线：' + (d.dangerCount || 0) + '次；炸弹使用：' + (d.bombUsed || 0) + '次；炸弹低收益：' + (d.bombBad ? '是' : '否') + '；连续高分最大次数：' + (d.maxHighStreak || 0) + '次；竟然全部消除：' + (d.clearAllCount || 0) + '次。';
     if (game === 'zuma') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；发射：' + (d.shots || 0) + '次；射失：' + (d.misses || 0) + '次；消除彩珠：' + (d.cleared || 0) + '颗；累计生成彩珠：' + (d.totalBallsGenerated || 0) + '颗；清空珠链：' + (d.clearAllCount || 0) + '次；最高速度：' + (d.maxSpeed || 0) + '；最高连锁：×' + (d.maxCombo || 0) + '；接近洞口：' + (d.dangerCount || 0) + '次；炸弹/减速/彩虹：' + (d.bombUsed || 0) + '/' + (d.slowUsed || 0) + '/' + (d.rainbowUsed || 0) + '次。';
     if (game === 'watersort') return '最终总分：' + (d.score || singleRecordPoints(rec)) + '分；到达关卡：第' + (d.level || 1) + '关；完成关卡：' + (d.levelsCleared || 0) + '关；有效倒水：' + (d.totalMoves || 0) + '步；同色合并：' + (d.sameColorPours || 0) + '次；最高连续高效合并：' + (d.maxEfficientStreak || 0) + '；最高颜色数：' + (d.maxColors || d.colorCount || 0) + '色；单空瓶通关：' + (d.oneEmptyLevels || 0) + '关；无道具完美关：' + (d.perfectLevels || 0) + '关；提示/撤回/加空瓶/重置：' + (d.hintsUsed || 0) + '/' + (d.undosUsed || 0) + '/' + (d.extraUsed || 0) + '/' + (d.resets || 0) + '次。';
+    if (game === 'flappybird') return '最终分数：' + (d.score ?? singleRecordPoints(rec)) + '分；穿过管道：' + (d.pipesPassed || 0) + '组；拍翅：' + (d.flaps || 0) + '次；极限擦边：' + (d.closeCalls || 0) + '次；存活时间：' + (d.survivalSeconds || 0) + '秒；最高连续穿管：' + (d.maxStreak || 0) + '组；最高管道速度：' + Number(d.maxSpeed || 0).toFixed(1) + ' px/s；最高难度阶段：' + (d.maxDifficultyStage || d.difficultyStage || 1) + '；最终碰撞：' + (d.crash || '未记录') + '。';
     if (game === 'game1010') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；放置：' + (d.placements || 0) + '块；累计消除：' + (d.clearedLines || 0) + '行列；最大单次消除：' + (d.maxClear || 0) + '行列；低空格险情：' + (d.lowSpaceCount || 0) + '次；重新生成：' + (d.regenUsed || 0) + '次；小锤子：' + (d.hammerUsed || 0) + '次；本轮用道具后失败：' + (d.toolExhaustLose ? '是' : '否') + '。';
     if (game === 'turkey') return '最终分数：' + (d.score || singleRecordPoints(rec)) + '分；累计消除：' + (d.clearedLines || 0) + '行；有效移动：' + (d.moves || 0) + '次；最大同时消除：' + (d.maxClear || 0) + '行；最大连锁：' + (d.maxChain || 0) + '轮；最大连续回合连击：' + (d.maxCombo || 0) + '；云雷/星尘/粉碎机：' + (d.thunderUsed || 0) + '/' + (d.stardustUsed || 0) + '/' + (d.hammerUsed || 0) + '次；无道具达到3000：' + (d.noTool3000 ? '是' : '否') + '。';
     if (game === 'spider') return '模式：' + (d.mode === 'easy' ? '简单' : '困难') + '；最终分数：' + (d.score || singleRecordPoints(rec)) + '分；完成牌组：' + (d.completed || 0) + '副；黑桃：' + (d.spades || 0) + '副；红桃：' + (d.hearts || 0) + '副；最大连锁：' + (d.maxChain || 0) + '副；发牌次数：' + (d.deals || 0) + '次；有效移动：' + (d.moves || 0) + '次；撤销：' + (d.undo || 0) + '次；消除：' + (d.eliminate || 0) + '次；清空列次数：' + (d.emptyCols || 0) + '次；同屏最多空列：' + (d.maxEmptyCols || 0) + '列；命悬一线次数：' + (d.clutch || 0) + '次；糟糕发牌连续/累计记录：' + (d.badDeals || 0) + '/' + (d.badDealsTotal || 0) + '次；游戏时间灯：' + (rec.durationMs >= 20*60000 ? '长时间游玩' : rec.durationMs >= 10*60000 ? '中等时长' : '短时游玩') + '。';
@@ -1438,6 +1542,17 @@ export async function initWanbanXiaowu() {
         'watersort_endurance：无尽整理小剧场。一局完成至少20关。',
         'normal：普通小剧场。根据到达关卡、颜色数、单空瓶关、总步数、完美关和道具使用自然复盘。'
       ].join('\n');
+      if (game === 'flappybird') return [
+        'record：破纪录小剧场。刷新像素鸟历史最高分。',
+        'flappy_streak：连续穿管小剧场。单局穿过至少20组管道。',
+        'flappy_close_call：极限擦边小剧场。单局以不超过8像素余量累计擦边至少5次。',
+        'flappy_speed：高速飞行小剧场。难度进入第8阶段的速度封顶区。',
+        'flappy_endurance：长程坚持小剧场。一局存活至少60秒。',
+        'flappy_quick_crash：开局快速撞击小剧场。8秒内、3次拍翅以内且没有穿过管道。',
+        'long_run：超长时间小剧场。单局持续20分钟以上。',
+        'normal：普通小剧场。根据分数、拍翅、擦边、速度阶段、存活时间和最终碰撞自然复盘。',
+        '如果同一局同时满足多个特殊小剧场，会在满足条件的类型里等概率随机选择一个。'
+      ].join('\n');
       if (game === 'game1010') return [
         'record：破纪录小剧场。刷新当前游戏历史最高分。',
         'game1010_strategy：运筹帷幄小剧场。1010!一次消除超过4行/列，重点写user提前规划空位、一块落下后行列同时清空。',
@@ -1648,6 +1763,14 @@ export async function initWanbanXiaowu() {
       if ((d.levelsCleared || 0) >= 10 && (d.extraUsed || 0) > 0) candidates.push('watersort_extra_save');
       if ((d.levelsCleared || 0) >= 20) candidates.push('watersort_endurance');
     }
+    if (game === 'flappybird') {
+      const d = meta.details || meta;
+      if ((d.maxStreak || d.pipesPassed || 0) >= 20) candidates.push('flappy_streak');
+      if ((d.closeCalls || 0) >= 5) candidates.push('flappy_close_call');
+      if ((d.maxDifficultyStage || d.difficultyStage || 0) >= 8) candidates.push('flappy_speed');
+      if ((d.survivalSeconds || 0) >= 60) candidates.push('flappy_endurance');
+      if ((d.pipesPassed || 0) === 0 && (d.flaps || 0) <= 3 && (d.survivalSeconds || 0) <= 8) candidates.push('flappy_quick_crash');
+    }
     if (game === 'game1010' && (meta.maxClear || meta.details?.maxClear || 0) > 4) candidates.push('game1010_strategy');
     if (game === 'game1010' && (meta.toolExhaustLose || meta.details?.toolExhaustLose)) candidates.push('game1010_bad_luck');
     if (game === 'game1010' && (meta.lowSpaceCount || meta.details?.lowSpaceCount || 0) > 3) candidates.push('game1010_clutch');
@@ -1778,6 +1901,11 @@ export async function initWanbanXiaowu() {
       ,watersort_no_hint: '不看答案小剧场'
       ,watersort_extra_save: '多瓶救场小剧场'
       ,watersort_endurance: '无尽整理小剧场'
+      ,flappy_streak: '连续穿管小剧场'
+      ,flappy_close_call: '极限擦边小剧场'
+      ,flappy_speed: '高速飞行小剧场'
+      ,flappy_endurance: '长程坚持小剧场'
+      ,flappy_quick_crash: '开局快速撞击小剧场'
       ,game1010_strategy: '运筹帷幄小剧场'
       ,game1010_bad_luck: '倒霉小剧场'
       ,game1010_clutch: '命悬一线小剧场'
@@ -1873,7 +2001,7 @@ export async function initWanbanXiaowu() {
   function specialLanguageOptions() { return ['粤语','古言','日语','英语','韩语','法语','俄语','西语']; }
   function specialLanguageRequirement(kind, cfgOverride) {
     const cfg = cfgOverride || settings();
-    if (!cfg.specialLanguageEnabled) return '';
+    if (!cfg.specialLanguageEnabled || !cfg.specialLanguage) return '';
     const lang = specialLanguageOptions().includes(cfg.specialLanguage) ? cfg.specialLanguage : '粤语';
     if (kind === 'line') {
       if (lang === '古言') return `【强制语言要求】
@@ -2853,6 +2981,11 @@ export async function initWanbanXiaowu() {
       .wb-intimacy-button img { position:absolute; inset:0; z-index:1; width:100%; height:100%; object-fit:fill; display:block; filter:saturate(.98) brightness(1.02); }
       .wb-intimacy-button span { position:relative; z-index:2; min-width:0; font-family:'WanbanIntimacyButton', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif!important; font-size:clamp(30px, 3.4vw, 38px); font-weight:700; letter-spacing:2px; color:#4A2617; text-shadow:0 1px 0 rgba(255,255,255,.82), 0 2px 8px rgba(255,255,255,.62); white-space:nowrap; }
       .wb-pet-trial-note { min-width:0; padding:6px 8px; border:1px solid var(--wb-border); background:var(--wb-soft); color:var(--wb-text); font-weight:900; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .wb-pet-mode-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:12px; }
+      .wb-pet-mode-choice { min-height:150px; padding:13px; display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:7px; text-align:left; white-space:normal; }
+      .wb-pet-mode-choice b { font-size:16px; color:var(--wb-accent); }
+      .wb-pet-mode-choice span { font-size:12px; line-height:1.5; }
+      .wb-pet-mode-choice em { margin-top:auto; font-size:11px; line-height:1.45; font-style:normal; color:var(--wb-muted); }
       .wb-pet-room { width:min(100%, 760px); margin:0 auto; flex:1 1 auto; min-height:0; display:grid; grid-template-rows:auto auto minmax(0, 1fr) minmax(86px, 22cqh); gap:7px; overflow:hidden; }
       .wb-pet-room-top { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; align-items:center; gap:8px; }
       .wb-pet-room-title { font-weight:900; color:var(--wb-accent); letter-spacing:1px; }
@@ -2906,11 +3039,12 @@ export async function initWanbanXiaowu() {
       }
       .wb-pet-npc-portrait {
         position:absolute;
-        left:50%;
-        top:50%;
-        width:min(100%,512px);
-        height:min(100%,512px);
-        transform:translate(-50%,-50%);
+        right:0;
+        bottom:0;
+        width:33.333%;
+        height:auto;
+        aspect-ratio:1;
+        pointer-events:none;
         object-fit:contain;
         border:0;
         background:transparent;
@@ -5751,7 +5885,32 @@ export async function initWanbanXiaowu() {
   let petTestInfoLoading = null;
   let petFullActiveCaretakerId = '';
   let petRuntimeMode = '';
+  const PET_SPECIAL_CHAR_NAME = '沈栖白';
+  const PET_SPECIAL_CHAR_AVATAR = PET_ASSET_BASE + 'scene/shenqibai.png';
+  let petShenPortraitSelection = null;
+  function petShenPortraitUrl(line, state) {
+    const active = state?.activeStory;
+    const speaker = String(line?.speaker || '').trim();
+    const speaking = ['c', 'char', '{{char}}', '沈', PET_SPECIAL_CHAR_NAME].includes(speaker.toLowerCase());
+    if (petCharName() !== PET_SPECIAL_CHAR_NAME || !active?.id || active.prompt || active.done || !speaking || !String(line?.text || '').trim()) {
+      petShenPortraitSelection = null;
+      return '';
+    }
+    // Keep the random portrait stable across pagination and rerenders of one line.
+    const key = JSON.stringify([petRuntimeMode, petFullActiveCaretakerId, state.journeyId, active.id, active.index || 0, speaker]);
+    if (petShenPortraitSelection?.key !== key) {
+      const expressions = ['neutral', 'smile', 'talk', 'thoughtful'];
+      const expression = expressions[Math.floor(Math.random() * expressions.length)];
+      petShenPortraitSelection = { key, url:PET_ASSET_BASE + 'portraits/shenqibai/' + expression + '.png' };
+    }
+    return petShenPortraitSelection.url;
+  }
   const PET_STAGE_CAP = { egg:100, juvenile:100, adult:100, spirit:50, ordinary:50 };
+  function petCaretakerIsShen(caretaker) {
+    const c = caretaker || {};
+    return c.builtinPetCaretaker === 'shenqibai'
+      || String(c.name || c.charName || '').trim() === PET_SPECIAL_CHAR_NAME;
+  }
   const PET_MAIN_TRIGGERS = [
     { id:'M01', stage:'any', at:0 },
     { id:'M02', stage:'egg', custom:s => (s.eggInteractions || 0) >= 2 },
@@ -5776,7 +5935,10 @@ export async function initWanbanXiaowu() {
   }
   function parsePetInfoValue(line) {
     const m = String(line || '').match(/^\s*([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
-    return m ? { key:m[1], value:m[2].trim() } : null;
+    if (!m) return null;
+    const raw = m[2].trim();
+    const quoted = raw.length >= 2 && ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")));
+    return { key:m[1], value:quoted ? raw.slice(1, -1) : raw };
   }
   function stripPetQuote(value) {
     return String(value || '').trim().replace(/^-\s*/, '').replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
@@ -5846,7 +6008,8 @@ export async function initWanbanXiaowu() {
     if (petRuntimeMode === 'test') return null;
     const all = data || petFullData();
     const id = petFullActiveCaretakerId || all.activeCaretakerId;
-    return (all.caretakers || []).find(c => c.id === id) || (all.caretakers || []).find(c => (c.pets || []).length) || (all.caretakers || [])[0] || null;
+    if (id) return all.caretakers.find(c => c.id === id) || null;
+    return all.caretakers.find(c => c.pets?.length) || all.caretakers[0] || null;
   }
   function petFullActivePet(data, caretaker) {
     if (petRuntimeMode === 'test') return null;
@@ -5860,6 +6023,8 @@ export async function initWanbanXiaowu() {
     petFullActiveCaretakerId = caretakerId || '';
     const data = petFullData();
     data.activeCaretakerId = petFullActiveCaretakerId;
+    saveJSON(SCRIPT_ID + '_petLastRoute', 'full');
+    if (petCaretakerIsShen(data.caretakers.find(c => c.id === caretakerId))) saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'full');
     savePetFullData(data);
     petTestInfoCache = null;
     petTestInfoLoading = null;
@@ -5877,6 +6042,29 @@ export async function initWanbanXiaowu() {
     savePetFullData(data);
     return true;
   }
+  function petStorageTarget() {
+    const caretaker = petFullActiveCaretaker();
+    const pet = petFullActivePet(null, caretaker);
+    const journeyId = petRuntimeMode === 'test' ? loadJSON(STORAGE_PET_TEST, {}).journeyId || '' : '';
+    return { mode:petRuntimeMode, caretakerId:caretaker?.id || '', petId:pet?.id || '', journeyId };
+  }
+  function petTargetIsCurrent(target) {
+    return JSON.stringify(target) === JSON.stringify(petStorageTarget());
+  }
+  function updatePetTargetState(target, update) {
+    if (target.mode === 'test') {
+      const state = Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
+      if ((state.journeyId || '') !== target.journeyId) return;
+      saveJSON(STORAGE_PET_TEST, update(state));
+      return;
+    }
+    const data = petFullData();
+    const caretaker = data.caretakers.find(c => c.id === target.caretakerId);
+    const pet = caretaker?.pets.find(p => p.id === target.petId);
+    if (!pet) return;
+    pet.state = update(Object.assign(defaultPetTestState(), pet.state || {}));
+    savePetFullData(data);
+  }
   function petFullCaretakerById(id) { return (petFullData().caretakers || []).find(c => c.id === id) || null; }
   function petFullPetCompleted(pet) {
     const st = safeObject(pet && pet.state || {});
@@ -5886,6 +6074,214 @@ export async function initWanbanXiaowu() {
     return ((caretaker && caretaker.pets) || []).filter(petFullPetCompleted).length;
   }
   function petFullAdoptionCycle(caretaker) { return Math.max(1, petFullCompletedCount(caretaker) + 1); }
+  function petPromptCompactText(value, limit) {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    const max = Math.max(20, Number(limit || 160));
+    return text.length > max ? text.slice(0, max) + '...' : text;
+  }
+  function petFullDiversityLedgerText(caretaker) {
+    const completed = ((caretaker && caretaker.pets) || []).filter(petFullPetCompleted);
+    if (!completed.length) return '无';
+    return completed.map((pet, idx) => {
+      const state = safeObject(pet.state || {});
+      const info = petFullParsedInfo(pet) || {};
+      const card = info.pet_card || {};
+      const main = info.mainById || {};
+      const storyMark = id => {
+        const story = main[id];
+        if (!story) return '';
+        return [story.title, story.summary].filter(Boolean).map(x => petPromptCompactText(x, 120)).join('｜');
+      };
+      const ending = main.M15 && main.M15.variants ? main.M15.variants : {};
+      const endingMark = route => {
+        const story = ending[route] || {};
+        return [story.title, story.summary, story.left_item ? '遗留物=' + story.left_item : ''].filter(Boolean).map(x => petPromptCompactText(x, 100)).join('｜');
+      };
+      return [
+        'previous_pet_' + (idx + 1) + ':',
+        '  identity: ' + [card.pet_name, card.egg, card.species, card.sex || card.gender].filter(Boolean).join(' / '),
+        '  personality: ' + petPromptCompactText(card.personality || '未知', 140),
+        '  spirit_skills: ' + petPromptCompactText(card.spirit_tendency_skill || card.spirit || card.spirit_ability || '未知', 180),
+        '  opening_signature: ' + (storyMark('M01') || '未知'),
+        '  growth_signature: ' + (['M06','M07','M08'].map(storyMark).filter(Boolean).join('；') || '未知'),
+        '  spirit_signature: ' + (['M09','M10','M12'].map(storyMark).filter(Boolean).join('；') || '未知'),
+        '  ordinary_signature: ' + (storyMark('M13') || '未知'),
+        '  side_story_titles: ' + (((info.side_story || []).map(x => x && x.title).filter(Boolean).join(' / ')) || '未知'),
+        '  endings: ' + ([endingMark('spirit'), endingMark('ordinary')].filter(Boolean).join('；') || '未知'),
+        '  completed_route: ' + petDisplayStage(state)
+      ].join('\n');
+    }).join('\n\n');
+  }
+  function petGenerationDiversityHintText(selectedEgg) {
+    const pick = values => values[Math.floor(Math.random() * values.length)];
+    const timePalettes = [
+      '季节中性的普通工作日上午',
+      '初春返暖期的傍晚',
+      '初夏日照很长的午后',
+      '盛夏停电后的夜间',
+      '雨季刚结束的清晨',
+      '初秋人流热闹的休息日',
+      '深秋风大的黄昏',
+      '冬季室内活动时段',
+      '服从当前世界历法的非典型节庆前后'
+    ];
+    const arrivalModes = [
+      '熟悉物件在共同使用时发生异变',
+      '一只普通动物反复引路并留下蛋',
+      '工作或兴趣活动中的小事故暴露灵息缝隙',
+      '失物以不可能的方式返回并携带蛋',
+      '声音、气味或倒影连续出现异常后找到源头',
+      '一次临时委托或误送物品逐步显露真实身份',
+      '居所中原本封闭的角落短暂连到另一处空间',
+      '两位饲养者共同解决日常麻烦时由宠物蛋主动选中',
+      '一个共同使用过的旧物或未完成约定产生可触碰的回应'
+    ];
+    const eggAxes = {
+      blue:['流动与承载','距离与方向','聚合与分离','形态变化与适应'],
+      purple:['隐藏与显露','回声与缺失','真假与筛选','循环与轮替'],
+      pink:['识别与回应','连接与交换','聚集与分配','绽放与转化'],
+      green:['培育与修补','结构与构筑','循环与共生','适应与更新'],
+      gold:['启动与蓄积','加速与停靠','显露与照明','抵达与鼓舞'],
+      white:['保存与释放','边界与留白','静止与排序','结晶与筛选']
+    };
+    const eggKey = String(selectedEgg || '').toLowerCase();
+    const eggAxis = pick(eggAxes[eggKey] || Object.values(eggAxes).flat());
+    const mechanismFamilies = [
+      '感官译码：把气味、震动、距离或压力翻成可验证的另一种信号',
+      '有限储存：保存一次声音、温度、方向、触感或动作节奏，稍后释放一次',
+      '属性借还：让两个小目标暂借彼此一种无害性质，并按条件归还',
+      '标记导航：给熟悉目标留下数量有限的锚点并连成短路径',
+      '局部折叠：缩短熟悉地点间的几步距离或给狭缝增加短暂出口',
+      '顺序编辑：让最近几个小动作中的一个停顿、重演或交换先后',
+      '状态缓冲：暂时接住过热、过冷、过响、过快的一种状态后缓慢释放',
+      '碎片拼合：用零散痕迹补出缺失路线、声音或物件经历，并混入相似干扰',
+      '拟态误导：短暂复制一种气味、脚步、轮廓或位置感来躲藏或引路',
+      '微型构筑：用水滴、落叶、绒毛、尘土或细枝搭成短时有效的小结构',
+      '生态协作：向植物、水流、风或普通小动物提出可能被拒绝的简单请求',
+      '条件领域：在很小范围内维持一条只影响声音、滚动、气味或落点的规则',
+      '习惯培育：把双方反复完成的生活动作培育成只在这个家庭生效的捷径',
+      '双向联结：让两个目标的一项状态短暂同步、轮流或互相提醒'
+    ];
+    const expressionMedia = [
+      '光与颜色', '水与湿度', '风与气流', '热量与温度', '冰霜与结晶',
+      '土壤与石头', '植物与种子', '声音与节拍', '气味与痕迹', '静电与磁性',
+      '影子与倒影', '梦与记忆', '距离与局部空间', '重量与摩擦', '顺序与短暂停顿'
+    ];
+    const lifeInterfaces = [
+      '门窗、钥匙与进出路线',
+      '食盆、玩具与店内小物',
+      '脚步、口哨与生活声音',
+      '水面、温度与干湿变化',
+      '重量、摩擦与柔软程度',
+      '气味、触碰与位置痕迹',
+      '影子、倒影与视野盲区',
+      '植物、落叶与小型栖息环境',
+      '距离、方向与动作先后',
+      '家庭习惯、约定和重复动作'
+    ];
+    const growthRoles = [
+      '侦察者：擅长发现并验证信息，但不能替人作决定',
+      '引路者：建立有限返程锚点，也可能坚持自己更喜欢的路线',
+      '小工匠：构筑或修补日常空间，作品带有鲜明个人审美',
+      '传讯者：跨短距离保存和送达一种信号，也会挑选自己愿意传的话',
+      '整理者：对混乱进行分类、排序或缓冲，过度使用反而制造新混乱',
+      '表演家：把能力发展成可练习的小演出，喜欢观众也拥有罢演权',
+      '照护者：协助识别和调节环境状态，同时会明确要求自己也得到休息',
+      '调皮协调员：利用误导、交换或联结组织三人行动，常把规则用于生活玩笑'
+    ];
+    const temperamentProfiles = [
+      '谨慎探索：先在安全距离观察，确定有返回路线后主动靠近',
+      '热闹发起：喜欢把日常变成三人游戏，被忽略时会用具体行动拉人入场',
+      '温吞固执：行动很慢却会守住自己认定的顺序、位置或约定',
+      '骄傲表演：愿意展示练会的本领，失误后会假装改在做另一件事',
+      '机敏试探：先留一道可被看懂的小谜题，根据两人的反应再决定亲近程度',
+      '安静收藏：通过保存熟悉小物、气味或日常顺序建立安全感',
+      '认真照护：擅长发现队员的小需求，也会在自己需要休息时清楚求助',
+      '独立领地：主动决定触碰、休息与参与时机，认可队员后会为对方留出位置'
+    ];
+    const frustrationResponses = [
+      '受挫时先退回熟悉落点，等两人放慢动作后再自己尝试',
+      '受挫时会固执重复原动作，直到队员用另一种可见线索帮它发现差异',
+      '受挫时把引发问题的小物藏起来，又会偷偷留下能找到它的提示',
+      '受挫时短暂罢工并保留参与权，情绪稳定后用一个小动作宣布重新加入',
+      '受挫时会夸大表现得像没事，但只对最熟悉的人露出真正需要帮助的信号',
+      '受挫时改做一件肯定能完成的小事，找回节奏后再回到难题'
+    ];
+    const settlingPatterns = [
+      '靠熟悉气味、固定位置与两道能分辨的声音安定',
+      '靠完成一次熟悉的进食、梳理、泡水或散步顺序安定',
+      '需要先拥有一小段可自主决定距离的安静时间，之后才主动回来',
+      '靠队员重复它听得懂的简单信号，并亲眼看到返回路线安全',
+      '靠把一件熟悉小物放回它认定的位置，再由它自己决定是否接触',
+      '靠一起收拾能马上完成的小混乱，让环境先恢复可预期'
+    ];
+    const affectionDifferences = [
+      '对{{user}}更爱发起游戏和分享新发现；对{{char}}更常检查工具、作息与收尾动作',
+      '对{{user}}会主动暴露脆弱和求助信号；对{{char}}会用挑战规则、抢工具或邀功表达信任',
+      '对{{user}}喜欢展示新技能并等具体夸奖；对{{char}}喜欢把他小小的失误当作两者秘密',
+      '对{{user}}更常留出身边位置；对{{char}}更常主动打断过度工作，但两边都保留清楚触碰边界',
+      '对{{user}}习惯用小物、落点或叫声邀请靠近；对{{char}}习惯用守在门边、工作位或回程表达陪伴',
+      '对两人采用不同暗号和玩法，但在不安时会明确要求两位队员同时在场'
+    ];
+    const cuteContrasts = [
+      '平时很有主见，被真诚夸奖后却会重复刚才的动作，想再听一次',
+      '对规则异常认真，发现规则漏洞时又会第一个拿来做无害恶作剧',
+      '面对陌生环境很警觉，熟悉后却会把最喜欢的东西挑剔地分给两人',
+      '在外面像可靠小队长，回家后会为争一个熟悉位置用小聪明绕路',
+      '会为两人保守大秘密，却很爱透露沈栖白如何向它排练一句普通邀请',
+      '擅长照顾队员，轮到自己难过时会先装忙，直到熟悉的人蹲到它看得见的距离'
+    ];
+    const partnerPatterns = [
+      '{{user}}识别目标，{{char}}准备落点，宠物决定是否发动',
+      '{{char}}给出停止信号，{{user}}完成实际收尾，宠物控制持续时间',
+      '{{user}}提供生活口令，{{char}}处理环境边界，宠物选择作用对象',
+      '两人分别守住入口与出口，宠物在中间独立选择路线',
+      '一人制造可重复信号，另一人辨认误差，宠物完成第三次验证',
+      '宠物先提出自己的方案，两人各完成其中不同的一半'
+    ];
+    const costFamilies = [
+      '使用后明显饥饿，需要正常进食恢复',
+      '感官暂时变迟钝，需要安静独处一会儿',
+      '身体媒介会发痒或打喷嚏，需要梳理和休息',
+      '只能保存少量内容，新内容会挤掉最早一项',
+      '连续使用效果衰减，需要睡眠完成恢复',
+      '必须回到熟悉地点，通过一次普通日常动作复位',
+      '受到环境干扰时持续时间缩短，强行维持会疲倦',
+      '能力结束后会残留无害小混乱，需要三人一起收拾'
+    ];
+    const complicationFamilies = [
+      '能力准确但目标理解错了',
+      '能力会保留多余信息，需要判断哪一条才重要',
+      '能力只能完成一半，剩余部分必须依靠普通方法',
+      '宠物主动隐藏能力，因为它更在意另一个生活目标',
+      '使用次数越多效果越弱，必须设计停止信号',
+      '能力解决眼前问题，却给日常空间留下需要收拾的小后果',
+      '两位饲养者对异常规则判断不同，宠物用行动给出第三种方案',
+      '宠物发现规则漏洞后拿来恶作剧，照护者需要和它重新协商边界',
+      '相似对象同时出现导致能力串线，三人要靠物种行为重新区分',
+      '宠物因疲倦或不愿意而拒绝发动，故事改用现实办法继续'
+    ];
+    return [
+      'variation_token: ' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
+      'opening_time_palette: ' + pick(timePalettes),
+      'arrival_mechanism_palette: ' + pick(arrivalModes),
+      'egg_semantic_axis: ' + eggAxis,
+      'primary_spirit_mechanism_family: ' + pick(mechanismFamilies),
+      'spirit_expression_medium: ' + pick(expressionMedia),
+      'primary_life_interface: ' + pick(lifeInterfaces),
+      'spirit_growth_role: ' + pick(growthRoles),
+      'personality_core: ' + pick(temperamentProfiles),
+      'frustration_response: ' + pick(frustrationResponses),
+      'settling_method: ' + pick(settlingPatterns),
+      'caretaker_affection_difference: ' + pick(affectionDifferences),
+      'cute_personality_contrast: ' + pick(cuteContrasts),
+      'two_caretaker_partner_pattern: ' + pick(partnerPatterns),
+      'ability_cost_family: ' + pick(costFamilies),
+      'primary_complication_family: ' + pick(complicationFamilies),
+      'appearance_variation: forbidden；上述随机方向只能改变性格、能力规则和剧情，不能参与宠物外观设计',
+      'usage: 这些是本轮创作方向，不是必须照抄的句子；将性格各轴整合成连贯个体，并适配当前世界、物种行为与明确许愿。'
+    ].join('\n');
+  }
   function petFullAllLogsText(caretaker) {
     const lines = [];
     ((caretaker && caretaker.pets) || []).filter(petFullPetCompleted).forEach((pet, idx) => {
@@ -5899,7 +6295,7 @@ export async function initWanbanXiaowu() {
         '  品种：' + (card.species || '未知'),
         '  性别：' + (card.sex || card.gender || '未知'),
         '  性格：' + (card.personality || '未知'),
-        '  灵息能力：' + (card.spirit || card.spirit_ability || '未知'),
+        '  灵息能力：' + (card.spirit_tendency_skill || card.spirit || card.spirit_ability || '未知'),
         '  路线/阶段：' + petDisplayStage(state)
       ];
       const logs = Object.keys(state.logs || {}).sort().map(date => ({ date, log:state.logs[date] || {} }));
@@ -5934,54 +6330,23 @@ export async function initWanbanXiaowu() {
     catch (_) { return null; }
   }
   function petLatestCaretakerConfig(caretaker) {
-    const c = caretaker || {};
-    const cfg = settings();
-    const name = normalizePresetName(c.name || c.charName || '');
-    const currentName = normalizePresetName((cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : companionName());
-    if (name && currentName && name === currentName) {
-      return Object.assign({}, cfg, {
-        charName:name,
-        charDescriptionSnapshot:currentCharDescription(Object.assign({}, cfg, { charName:name, charDescriptionSnapshot:'' })),
-        summarySnapshot:summarySnapshotFromId(cfg.summaryId) || cfg.summarySnapshot || null,
-        worldText:selectedWorldText(cfg) || c.worldText || ''
-      });
-    }
-    const pr = worldPresets().find(x => normalizePresetName(x && (x.name || x.charName)) === name);
-    if (!pr) return null;
-    const merged = Object.assign({}, cfg, pr, { charName:pr.charName || pr.name || name });
-    return Object.assign({}, merged, {
-      worldText:selectedWorldText(merged) || pr.worldText || c.worldText || '',
-      summarySnapshot:pr.summarySnapshot || summarySnapshotFromId(pr.summaryId) || null,
-      charDescriptionSnapshot:pr.charDescriptionSnapshot || currentCharDescription(Object.assign({}, merged, { charDescriptionSnapshot:'' }))
-    });
+    if (petCaretakerIsShen(caretaker)) return null;
+    return rolePromptConfig(caretaker.name || caretaker.charName, settings());
   }
   function petCaretakerPromptConfig(caretaker) {
     const c = caretaker || petFullActiveCaretaker();
-    const cfg = settings();
-    if (!c) return cfg;
-    const latest = petLatestCaretakerConfig(c) || {};
-    const src = Object.assign({}, c, latest);
-    const merged = Object.assign({}, cfg, {
-      charName:src.charName || src.name || cfg.charName,
-      avatarUrl:src.avatarUrl || cfg.avatarUrl || '',
-      worldText:src.worldText || '',
-      injectUserDesc:src.injectUserDesc !== undefined ? src.injectUserDesc : cfg.injectUserDesc,
-      injectCharDesc:src.injectCharDesc !== undefined ? src.injectCharDesc : cfg.injectCharDesc,
-      injectChat:src.injectChat !== undefined ? src.injectChat : cfg.injectChat,
-      specialLanguageEnabled:src.specialLanguageEnabled !== undefined ? src.specialLanguageEnabled : cfg.specialLanguageEnabled,
-      specialLanguage:src.specialLanguage || cfg.specialLanguage,
-      breakLimitPrompt:src.breakLimitPrompt || cfg.breakLimitPrompt || '',
-      userName:src.userName || cfg.userName || '{{user}}',
-      userPersona:src.userPersona || cfg.userPersona || '',
-      charDescMode:src.charDescMode || cfg.charDescMode || 'auto',
-      manualCharPersona:src.manualCharPersona || cfg.manualCharPersona || '',
-      charDescriptionSnapshot:src.charDescriptionSnapshot || (src.worldText ? ((src.name || src.charName || cfg.charName || '{{char}}') + '：\n' + src.worldText) : ''),
-      summaryId:src.summaryId || cfg.summaryId || '',
-      summarySnapshot:src.summarySnapshot || '',
-      selectedWorldEntries:Array.isArray(src.selectedWorldEntries) ? src.selectedWorldEntries : (cfg.selectedWorldEntries || []),
-      selectedWorldPresetName:src.selectedWorldPresetName || cfg.selectedWorldPresetName || ''
-    });
-    return merged;
+    if (!c || petCaretakerIsShen(c)) {
+      const source = c && c.roleContextVersion === 2 ? c : {
+        charName:PET_SPECIAL_CHAR_NAME,
+        charDescriptionSnapshot:c?.charDescriptionSnapshot || '',
+        avatarUrl:PET_SPECIAL_CHAR_AVATAR,
+        builtinPetCaretaker:'shenqibai'
+      };
+      return withRoleContext(settings(), isolatedRole(source, PET_SPECIAL_CHAR_NAME));
+    }
+    const source = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}))[c.name || c.charName]
+      || worldPresetForRole(c.name || c.charName) || c;
+    return withRoleContext(settings(), captureRoleContext(source, c.name || c.charName));
   }
   function petFullRecordContext(info, state) {
     const c = petFullActiveCaretaker();
@@ -6003,49 +6368,26 @@ export async function initWanbanXiaowu() {
     return true;
   }
   function petFullCaretakerOptions() {
-    const opts = [];
-    const cfg = settings();
-    const snapshot = (base, extra) => {
-      const merged = Object.assign({}, base || cfg, extra || {});
-      return {
-        injectUserDesc:merged.injectUserDesc,
-        injectCharDesc:merged.injectCharDesc,
-        injectChat:merged.injectChat,
-        specialLanguageEnabled:!!merged.specialLanguageEnabled,
-        specialLanguage:merged.specialLanguage || cfg.specialLanguage,
-        breakLimitPrompt:merged.breakLimitPrompt || '',
-        userName:merged.userName || cfg.userName || '{{user}}',
-        userPersona:merged.userPersona || '',
-        charDescMode:merged.charDescMode || 'auto',
-        manualCharPersona:merged.manualCharPersona || '',
-        charName:merged.charName || '',
-        charDescriptionSnapshot:merged.charDescriptionSnapshot || '',
-        summaryId:merged.summaryId || '',
-        summarySnapshot:merged.summarySnapshot || '',
-        selectedWorldEntries:Array.isArray(merged.selectedWorldEntries) ? merged.selectedWorldEntries : [],
-        selectedWorldPresetName:merged.selectedWorldPresetName || ''
-      };
-    };
-    const push = (name, avatarUrl, roleCfg, idx) => {
-      const n = String(name || '').trim();
-      if (!n || opts.some(x => x.name === n)) return;
-      const merged = Object.assign({}, roleCfg || {}, { charName:n });
-      opts.push(Object.assign({ name:n, avatarUrl:avatarUrl || '', worldText:selectedWorldText(merged) || merged.worldText || '', worldIndex:idx }, snapshot(cfg, merged)));
-    };
-    push(petCharName(), cfg.avatarUrl || findCurrentCardAvatar() || '', Object.assign({}, cfg, { charDescriptionSnapshot:currentCharDescription(cfg) }), -1);
-    worldPresets().forEach((pr, i) => push(pr.name || pr.charName || ('角色' + (i + 1)), pr.avatarUrl || '', Object.assign({}, cfg, pr || {}, { selectedWorldEntries:pr.selectedWorldEntries || [], selectedWorldPresetName:pr.selectedWorldPresetName || pr.name || '' }), i));
-    return opts;
+    const names = Array.from(new Set([companionName(), ...Object.keys(safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}))), ...worldPresets().map(pr => pr.name || pr.charName)]));
+    return names.filter(Boolean).map(name => {
+      const cfg = rolePromptConfig(name);
+      return Object.assign({ name, worldIndex:-1 }, isolatedRole(cfg), {
+        avatarUrl:cfg.avatarUrl || cfg.defaultAvatarUrl || '',
+        worldText:selectedWorldText(cfg) || cfg.worldText || ''
+      });
+    });
   }
   function petFullEnsureCaretaker(opt) {
     const data = petFullData();
-    let c = data.caretakers.find(x => x.name === opt.name);
-    const fields = ['worldIndex','worldText','lazyWorldInject','userDescSource','worldAutoMountMode','injectUserDesc','injectCharDesc','injectChat','specialLanguageEnabled','specialLanguage','breakLimitPrompt','userName','userPersona','charDescMode','manualCharPersona','charName','charDescriptionSnapshot','summaryId','summarySnapshot','selectedWorldEntries','selectedWorldPresetName'];
+    const builtin = String(opt.builtinPetCaretaker || '');
+    let c = data.caretakers.find(x => builtin ? (x.builtinPetCaretaker === builtin || (builtin === 'shenqibai' && petCaretakerIsShen(x))) : (!x.builtinPetCaretaker && x.name === opt.name));
+    const fields = ['worldIndex', ...Object.keys(ROLE_DEFAULTS)];
     if (!c) {
       c = { id:'petc_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), name:opt.name, avatarUrl:opt.avatarUrl || '', activePetId:'', pets:[], createdAt:Date.now() };
       fields.forEach(k => { if (opt[k] !== undefined) c[k] = opt[k]; });
       data.caretakers.unshift(c);
     } else {
-      c.avatarUrl = opt.avatarUrl || c.avatarUrl || '';
+      c.avatarUrl = opt.avatarUrl ?? c.avatarUrl ?? '';
       fields.forEach(k => { if (opt[k] !== undefined) c[k] = opt[k]; });
     }
     data.activeCaretakerId = c.id;
@@ -6163,29 +6505,38 @@ export async function initWanbanXiaowu() {
       petTestInfoCache = parsePetInfoText(activeFullPet.infoText);
       return petTestInfoCache;
     }
+    if (petRuntimeMode === 'full') throw new Error('当前角色尚未生成宠物档案');
     if (petTestInfoCache) return petTestInfoCache;
     if (petTestInfoLoading) return petTestInfoLoading;
     const testState = petTestState();
+    const target = petStorageTarget();
     const testSpecies = String(testState.testSpecies || 'rabbit').replace(/[^\w-]/g, '') || 'rabbit';
-    const testEgg = String(testState.testEgg || '').replace(/[^\w-]/g, '');
+    const requestedEgg = String(testState.testEgg || '').replace(/[^\w-]/g, '');
+    const testEgg = PET_EGG_IDS.includes(requestedEgg) ? requestedEgg : 'green';
+    const testPetName = String(testState.testPetName || '').trim() || PET_DEFAULT_STORY_NAMES[testSpecies] || '宠物';
     const url = PET_ASSET_BASE + 'text/pet_info_' + testSpecies + '.txt';
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('宠物试用版数据读取超时')), 15000));
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('特别陪伴剧情读取超时')), 15000));
     petTestInfoLoading = Promise.race([fetch(url, { cache:'no-store' }), timeout])
       .then(res => {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.text();
       })
       .then(text => {
-        petTestInfoCache = parsePetInfoText(text);
-        if (testEgg) petTestInfoCache.pet_card.egg = testEgg;
-        petTestInfoCache.pet_card.species = petTestInfoCache.pet_card.species || testSpecies;
-        return petTestInfoCache;
+        const info = parsePetInfoText(text);
+        // Fixed companion files use {{pet}} / {{egg}} as authoring markers.
+        // The player's selection is the only runtime source of truth.
+        info.pet_card.pet_name = testPetName;
+        info.pet_card.egg = testEgg;
+        info.pet_card.species = info.pet_card.species || testSpecies;
+        if (petTargetIsCurrent(target)) petTestInfoCache = info;
+        return info;
       })
       .catch(e => {
         console.warn('[玩伴小屋] pet test info load failed:', e);
-        petTestInfoCache = parsePetInfoText('');
-        petTestInfoCache.parseWarnings.push('试用版文本读取失败：' + (e && e.message ? e.message : e));
-        return petTestInfoCache;
+        const info = parsePetInfoText('');
+        info.parseWarnings.push('特别陪伴文本读取失败：' + (e && e.message ? e.message : e));
+        if (petTargetIsCurrent(target)) petTestInfoCache = info;
+        return info;
       });
     return petTestInfoLoading;
   }
@@ -6202,6 +6553,8 @@ export async function initWanbanXiaowu() {
     const now = Date.now();
     return {
       stage:'egg', route:'common', growth:0, fullness:80, happiness:80, location:'home',
+      testSpecies:'', testEgg:'', testPetName:'',
+      cheatMode:false,
       completedMain:[], completedSide:[], storyRecords:[], logs:{}, days:{}, sideCounts:{}, sideTriggered:[], archives:[],
       pendingStories:[], eggInteractions:0, feedCount:0, petCount:0, pokeCount:0, outingCount:0, lastEggPetGrowthAt:0,
       walkRpGenerationCount:0, lastWalkRpMessageKey:'',
@@ -6211,11 +6564,12 @@ export async function initWanbanXiaowu() {
   function petTestState() {
     const activeFullPet = petFullActivePet();
     if (activeFullPet) return Object.assign(defaultPetTestState(), safeObject(activeFullPet.state || {}));
+    if (petRuntimeMode === 'full') return defaultPetTestState();
     return Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
   }
   function petTrialHasSavedPet() {
     const raw = safeObject(loadJSON(STORAGE_PET_TEST, {}));
-    return !!(raw.testSpecies || raw.testEgg || raw.userName || Number(raw.growth || 0) > 0
+    return !!(raw.testSpecies || raw.testEgg || raw.testPetName || raw.userName || Number(raw.growth || 0) > 0
       || Object.keys(raw.logs || {}).length || Object.keys(raw.days || {}).length
       || (Array.isArray(raw.storyRecords) && raw.storyRecords.length)
       || (Array.isArray(raw.completedMain) && raw.completedMain.length)
@@ -6223,6 +6577,7 @@ export async function initWanbanXiaowu() {
   }
   function savePetTestState(state) {
     if (savePetFullActivePetState(state)) return;
+    if (petRuntimeMode === 'full') return;
     saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), state || {}));
   }
   function petStageCap(stage) {
@@ -6245,25 +6600,33 @@ export async function initWanbanXiaowu() {
     return '宠物';
   }
   function petDisplayName(info, state, fallback) {
-    return state && state.stage === 'egg' ? '？？？' : ((info && info.pet_card && info.pet_card.pet_name) || fallback || '宠物');
+    if (state && state.stage === 'egg') return '？？？';
+    const cardName = String(info?.pet_card?.pet_name || '').trim();
+    const selectedName = String(state?.testPetName || '').trim();
+    return (cardName && cardName !== '{{pet}}' ? cardName : selectedName) || fallback || '宠物';
   }
   function petSpeciesColorRule(species) {
     const map = {
-      fox: { name:'狐狸', normal:'红色', spirit:'白色点缀紫色' },
-      rabbit: { name:'兔子', normal:'浅黄色', spirit:'黑色点缀金色' },
-      cat: { name:'猫', normal:'灰色条纹起司猫', spirit:'白色点缀蓝色' },
-      dog: { name:'狗', normal:'黄色柴犬', spirit:'黑色柴犬' },
-      bala: { name:'水豚', normal:'棕色', spirit:'棕色点缀绿色' },
-      bird: { name:'鸟/鹰', normal:'浅黄色', spirit:'金色点缀红色火焰的鹰' }
+      fox: { name:'狐狸', normal:'红色狐狸立绘', spirit:'白色为主、紫色点缀的狐狸灵息立绘' },
+      rabbit: { name:'兔子', normal:'浅黄色兔子立绘', spirit:'黑色为主、金色点缀的兔子灵息立绘' },
+      cat: { name:'猫', normal:'灰色条纹起司猫立绘', spirit:'白色为主、蓝色点缀的猫灵息立绘' },
+      dog: { name:'狗', normal:'黄色柴犬立绘', spirit:'黑色柴犬灵息立绘' },
+      bala: { name:'水豚', normal:'棕色水豚立绘', spirit:'棕色为主、绿色点缀的水豚灵息立绘' },
+      bird: { name:'鹰', normal:'浅黄色鹰立绘', spirit:'金色为主、红色火焰点缀的鹰灵息立绘' },
+      otter: { name:'水獭', normal:'可可棕短毛、奶油色口鼻与喉胸斑、圆耳与粗长渐尖尾巴', spirit:'白色为主、青蓝水纹与柔和水带、保留短圆耳与有力尾巴的治愈系灵息水獭' },
+      hedgehog: { name:'刺猬', normal:'杏色脸与肚皮、椒盐色短刺、圆耳、纽扣黑眼与小尖鼻', spirit:'深蓝紫身体、天蓝紫色与少量橙金色亮晶刺，脸部完整不透明的可爱灵息刺猬' },
+      redpanda: { name:'小熊猫', normal:'红棕身体、奶白脸纹、深棕四肢与一条粗大环纹尾', spirit:'暗红与黑色为主、暖金眼睛与环纹光带；只有一条尾巴，尾根必须从身体右后方臀部连续长出并保持在身后' },
+      alpaca: { name:'羊驼', normal:'奶白或浅焦糖色卷毛、短圆脸、直立短耳、细腿与小尾巴', spirit:'白、粉、淡紫与浅天蓝云绒，坐在小云垫上，点缀轻巧金星与月牙的可爱灵息羊驼' },
+      sikadeer: { name:'梅花鹿', normal:'栗棕毛色、白色斑点、奶油色腹部、黑鼻尖、大耳与细腿', spirit:'金色与白色为主、轻巧金色枝角、星点斑纹与精致吊星的治愈系灵息梅花鹿' }
     };
     return map[String(species || '').toLowerCase()] || null;
   }
   function petSpeciesColorRuleText(species) {
-    const order = ['fox','rabbit','cat','dog','bala','bird'];
+    const order = PET_SPECIES_IDS;
     const list = species && species !== 'random' ? [String(species).toLowerCase()] : order;
     return list.map(id => {
       const r = petSpeciesColorRule(id);
-      return r ? '- ' + id + '（' + r.name + '）：普通形态=' + r.normal + '；灵息形态=' + r.spirit : '';
+      return r ? '- ' + id + '（' + r.name + '）：固定普通外观=' + r.normal + '；固定灵息外观=' + r.spirit + '；物种轮廓、五官、体型与肢体数量始终服从已有立绘' : '';
     }).filter(Boolean).join('\n');
   }
   function petFormForStage(state) {
@@ -6434,7 +6797,9 @@ export async function initWanbanXiaowu() {
   function petEggUrl(state) {
     const pct = petGrowthPercent(state);
     const idx = pct >= 80 ? 4 : (pct >= 50 ? 3 : (pct >= 20 ? 2 : 1));
-    const egg = (petTestInfoCache?.pet_card?.egg || 'gold').replace(/[^a-z]/g, '') || 'gold';
+    const cardEgg = String(petTestInfoCache?.pet_card?.egg || '').replace(/[^a-z]/g, '');
+    const stateEgg = String(state?.testEgg || '').replace(/[^a-z]/g, '');
+    const egg = PET_EGG_IDS.includes(cardEgg) ? cardEgg : (PET_EGG_IDS.includes(stateEgg) ? stateEgg : 'gold');
     return PET_ASSET_BASE + 'eggs/' + egg + '-' + idx + '.png';
   }
   function petAnimalSpriteUrl(state, action) {
@@ -6454,7 +6819,9 @@ export async function initWanbanXiaowu() {
   function petEggUrlForInfo(state, info) {
     const pct = petGrowthPercent(state || {});
     const idx = pct >= 80 ? 4 : (pct >= 50 ? 3 : (pct >= 20 ? 2 : 1));
-    const egg = (info?.pet_card?.egg || state?.testEgg || 'gold').replace(/[^a-z]/g, '') || 'gold';
+    const cardEgg = String(info?.pet_card?.egg || '').replace(/[^a-z]/g, '');
+    const stateEgg = String(state?.testEgg || '').replace(/[^a-z]/g, '');
+    const egg = PET_EGG_IDS.includes(cardEgg) ? cardEgg : (PET_EGG_IDS.includes(stateEgg) ? stateEgg : 'gold');
     return PET_ASSET_BASE + 'eggs/' + egg + '-' + idx + '.png';
   }
   function petAnimalSpriteUrlForInfo(state, action, info) {
@@ -6503,7 +6870,8 @@ export async function initWanbanXiaowu() {
       location:src.location || 'home',
       petAction:src.petAction || 'normal',
       testSpecies:src.testSpecies || '',
-      testEgg:src.testEgg || ''
+      testEgg:src.testEgg || '',
+      testPetName:src.testPetName || ''
     };
   }
   function petSnapshotState(snapshot) {
@@ -6648,9 +7016,12 @@ export async function initWanbanXiaowu() {
     savePetTestState(updatePetPendingStories(state, petTestInfoCache || { side_story:[] }));
     return state;
   }
+  function petCheatEnabled(state) {
+    return petCharName() === PET_SPECIAL_CHAR_NAME && state?.cheatMode === true;
+  }
   function petApplyCheatGrowth(amount) {
     let state = applyPetVisitAndDecay(petTestState());
-    if (state.ended) return state;
+    if (state.ended || !petCheatEnabled(state)) return state;
     const today = todayKey();
     const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
     const beforeGrowth = Number(state.growth || 0);
@@ -6708,7 +7079,7 @@ export async function initWanbanXiaowu() {
     const cls = petStateClass(state);
     const action = ({ normal:'poke', happy:'pet', eat:'feed', sleep:'sleep', sad:'sad' })[cls] || 'poke';
     const quoted = petTestInfoCache && petQuote(petTestInfoCache, 'pet', stage, action, '');
-    if (quoted) return quoted;
+    if (quoted) return petRenderText(quoted, petTestInfoCache, pet);
     const name = petDisplayName(petTestInfoCache, pet, '我');
     return ({
       eat: name + '吃得很认真。',
@@ -6733,6 +7104,9 @@ export async function initWanbanXiaowu() {
       return;
     }
     const form = petCurrentForm();
+    const nextClass = fox.className.replace(/\b(baby|adult|magic|normal|happy|eat|sleep|sad|animating)\b/g, '').trim() + ' ' + form + ' ' + petStateClass(state);
+    const nextSprite = 'url(' + petSpriteUrl(form, state) + ')';
+    if (queuePetAppearance(fox, nextClass, nextSprite)) return;
     ['baby','adult','magic'].forEach(x => fox.classList.toggle(x, x === form));
     ['normal','happy','eat','sleep','sad'].forEach(x => fox.classList.toggle(x, x === petStateClass(state)));
     fox.style.setProperty('--wb-pet-sprite', 'url(' + petSpriteUrl(form, state) + ')');
@@ -6741,17 +7115,11 @@ export async function initWanbanXiaowu() {
   }
   function triggerPetAnimation(root) {
     const fox = qs('.wb-pet-fox', root || getHostDocument());
-    if (!fox) return;
-    fox.classList.remove('animating');
-    void fox.offsetWidth;
-    fox.classList.add('animating');
-    setTimeout(() => {
-      const latest = qs('.wb-pet-fox', root || getHostDocument());
-      if (latest) latest.classList.remove('animating');
-    }, 2050);
+    playPetFrames(fox, getHostWindow());
   }
-  function resetPetAnimationLoop(root, fast) {
+  function resetPetAnimationLoop(root, fast, animate = true) {
     if (petAnimationTimer) clearTimeout(petAnimationTimer);
+    if (animate) triggerPetAnimation(root);
     const schedule = () => {
       const delay = fast ? 3600 + Math.floor(Math.random() * 1800) : 10000;
       petAnimationTimer = setTimeout(() => {
@@ -6811,8 +7179,7 @@ export async function initWanbanXiaowu() {
           if (text) setTimeout(() => { const latest = qs('#' + PET_FLOAT_ID, doc); if (latest) latest.classList.remove('speech-on'); }, 4200);
         }
       }
-      if (opts.animate !== false) triggerPetAnimation(root);
-      resetPetAnimationLoop(root, nextState === 'eat' || nextState === 'happy');
+      resetPetAnimationLoop(root, nextState === 'eat' || nextState === 'happy', opts.animate !== false);
     }
     if (opts.temporary) {
       if (petStateReturnTimer) clearTimeout(petStateReturnTimer);
@@ -6826,8 +7193,9 @@ export async function initWanbanXiaowu() {
     const pet = petApplyInteraction(state === 'eat' ? 'feed' : (state === 'happy' ? 'pet' : 'poke'));
     savePetTestState(updatePetPendingStories(pet, petTestInfoCache));
     const auto = petAutoAction(pet);
-    const nextState = auto || state;
-    petSetState(nextState, petLineFor(nextState), { root, persistent:true, temporary:!auto, animate:true });
+    const interactive = state === 'eat' || state === 'happy';
+    const nextState = interactive ? state : (auto || state);
+    petSetState(nextState, petLineFor(nextState), { root, persistent:true, temporary:interactive || !auto, animate:true, resetIdle:!interactive });
   }
   function petDesktopStatusHTML() {
     const pet = applyPetVisitAndDecaySaved();
@@ -6841,16 +7209,19 @@ export async function initWanbanXiaowu() {
   }
   function petCardPromptText(info, state) {
     const hidden = v => v ? String(v) : '???';
+    const card = info?.pet_card || {};
+    const sex = card.sex || card.gender;
+    const spirit = card.spirit_tendency_skill || card.spirit || card.spirit_ability;
     return [
       '宠物名称：' + petDisplayName(info, state),
       '当前阶段：' + petDisplayStage(state),
       '成长值：' + petGrowthPercent(state) + '%',
       '饱食度：' + (state.stage === 'egg' ? '???' : Math.round(state.fullness || 0)),
       '开心值：' + (state.stage === 'egg' ? '???' : Math.round(state.happiness || 0)),
-      '品种：' + hidden(state.stage === 'egg' ? '' : info?.pet_card?.species),
-      '性别：' + hidden(info?.pet_card?.gender),
-      '性格：' + hidden(state.stage === 'egg' ? '' : info?.pet_card?.personality),
-      '灵息：' + hidden(state.stage === 'spirit' ? info?.pet_card?.spirit : ''),
+      '品种：' + hidden(state.stage === 'egg' ? '' : card.species),
+      '性别：' + hidden(sex),
+      '性格：' + hidden(state.stage === 'egg' ? '' : card.personality),
+      '灵息：' + hidden(state.stage === 'spirit' ? spirit : ''),
       '收养人：' + petPlayerName(state) + ' & ' + petCharName()
     ].join('\n');
   }
@@ -6873,8 +7244,16 @@ export async function initWanbanXiaowu() {
     const cfg = petCaretakerPromptConfig();
     const state = applyPetVisitAndDecaySaved();
     const info = petTestInfoCache || {};
+    cfg.userName = state.userName || cfg.userName;
+    const petCardText = petCardPromptText(info, state);
     const fallback = kind === 'comment' ? '我刚刚像趴在窗台上一样看完啦，这段剧情里有一点亮晶晶的地方。' : '我听见啦。今天也要慢慢照顾我，不许偷偷忘记。';
     if (!cfg.apiUrl || !cfg.apiModel) return fallback;
+    if (petCaretakerIsShen(cfg)) {
+      cfg.charDescriptionSnapshot = await petAssetText('shenqibai_special.txt', '');
+      if (!cfg.charDescriptionSnapshot.trim()) throw new Error('沈栖白专用角色卡读取失败');
+      cfg.worldText = await petAssetText('world.txt', '');
+    }
+    cfg.specialLanguageEnabled = false;
     const basePrompt = await petDesktopChatPromptText();
     const prompt = [
       (cfg.breakLimitPrompt || '').trim(),
@@ -6882,8 +7261,8 @@ export async function initWanbanXiaowu() {
       basePrompt,
       '【当前共同养宠角色】\n' + currentCharDescription(cfg),
       '【当前用户设定】\n' + currentUserDescription(cfg),
-      '【宠物名片】\n' + petCardPromptText(info, state),
-      '【上面8层剧情内容】\n' + (recentChatText(8) || '无'),
+      '【宠物名片】\n' + petCardText,
+      '【当前角色保存的剧情内容】\n' + (cfg.chatSnapshot || '无'),
       kind === 'comment' ? '任务：评论最近几层楼的故事剧情，像读者一样说出你的感受。' : '用户对你说：' + (userText || '')
     ].filter(Boolean).join('\n\n');
     return (await callApiText(cfg, prompt, '你是可爱的桌面宠物，只输出宠物回复正文。', 900)).trim();
@@ -6903,6 +7282,15 @@ export async function initWanbanXiaowu() {
     const box = qs('.wb-pet-desk-chat-text', el);
     if (box) box.textContent = text || '';
   }
+  async function refreshPetDesktopChat(el, kind, text) {
+    const target = petStorageTarget();
+    const request = el.dataset.wbChatRequest = String(Number(el.dataset.wbChatRequest || 0) + 1);
+    petDesktopSetChat(el, '生成中...');
+    let reply;
+    try { reply = await generatePetDesktopChat(kind, text); }
+    catch (_) { reply = '我刚刚有点走神了，但我听见你说的话啦。'; }
+    if (el.isConnected && petTargetIsCurrent(target) && el.dataset.wbChatRequest === request) petDesktopSetChat(el, reply);
+  }
   function openPetDesktopChatInput(el) {
     injectPetArcadeStyle();
     const doc = getHostDocument();
@@ -6920,9 +7308,7 @@ export async function initWanbanXiaowu() {
       if (!text) { toast('请先输入聊天内容'); return; }
       mask.remove();
       el.classList.add('chat-on');
-      petDesktopSetChat(el, '生成中...');
-      try { petDesktopSetChat(el, await generatePetDesktopChat('chat', text)); }
-      catch(e) { petDesktopSetChat(el, '我刚刚有点走神了，但我听见你说的话啦。'); }
+      await refreshPetDesktopChat(el, 'chat', text);
     };
   }
   function startPetBallGame(el) {
@@ -7198,9 +7584,7 @@ export async function initWanbanXiaowu() {
         if (action === 'close') { el.classList.remove('chat-on'); return; }
         if (action === 'chat') { openPetDesktopChatInput(el); return; }
         if (action === 'comment') {
-          petDesktopSetChat(el, '生成中...');
-          try { petDesktopSetChat(el, await generatePetDesktopChat('comment', '')); }
-          catch(err) { petDesktopSetChat(el, '我刚刚认真看了一会儿，感觉这段剧情像一颗小糖，藏着一点点亮光。'); }
+          await refreshPetDesktopChat(el, 'comment', '');
         }
       };
     });
@@ -7220,10 +7604,13 @@ export async function initWanbanXiaowu() {
     }
     injectStyle();
     const state = petStateClass(cfg.petDesktopState || 'normal');
+    const targetKey = JSON.stringify(petStorageTarget());
+    if (el && el.dataset.petTarget !== targetKey) { el.remove(); el = null; }
     if (el && !qs('.wb-pet-desk-submenu', el)) { el.remove(); el = null; }
     if (!el) {
       el = doc.createElement('div');
       el.id = PET_FLOAT_ID;
+      el.dataset.petTarget = targetKey;
       el.className = 'wb-pet-float';
       el.innerHTML = '<button class="wb-pet-desk-fox" type="button" aria-label="桌宠">'
         + petSpriteHTML(state)
@@ -7325,6 +7712,8 @@ export async function initWanbanXiaowu() {
     render();
   }
   function closePopupShell() {
+    activeGameController?.save?.();
+    flushAllProgressSaves();
     pauseGameForInactiveSurface();
     const doc = getHostDocument();
     const shell = qs('#' + SHELL_ID, doc);
@@ -7424,18 +7813,27 @@ export async function initWanbanXiaowu() {
   }
 
   function openPetFullEntry() {
+    if (loadJSON(SCRIPT_ID + '_petLastRoute', '') === 'test' && petTrialHasSavedPet()) {
+      resumePetSpecialCompanion();
+      return;
+    }
     petRuntimeMode = 'full';
     const data = petFullData();
     const activeCaretaker = petFullActiveCaretaker(data);
     const active = petFullActivePet(data, activeCaretaker);
     if (active && activeCaretaker) { withPetFullActive(activeCaretaker.id); renderPetHouse(); return; }
+    if (petTrialHasSavedPet()) { resumePetSpecialCompanion(); return; }
     openPetCaretakerSelect(null, { forceFull:true });
   }
 
   function renderPetEntry() {
     openPetFullEntry();
   }
-  function openPetTestSelect() {
+  function openPetTestSelect(options) {
+    if (options?.cheatMode === undefined) {
+      openPetCheatModeChoice(cheatMode => openPetTestSelect({ cheatMode }));
+      return;
+    }
     injectPetArcadeStyle();
     petRuntimeMode = 'test';
     petFullActiveCaretakerId = '';
@@ -7446,24 +7844,36 @@ export async function initWanbanXiaowu() {
     body.className = 'wb-body wb-intimacy-mode';
     clearPetTimers();
     const st = petTestState();
-    const eggs = [['blue','蓝色蛋'], ['purple','紫色蛋'], ['pink','粉色蛋'], ['green','绿色蛋'], ['gold','金色蛋'], ['white','白色蛋']];
-    const species = [['rabbit','兔子'], ['dog','小狗'], ['cat','猫咪'], ['bird','飞鸟'], ['bala','水豚'], ['fox','狐狸']];
+    const eggs = PET_EGG_OPTIONS.map(item => [item.id, item.label]);
+    const species = PET_SPECIES_OPTIONS.map(item => [item.id, item.label]);
     const egg = st.testEgg || 'green';
     const sp = st.testSpecies || 'rabbit';
+    const petName = st.testPetName || PET_DEFAULT_STORY_NAMES[sp] || '宠物';
     body.innerHTML = '<div class="wb-panel wb-pet-test-select" style="max-width:760px;margin:0 auto;display:grid;gap:12px;">'
-      + '<div class="wb-section-title">试用版</div>'
-      + '<label class="wb-field"><span>{{user}} 名字</span><input class="wb-input" id="wb-pet-test-user" value="' + esc(st.userName || settings().userName || '') + '" placeholder="输入你的名字"></label>'
-      + '<div class="wb-field"><span>选择蛋</span><div class="wb-pet-egg-grid">' + eggs.map(e => '<button class="wb-btn wb-pet-egg-choice ' + (egg === e[0] ? 'selected' : '') + '" type="button" data-egg="' + e[0] + '"><img src="' + esc(PET_ASSET_BASE + 'eggs/' + e[0] + '-1.png') + '" alt=""><span>' + e[1] + '</span></button>').join('') + '</div></div>'
-      + '<div class="wb-field"><span>选择宠物种类</span><div class="wb-pet-species-grid">' + species.map(x => '<button class="wb-btn wb-pet-species-choice ' + (sp === x[0] ? 'selected' : '') + '" type="button" data-species="' + x[0] + '">' + esc(x[1]) + '</button>').join('') + '</div></div>'
-      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-pet-test-enter" style="flex:1;">直接进入</button><button class="wb-btn" id="wb-pet-test-back">返回</button></div>'
+      + '<div class="wb-section-title">特别陪伴 · 固定剧情</div>'
+      + '<div class="wb-api-status">可选择：你的名字、宠物名字、蛋的外观与动物剧情。固定不变：性别、性格、灵息能力与完整剧情线。宠物名和蛋外观会同步代入全部剧情与记录。</div>'
+      + '<label class="wb-field"><span>{{user}} 名字</span><input class="wb-input" id="wb-pet-test-user" value="' + esc(st.userName || '') + '" placeholder="输入你的名字"></label>'
+      + '<label class="wb-field"><span>宠物名字</span><input class="wb-input" id="wb-pet-test-name" maxlength="20" value="' + esc(petName) + '" placeholder="输入宠物名字"></label>'
+      + '<div class="wb-field"><span>选择蛋的外观</span><div class="wb-pet-egg-grid">' + eggs.map(e => '<button class="wb-btn wb-pet-egg-choice ' + (egg === e[0] ? 'selected' : '') + '" type="button" data-egg="' + e[0] + '"><img src="' + esc(PET_ASSET_BASE + 'eggs/' + e[0] + '-1.png') + '" alt=""><span>' + e[1] + '</span></button>').join('') + '</div></div>'
+      + '<div class="wb-field"><span>选择固定动物剧情</span><div class="wb-pet-species-grid">' + species.map(x => '<button class="wb-btn wb-pet-species-choice ' + (sp === x[0] ? 'selected' : '') + '" type="button" data-species="' + x[0] + '">' + esc(x[1]) + '</button>').join('') + '</div></div>'
+      + '<div class="wb-actions"><button class="wb-btn primary" id="wb-pet-test-enter" style="flex:1;">和沈栖白开始</button><button class="wb-btn" id="wb-pet-test-back">返回</button></div>'
       + '</div>';
     let selectedEgg = egg, selectedSpecies = sp;
     qsa('.wb-pet-egg-choice', body).forEach(btn => btn.onclick = () => { selectedEgg = btn.dataset.egg; qsa('.wb-pet-egg-choice', body).forEach(x => x.classList.toggle('selected', x === btn)); });
-    qsa('.wb-pet-species-choice', body).forEach(btn => btn.onclick = () => { selectedSpecies = btn.dataset.species; qsa('.wb-pet-species-choice', body).forEach(x => x.classList.toggle('selected', x === btn)); });
+    qsa('.wb-pet-species-choice', body).forEach(btn => btn.onclick = () => {
+      const nameInput = qs('#wb-pet-test-name', body);
+      const currentName = (nameInput?.value || '').trim();
+      const previousDefault = PET_DEFAULT_STORY_NAMES[selectedSpecies] || '';
+      selectedSpecies = btn.dataset.species;
+      if (nameInput && (!currentName || currentName === previousDefault)) nameInput.value = PET_DEFAULT_STORY_NAMES[selectedSpecies] || '宠物';
+      qsa('.wb-pet-species-choice', body).forEach(x => x.classList.toggle('selected', x === btn));
+    });
     qs('#wb-pet-test-enter', body).onclick = () => {
-      const userName = (qs('#wb-pet-test-user', body)?.value || '').trim() || settings().userName || '你';
-      setSettings({ userName });
-      saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { userName, testEgg:selectedEgg, testSpecies:selectedSpecies }));
+      const userName = (qs('#wb-pet-test-user', body)?.value || '').trim() || '你';
+      const testPetName = (qs('#wb-pet-test-name', body)?.value || '').trim() || PET_DEFAULT_STORY_NAMES[selectedSpecies] || '宠物';
+      saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { userName, testEgg:selectedEgg, testSpecies:selectedSpecies, testPetName, cheatMode:!!options.cheatMode, journeyId:Date.now().toString(), archives:st.archives || [] }));
+      saveJSON(SCRIPT_ID + '_petLastRoute', 'test');
+      saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
       petTestInfoCache = null;
       petTestInfoLoading = null;
       renderPetHouse();
@@ -7476,9 +7886,9 @@ export async function initWanbanXiaowu() {
     body.className = 'wb-body wb-intimacy-mode';
     clearPetTimers();
     const state = petTestState();
-    const current = state.userName || settings().userName || '';
+    const current = state.userName || '';
     body.innerHTML = '<div class="wb-panel" style="max-width:560px;margin:0 auto;display:grid;gap:12px;">'
-      + '<div class="wb-section-title">进入试用版</div>'
+      + '<div class="wb-section-title">进入特别陪伴</div>'
       + '<label class="wb-field"><span>{{user}} 名字</span><input class="wb-input" id="wb-pet-user-name" value="' + esc(current) + '" placeholder="输入你的名字"></label>'
       + '<div class="wb-actions"><button class="wb-btn primary" id="wb-pet-name-start" style="flex:1;">进入</button><button class="wb-btn" id="wb-pet-name-back">返回</button></div>'
       + '</div>';
@@ -7488,7 +7898,6 @@ export async function initWanbanXiaowu() {
       const name = (input && input.value ? input.value.trim() : '') || '你';
       const next = Object.assign({}, petTestState(), { userName:name });
       savePetTestState(next);
-      setSettings({ userName:name });
       renderPetHouse();
     };
     if (start) start.onclick = go;
@@ -7510,17 +7919,18 @@ export async function initWanbanXiaowu() {
     return 'speaker-narrator';
   }
   function petPlayerName(state) {
-    return (state && state.userName) || petTestState().userName || settings().userName || '{{user}}';
+    return (state && state.userName) || petCaretakerPromptConfig().userName || '{{user}}';
   }
   function petCharName() {
-    if (petRuntimeMode === 'test') return '江维';
+    if (petRuntimeMode === 'test') return PET_SPECIAL_CHAR_NAME;
     const c = petFullActiveCaretaker();
     return (c && c.name) || companionName() || '{{char}}';
   }
   function petCharAvatarHTML() {
     const c = petRuntimeMode === 'test' ? null : petFullActiveCaretaker();
-    const url = (c && c.avatarUrl) || settings().avatarUrl || findCurrentCardAvatar() || '';
     const name = petCharName();
+    const cfg = petCaretakerPromptConfig(c);
+    const url = name === PET_SPECIAL_CHAR_NAME ? PET_SPECIAL_CHAR_AVATAR : (cfg.avatarUrl || cfg.defaultAvatarUrl || findCharacterAvatarByName(name) || '');
     return '<span class="wb-pet-title-avatar">' + (url ? '<img src="' + esc(url) + '" alt="">' : esc(String(name || '?').slice(0, 1))) + '</span>';
   }
   function injectPetArcadeStyle() {
@@ -7574,7 +7984,7 @@ export async function initWanbanXiaowu() {
       #${POPUP_ID} .wb-pet-story-status{min-height:30px;display:grid;place-items:center;font-size:15px;font-weight:1000;letter-spacing:2px;color:var(--wb-accent)}
       #${POPUP_ID} .wb-pet-room.story-mode{cursor:pointer}#${POPUP_ID} .wb-pet-story-exit{position:absolute;right:12px;top:12px;z-index:8;width:auto!important;min-width:0!important;height:30px!important;padding:0 9px!important;border-radius:999px!important;border-color:color-mix(in srgb,var(--wb-text) 65%,#000 35%)!important;background:var(--wb-soft)!important;color:var(--wb-text)!important;font-size:11px!important}#${POPUP_ID} .wb-pet-room.story-mode .wb-pet-dialogue{cursor:pointer}#${POPUP_ID} .wb-pet-room.story-mode .wb-pet-dialogue-text{display:block;-webkit-line-clamp:unset;-webkit-box-orient:initial;overflow:hidden;word-break:break-all;overflow-wrap:anywhere}
       #${POPUP_ID} .wb-pet-story-done{font-size:11px!important;text-align:center;color:var(--wb-sub)!important;align-self:center}
-      #${POPUP_ID} .wb-pet-npc-portrait{animation:wbPetNpcFade .28s steps(4,end) both}@keyframes wbPetNpcFade{from{opacity:0;transform:translate(-50%,-50%) translateY(6px)}to{opacity:1;transform:translate(-50%,-50%) translateY(0)}}
+      #${POPUP_ID} .wb-pet-npc-portrait{animation:wbPetNpcFade .28s steps(4,end) both}@keyframes wbPetNpcFade{from{opacity:0}to{opacity:1}}
 
       #${POPUP_ID} .wb-pet-card-btn{width:24px!important;min-width:24px!important;height:22px!important;margin-left:4px;padding:0!important;background:transparent!important;border-color:transparent!important;color:var(--wb-accent)!important;vertical-align:middle}.wb-modal-mask#wb-pet-profile-mask .wb-pet-modal{width:min(94vw,540px)!important;max-width:540px!important;overflow:visible!important}.wb-modal-mask .wb-pet-profile-card{box-sizing:border-box;position:relative;width:100%;max-width:100%;padding:18px 18px 16px;border:3px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%);background:linear-gradient(135deg,#fffdf7,#f4fbff 58%,#fff4e8);color:#2f3b46;box-shadow:0 0 0 4px rgba(255,255,255,.55) inset;overflow:hidden}.wb-modal-mask .wb-pet-profile-card::before{content:'';position:absolute;left:-20%;right:-20%;top:0;height:9px;background:repeating-linear-gradient(90deg,#ffd7e2 0 28px,#dff3ff 28px 56px,#e4f5d8 56px 84px,#fff0bd 84px 112px)}.wb-modal-mask .wb-pet-profile-top{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;margin-bottom:12px}.wb-modal-mask .wb-pet-profile-photo{position:relative;width:96px;height:72px;border:2px solid #2f3b46;background:#fffdf7;overflow:hidden;display:grid;place-items:center}.wb-modal-mask .wb-pet-profile-photo .wb-pet-asset,.wb-modal-mask .wb-pet-profile-photo .wb-pet-egg-img{width:58px;height:58px;object-fit:contain}.wb-modal-mask .wb-pet-profile-photo .wb-pet-fox{width:62px;height:62px;background-image:var(--wb-pet-sprite);background-size:400% 100%;background-repeat:no-repeat;background-position:0 0;animation:none!important}.wb-modal-mask .wb-pet-profile-seal{width:58px;height:58px;border:2px solid #2f3b46;border-radius:14px;background:#fff7d8;display:grid;place-items:center;font-size:26px;font-weight:1000;color:#c28a2d}.wb-modal-mask .wb-pet-profile-title{display:grid;gap:2px}.wb-modal-mask .wb-pet-profile-title b{font-size:22px;color:#be6a55;letter-spacing:1px}.wb-modal-mask .wb-pet-profile-title span{font-size:12px;color:#657489;font-weight:900}.wb-modal-mask .wb-pet-profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.wb-modal-mask .wb-pet-profile-item{padding:8px 10px;border:1px solid rgba(80,98,112,.22);background:rgba(255,255,255,.62);border-radius:12px;min-width:0}.wb-modal-mask .wb-pet-profile-item.wide{grid-column:1/-1}.wb-modal-mask .wb-pet-profile-item em{display:block;font-style:normal;font-size:11px;font-weight:1000;color:#7d8da0;margin-bottom:2px}.wb-modal-mask .wb-pet-profile-item strong{display:block;font-size:15px;color:#30404b;line-height:1.35;overflow-wrap:anywhere}.wb-modal-mask .wb-pet-profile-num{font-size:20px;color:#d56a52;font-weight:1000}.wb-modal-mask .wb-pet-profile-lock{letter-spacing:2px;color:#a8a2a0!important}.wb-modal-mask .wb-pet-profile-actions{display:flex;justify-content:flex-end;margin-top:14px}
       .wb-modal-mask .wb-pet-story-choice{width:min(90vw,440px)!important;max-width:440px!important}.wb-modal-mask .wb-pet-story-choice-title{font-size:14px;color:var(--wb-sub);font-weight:900;text-align:center}.wb-modal-mask .wb-pet-story-choice-name{margin:8px 0 10px;text-align:center;font-size:24px;line-height:1.25;color:var(--wb-accent);font-weight:1000}.wb-modal-mask .wb-pet-story-choice-summary{padding:10px 12px;border:2px solid color-mix(in srgb,var(--wb-accent) 34%,var(--wb-border) 66%);background:var(--wb-soft);color:var(--wb-text);line-height:1.55;font-weight:800}
@@ -8133,15 +8543,23 @@ export async function initWanbanXiaowu() {
           border:3px solid color-mix(in srgb,var(--wb-text) 70%,#000 30%)!important;
           box-sizing:border-box;
         }
-        .wb-modal-mask .wb-pet-adopt-grid{grid-template-columns:1fr;gap:8px}.wb-modal-mask .wb-pet-egg-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.wb-modal-mask .wb-pet-egg-choice{min-height:68px}.wb-modal-mask .wb-pet-egg-choice img{width:34px;height:34px}
+        .wb-modal-mask .wb-pet-adopt-grid{grid-template-columns:1fr;gap:8px}.wb-modal-mask .wb-pet-egg-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.wb-modal-mask .wb-pet-egg-choice{min-height:68px}.wb-modal-mask .wb-pet-egg-choice img{width:34px;height:34px}.wb-modal-mask .wb-pet-mode-grid{grid-template-columns:1fr}.wb-modal-mask .wb-pet-mode-choice{min-height:0}
       }
     `;
     doc.head.appendChild(style);
   }
   function petRenderText(text, info, state) {
+    const cardName = String(info?.pet_card?.pet_name || '').trim();
+    const configuredPetName = cardName && cardName !== '{{pet}}' ? cardName : String(state?.testPetName || '宠物');
+    const cardEgg = String(info?.pet_card?.egg || '').replace(/[^a-z]/g, '');
+    const stateEgg = String(state?.testEgg || '').replace(/[^a-z]/g, '');
+    const eggKey = PET_EGG_IDS.includes(cardEgg) ? cardEgg : stateEgg;
+    const configuredEgg = PET_EGG_LABELS[eggKey] || '宠物蛋';
     return String(text || '')
       .replace(/\{\{user\}\}/g, petPlayerName(state))
       .replace(/\{\{char\}\}/g, petCharName())
+      .replace(/\{\{pet\}\}/g, configuredPetName)
+      .replace(/\{\{egg\}\}/g, configuredEgg)
       .replace(/江维/g, petCharName())
       .replace(/小黑/g, petDisplayName(info, state));
   }
@@ -8177,7 +8595,7 @@ export async function initWanbanXiaowu() {
   }
   function petSpeakerName(speaker, info, state) {
     const sp = String(speaker || '').toLowerCase();
-    if (speaker === 'U' || sp === 'user' || speaker === '{{user}}') return petPlayerName();
+    if (speaker === 'U' || sp === 'user' || speaker === '{{user}}') return petPlayerName(state);
     if (speaker === 'C' || sp === 'char' || speaker === '{{char}}') return petCharName();
     if (speaker === 'P' || sp === 'pet' || speaker === '宠物') return (state && state.stage === 'egg') ? '？？？' : (info?.pet_card?.pet_name || '宠物');
     if (speaker === '沈') return '沈栖白';
@@ -8272,7 +8690,7 @@ export async function initWanbanXiaowu() {
       if (story) {
         if (active.prompt) {
           return '<div class="wb-pet-dialogue-name">触发' + (/^S/.test(active.id) ? '支线剧情' : '主线剧情') + ' · ' + esc(petRenderText(story.title || active.id, info, state)) + '</div>'
-            + '<div class="wb-pet-dialogue-text">' + petInlineHTML(petRenderText(story.summary || '有新的剧情可以体验。', info, state)) + '</div>'
+            + '<div class="wb-pet-dialogue-text">准备好后，就从现场正在发生的事开始。</div>'
             + '<div class="wb-pet-dialogue-actions"></div>';
         }
         if (active.done) return '<div class="wb-pet-dialogue-text narrator wb-pet-story-done">当前剧情已完成，点击回到小屋</div><div class="wb-pet-dialogue-actions"></div>';
@@ -8428,10 +8846,26 @@ export async function initWanbanXiaowu() {
   async function generatePetFullInfo(caretaker, form, onDelta) {
     const api = apiFieldsFromPresetIndex(form.api_preset_index);
     const cfg = Object.assign({}, petCaretakerPromptConfig(caretaker), api);
+    cfg.userName = form.user_name || caretaker.userName || '{{user}}';
     if (!cfg.apiUrl || !cfg.apiModel) throw new Error('请先在设置中配置API和模型');
-    const world = await petAssetText('world.txt', '');
-    const infoPrompt = await petAssetText('info.txt', '');
+    const shenIsCaretaker = petCaretakerIsShen(caretaker);
+    const [world, infoPrompt, rolePrompt, shenFriend, shenSpecial] = await Promise.all([
+      petAssetText('world.txt', ''),
+      petAssetText('info.txt', ''),
+      petAssetText(shenIsCaretaker ? 'info_role_shenqibai.txt' : 'info_role_friend.txt', ''),
+      shenIsCaretaker ? Promise.resolve('') : petAssetText('shenqibai_friend.txt', ''),
+      shenIsCaretaker ? petAssetText('shenqibai_special.txt', '') : Promise.resolve('')
+    ]);
+    const charWorld = shenIsCaretaker
+      ? '本次使用灵息宠物世界与沈栖白专用角色输入，禁止注入当前酒馆角色的世界观。'
+      : (selectedWorldText(cfg) || cfg.worldText || '无');
+    const charDescription = shenIsCaretaker ? shenSpecial : currentCharDescription(cfg);
+    if (shenIsCaretaker && !shenSpecial.trim()) throw new Error('沈栖白专用角色卡读取失败');
+    if (shenIsCaretaker) { cfg.charDescriptionSnapshot = shenSpecial; cfg.worldText = world; }
     const cycle = Number(form.adoption_cycle || petFullAdoptionCycle(caretaker));
+    const diversityPalette = petGenerationDiversityHintText(form.selected_egg);
+    const diversityLedger = cycle > 1 ? petFullDiversityLedgerText(caretaker) : '无';
+    const previousMemories = cycle > 1 ? petFullAllLogsText(caretaker) : '无';
     const input = [
       'pet_name_candidates:',
       '  male: ' + (form.male_name || '小星'),
@@ -8443,35 +8877,43 @@ export async function initWanbanXiaowu() {
       'wish_species: ' + (form.wish_species || 'random'),
       'wish_sex: ' + (form.wish_sex || 'random'),
       'wish_tendency: ' + (form.wish_tendency || 'random'),
-      'pet_sprite_color_rules:',
+      'pet_sprite_appearance_rules:',
       petSpeciesColorRuleText(form.wish_species || 'random').split('\n').map(x => '  ' + x).join('\n'),
-      'pet_sprite_color_requirement: |',
-      '  生成宠物剧情文本、summary、story、left_item、语录时，宠物外观颜色必须严格遵守上述立绘颜色。',
-      '  common、juvenile、adult、ordinary 普通路线均使用“普通形态”颜色；spirit 路线和灵息形态均使用“灵息形态”颜色。',
-      '  不要写成其他毛色、羽色、眼花色或与立绘冲突的花纹；如需描写光效，只能作为点缀，不能覆盖规定主色。',
+      'pet_sprite_appearance_lock: |',
+      '  上述内容是已有像素立绘的完整外观白名单，不是创作建议。AI只生成性格、灵息规则和剧情，没有重新设计外观的权限。',
+      '  common、juvenile、adult、ordinary 只使用固定普通外观；spirit 路线和灵息形态只使用固定灵息外观。',
+      '  禁止新增或修改毛色、羽色、眼色、斑纹、毛长、体型、品种细分、饰品、角、翅膀、尾巴数量或其他身体部件。',
+      '  能力的可见反馈优先出现在身体外部，例如脚印、小物、地面、水面、风、影子或短暂光轨；描写身体时只能使用已有立绘特征。',
       'narrative_person: ' + (['first','second','third'].includes(form.narrative_person) ? form.narrative_person : 'second'),
       'user_pronoun: TA',
       'adoption_cycle: ' + cycle,
-      'user_name: ' + (form.user_name || petPlayerName(petTestState())),
-      'char_name: ' + (caretaker?.name || petCharName()),
+      'generation_current_date: ' + todayKey(),
+      'user_name: ' + cfg.userName,
+      'char_name: ' + cfg.charName,
+      'generation_diversity_palette: |-',
+      diversityPalette.split('\n').map(x => '  ' + x).join('\n'),
+      'previous_pet_diversity_ledger: |-',
+      diversityLedger.split('\n').map(x => '  ' + x).join('\n'),
       'previous_pet_memories: |-',
-      String(cycle > 1 ? petFullAllLogsText(caretaker) : '无').split('\n').map(x => '  ' + x).join('\n')
+      previousMemories.split('\n').map(x => '  ' + x).join('\n')
     ].join('\n');
     const prompt = [
       (cfg.breakLimitPrompt || '').trim(),
       specialLanguageRequirement('petInfo', cfg),
       '【module0-module1 世界规则】\n' + world,
-      '【当前{{char}}世界观全部信息】\n' + (caretaker?.worldText || selectedWorldText(cfg) || '无'),
-      '【当前角色描述】\n' + currentCharDescription(cfg),
+      '【本次唯一角色身份输入】\n' + rolePrompt,
+      '【当前{{char}}世界观全部信息】\n' + charWorld,
+      '【当前{{char}}角色卡】\n' + charDescription,
+      shenFriend ? '【沈栖白朋友 NPC 角色卡】\n' + shenFriend : '',
       '【当前{{user}}设定】\n' + currentUserDescription(cfg),
       '【当前语言/风格要求】\n' + (cfg.specialLanguageEnabled ? (cfg.specialLanguage || '已开启') : '无'),
       '【界面输入内容】\n' + input,
-      '【宠物立绘颜色硬性规则】\n' + petSpeciesColorRuleText(form.wish_species || 'random') + '\n\n必须遵守：普通成长线和普通路线使用普通形态颜色；灵息路线使用灵息形态颜色。剧情中所有对宠物毛色、羽色、花纹、光效、遗留物颜色的描写都不能与该颜色规则冲突。',
+      '【宠物立绘外观硬性规则】\n' + petSpeciesColorRuleText(form.wish_species || 'random') + '\n\n必须遵守：外观由已有像素立绘唯一决定，不属于本轮随机创作范围。普通成长线与普通路线使用固定普通外观，灵息路线使用固定灵息外观。禁止新增或修改任何毛色、羽色、眼色、斑纹、体型、饰品或身体部件；灵息能力的差异通过规则、触发、作用对象、代价和身体外短暂效果呈现。',
       '【info生成规范】\n' + infoPrompt
     ].filter(Boolean).join('\n\n');
     const raw = onDelta
-      ? await callApiTextStream(cfg, prompt, '你是灵息宠物系统素材生成器。只输出合法的<pet_info> YAML，不要解释。', 16000, onDelta)
-      : await callApiText(cfg, prompt, '你是灵息宠物系统素材生成器。只输出合法的<pet_info> YAML，不要解释。', 16000);
+      ? await callApiTextStream(cfg, prompt, '你是灵息宠物系统素材生成器。输出前先在内部完成差异化指纹、能力规则和历史避重检查；只输出合法的<pet_info> YAML，不要解释。', 16000, onDelta)
+      : await callApiText(cfg, prompt, '你是灵息宠物系统素材生成器。输出前先在内部完成差异化指纹、能力规则和历史避重检查；只输出合法的<pet_info> YAML，不要解释。', 16000);
     const parsed = parsePetInfoText(raw);
     if ((parsed.parseWarnings || []).length || !parsed.pet_card?.pet_name || parsed.main_story.length < 15 || parsed.side_story.length < 6) {
       const err = new Error('info解析失败：' + ((parsed.parseWarnings || []).join('；') || '字段数量不足'));
@@ -8490,8 +8932,24 @@ export async function initWanbanXiaowu() {
     return '你需要根据输入内容，生成一篇由 {{char}} 亲自记录的每日宠物日志。只输出JSON。';
   }
   async function generatePetDailyLog(info, state, note, cfgOverride, dateKeyOverride) {
-    const cfg = cfgOverride || settings();
+    const cfg = cfgOverride || petCaretakerPromptConfig();
     const today = dateKeyOverride || todayKey();
+    const shenIsCaretaker = petCaretakerIsShen(cfg);
+    const playerName = state.userName || cfg.userName || '{{user}}';
+    const petCardText = petCardPromptText(info, state).replace(/收养人：[^\n]*/, '收养人：' + playerName + ' & ' + cfg.charName);
+    const petName = petDisplayName(info, state);
+    const storyText = petTodayStoryText(state, info, today);
+    const [roleDescription, logRolePrompt, shenFriend] = await Promise.all([
+      shenIsCaretaker ? petAssetText('shenqibai_special.txt', '') : Promise.resolve(currentCharDescription(cfg)),
+      petAssetText(shenIsCaretaker ? 'log_role_shenqibai.txt' : 'log_role_friend.txt', ''),
+      shenIsCaretaker ? Promise.resolve('') : petAssetText('shenqibai_friend.txt', '')
+    ]);
+    if (shenIsCaretaker) {
+      if (!roleDescription.trim()) throw new Error('沈栖白专用角色卡读取失败');
+      cfg.charDescriptionSnapshot = roleDescription;
+      cfg.worldText = await petAssetText('world.txt', '');
+    }
+    cfg.userName = playerName;
     const fallback = parsePetGeneratedLog('<daily_pet_log>\npet_name: "' + (info?.pet_card?.pet_name || '宠物') + '"\npet_stage: "' + petDisplayStage(state) + '"\ntitle: "' + petDateCN(today) + ' 的小屋微光"\nrelationship_delta: "今天的照顾让彼此更熟悉了一点"\nmemory_anchor: "' + (note || '小动物在小屋里留下了很轻的脚步声') + '"\ndiary: |-\n  ' + petDailyInteractionText(state, today).replace(/\n/g, '。') + (note ? '。额外记录：' + note : '') + '\n</daily_pet_log>', today);
     if (!cfg.apiUrl || !cfg.apiModel) return fallback;
     const basePrompt = await petLogPromptText();
@@ -8499,20 +8957,22 @@ export async function initWanbanXiaowu() {
       (cfg.breakLimitPrompt || '').trim(),
       specialLanguageRequirement('petLog', cfg),
       basePrompt,
+      '【本次日志唯一身份输入】\n' + logRolePrompt,
       '请只输出JSON，不要Markdown，不要解释。JSON结构：{"pet_name":"","pet_stage":"","title":"8-14字标题","tags":["标签1","标签2","标签3"],"relationship_delta":"一句话说明今天{{user}}、{{char}}与宠物的关系变化","memory_anchor":"一句话记录今天最值得以后回忆的小细节","diary":"450-650字正文"}',
       '当前日期：' + petDateCN(today),
       '饲养员/角色：' + (cfg.charName || petCharName()),
-      '用户：' + petPlayerName(state),
+      '用户：' + playerName,
       '用户设定：\n' + currentUserDescription(cfg),
       '语言/风格要求：\n' + (cfg.specialLanguageEnabled ? (cfg.specialLanguage || '已开启') : '无'),
-      '宠物名称：' + petDisplayName(info, state),
+      '宠物名称：' + petName,
       '宠物阶段：' + petDisplayStage(state),
-      '宠物名片：\n' + petCardPromptText(info, state),
-      '当前世界观：\n' + (selectedWorldText(cfg) || '无'),
-      '角色描述：\n' + currentCharDescription(cfg),
-      '大总结：\n' + (selectedSummaryText(cfg) || '无'),
+      '宠物名片：\n' + petCardText,
+      '当前世界观：\n' + (shenIsCaretaker ? '灵息宠物世界；当前角色是沈栖白，不使用酒馆中其他角色的世界观。' : (selectedWorldText(cfg) || '无')),
+      '当前{{char}}角色卡：\n' + (roleDescription || (shenIsCaretaker ? '沈栖白专用角色卡读取失败；不得改用当前酒馆角色卡。' : currentCharDescription(cfg))),
+      shenFriend ? '沈栖白朋友 NPC 角色卡：\n' + shenFriend : '',
+      '大总结：\n' + (shenIsCaretaker ? '无；沈栖白特别陪伴路线不读取当前酒馆聊天总结。' : (selectedSummaryText(cfg) || '无')),
       '今天全部互动：\n' + petDailyInteractionText(state, today),
-      '今天全部剧情内容：\n' + petTodayStoryText(state, info, today),
+      '今天全部剧情内容：\n' + storyText,
       '用户补充做了什么：\n' + (note || '无')
     ].filter(Boolean).join('\n\n');
     const raw = await callApiText(cfg, prompt, '你是宠物陪伴游戏的日志写作助手。必须只输出可解析JSON。', 4096);
@@ -8527,6 +8987,7 @@ export async function initWanbanXiaowu() {
   }
   function maybeAutoGeneratePreviousPetLog(info, state) {
     const cfg = petCaretakerPromptConfig();
+    const target = petStorageTarget();
     if (!settings().petAutoDailyLog || !cfg.apiUrl || !cfg.apiModel) return;
     const date = offsetDateKey(todayKey(), -1);
     const day = (state.days || {})[date];
@@ -8535,8 +8996,8 @@ export async function initWanbanXiaowu() {
     if (petAutoDailyLogRunning[key]) return;
     petAutoDailyLogRunning[key] = true;
     generatePetDailyLog(info, state, '每日自动记录日志。', cfg, date).then(log => {
-      const latest = petTestState();
-      if ((latest.logs || {})[date]) return;
+      updatePetTargetState(target, latest => {
+      if ((latest.logs || {})[date]) return latest;
       latest.logs = Object.assign({}, latest.logs || {}, { [date]:Object.assign({}, log, {
         savedAt:Date.now(),
         auto:true,
@@ -8545,8 +9006,9 @@ export async function initWanbanXiaowu() {
         pet_stage:petDisplayStage(latest),
         snapshot:day.snapshot || petSnapshotData(latest)
       }) });
-      savePetTestState(latest);
-      toast('已自动记录昨日宠物日志');
+      return latest;
+      });
+      if (petTargetIsCurrent(target)) toast('已自动记录昨日宠物日志');
     }).catch(e => {
       console.warn('[玩伴小屋] auto pet log failed:', e);
     }).finally(() => {
@@ -8567,11 +9029,11 @@ export async function initWanbanXiaowu() {
   }
 
   function petEggDisplayName(egg) {
-    const map = { gold:'金色蛋', white:'白色蛋', black:'黑色蛋', blue:'蓝色蛋', pink:'粉色蛋' };
-    return map[String(egg || '').toLowerCase()] || (egg ? String(egg) + '蛋' : '???');
+    const key = String(egg || '').toLowerCase();
+    return PET_EGG_LABELS[key] || (key === 'black' ? '黑色蛋' : (egg ? String(egg) + '蛋' : '???'));
   }
   function petSpeciesName(species) {
-    return ({ rabbit:'兔子', cat:'猫', dog:'小狗', bird:'鸟', fox:'狐狸', bala:'巴拉' })[String(species || '').toLowerCase()] || species || '???';
+    return PET_SPECIES_LABELS[String(species || '').toLowerCase()] || species || '???';
   }
   function petSexName(sex) {
     return ({ male:'男孩子', female:'女孩子', unknown:'未知' })[String(sex || '').toLowerCase()] || sex || '???';
@@ -8622,18 +9084,22 @@ export async function initWanbanXiaowu() {
     }
     const body = qs('#wb-body');
     body.className = 'wb-body wb-intimacy-mode wb-pet-mode';
-    body.innerHTML = '<div class="wb-panel" style="display:grid;place-items:center;min-height:240px;">读取宠物试用版数据...</div>';
+    body.innerHTML = '<div class="wb-panel" style="display:grid;place-items:center;min-height:240px;">读取特别陪伴剧情...</div>';
+    const target = petStorageTarget();
     loadPetTestInfo().then(info => {
+      if (!petTargetIsCurrent(target) || !body.classList.contains('wb-pet-mode')) return;
       let state = petNormalizeLocation(applyPetVisitAndDecay(petTestState()));
       state = updatePetPendingStories(state, info);
       savePetTestState(state);
       maybeAutoGeneratePreviousPetLog(info, state);
       renderPetHouseLoaded(info, state);
       setTimeout(() => {
+        if (!petTargetIsCurrent(target) || !body.classList.contains('wb-pet-mode')) return;
         if (petTestState().stage === 'egg' && Number(petTestState().growth || 0) >= petStageCap('egg')) openPetHatchPrompt(info);
         else openNextPetStoryPrompt(info);
       }, 80);
     }).catch(e => {
+      if (!petTargetIsCurrent(target) || !body.classList.contains('wb-pet-mode')) return;
       console.error('[玩伴小屋] render pet house failed:', e);
       const fallback = parsePetInfoText('');
       fallback.parseWarnings.push('宠物界面加载失败，已进入本地预览：' + (e && e.message ? e.message : e));
@@ -8648,27 +9114,28 @@ export async function initWanbanXiaowu() {
       }
     });
   }
-  function renderPetHouseLoaded(info, state) {
+  function renderPetHouseLoaded(info, state, options = {}) {
     if (petStoryTypeTimer) { clearInterval(petStoryTypeTimer); petStoryTypeTimer = 0; }
     const body = qs('#wb-body');
+    const previousSprite = qs('#wb-pet-poke .wb-pet-fox', body);
     const renderState = petStoryPreviewState(state);
     const storyMode = !!(state.activeStory && state.activeStory.id && !state.activeStory.prompt);
     const petName = petDisplayName(info, renderState);
     const activeLine = petActiveStoryLine(info, state);
     const storyTalkAction = storyMode && activeLine && ['U','C','user','char','{{user}}','{{char}}'].includes(String(activeLine.speaker || '')) && Math.random() < .45 ? (Math.random() < .5 ? 'happy' : 'normal') : '';
     const autoAction = storyMode ? '' : petAutoAction(renderState);
-    const action = storyTalkAction || autoAction || renderState.petAction || 'normal';
+    const action = options.action || storyTalkAction || autoAction || renderState.petAction || 'normal';
     setSettings({ petDesktopState: action, petForm:petFormForStage(renderState) });
     const pendingCount = (state.pendingStories || []).length;
     const isEgg = renderState.stage === 'egg';
     const isEnded = !!renderState.ended;
     const canFeed = !isEgg && !renderState.ended;
     const charLine = state.lastCharLine || (petCharName() + '看着' + petName + '，又看了看你，像是已经把照顾计划在心里排好了。');
-    const petLine = state.lastPetLine || '';
-    const showShen = activeLine && petSpeakerName(activeLine.speaker, info, state) === '沈栖白';
+    const petLine = petRenderText(state.lastPetLine || '', info, state);
+    const shenPortraitUrl = petShenPortraitUrl(activeLine, state);
     const warnings = (info.parseWarnings || []).length ? '<div class="wb-api-status">' + esc(info.parseWarnings.join('；')) + '</div>' : '';
     const locName = petLocationName(state.location);
-    const cheatActionHTML = petRuntimeMode === 'test' ? '<button class="wb-btn wb-pet-iconbtn wb-pet-cheat-btn" id="wb-pet-cheat" title="开挂模式" aria-label="开挂模式">' + petUiIcon('coin') + '</button>' : '';
+    const cheatActionHTML = petCheatEnabled(state) ? '<button class="wb-btn wb-pet-iconbtn wb-pet-cheat-btn" id="wb-pet-cheat" title="成长值 +5" aria-label="成长值 +5">' + petUiIcon('coin') + '</button>' : '';
     body.innerHTML = '<div class="wb-pet-room' + (storyMode ? ' story-mode' : '') + '" id="wb-pet-room">'
       + '<div class="wb-pet-topbar"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-back" title="返回" aria-label="返回">' + petUiIcon('back') + '</button><div class="wb-pet-titlebox">' + petCharAvatarHTML() + '<span class="wb-pet-house-name">' + esc(petCharName()) + '的小屋</span><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretakers" title="选择饲养员" aria-label="选择饲养员">' + petUiIcon('down') + '</button></div><div class="wb-pet-top-actions"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-help" title="教程" aria-label="教程">' + petUiIcon('help') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-restart" title="重开" aria-label="重开">' + petUiIcon('restart') + '</button></div></div>'
       + warnings
@@ -8681,12 +9148,17 @@ export async function initWanbanXiaowu() {
       + (!storyMode && !isEnded ? '<div class="wb-pet-scene-actions">' + (isEgg ? '<button class="wb-btn wb-pet-iconbtn" id="wb-pet-pat" title="抚摸" aria-label="抚摸">' + petUiIcon('pat') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-log" title="写日志" aria-label="写日志">' + petUiIcon('log') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-records" title="记录" aria-label="记录">' + petUiIcon('records') + '</button>' + cheatActionHTML + '' : '<button class="wb-btn wb-pet-iconbtn" id="wb-pet-walk" title="遛弯" aria-label="遛弯">' + petUiIcon('walk') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-feed" title="喂食" aria-label="喂食" ' + (canFeed ? '' : 'disabled') + '>' + petUiIcon('feed') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-pat" title="抚摸" aria-label="抚摸">' + petUiIcon('pat') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-log" title="写日志" aria-label="写日志">' + petUiIcon('log') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-records" title="记录" aria-label="记录">' + petUiIcon('records') + '</button>' + cheatActionHTML + '') + (state.endingReady && Number(state.growth || 0) >= petStageCap(state.stage) && !state.ended && !isEgg ? '<button class="wb-btn wb-pet-iconbtn primary" id="wb-pet-ending" title="进入结局" aria-label="进入结局">' + petUiIcon('ending') + '</button>' : '') + '</div>' : '')
       + (!isEnded ? '<button class="wb-pet-room-fox' + (isEgg && state.lastPetLine ? ' egg-shake' : '') + '" id="wb-pet-poke" type="button" title="戳一戳" style="border:0;background:transparent;padding:0;box-shadow:none!important;">' + petAssetHTML(renderState, action) + '</button>' : '<div class="wb-pet-empty-stage">这段灵息旅程已经完成。</div>')
       + (storyMode ? '<button class="wb-btn wb-pet-story-exit" id="wb-pet-story-exit" type="button">退出剧情</button>' : '')
-      + (showShen ? '<img class="wb-pet-npc-portrait" src="' + esc(PET_ASSET_BASE + 'scene/shenqibai.png') + '" alt="">' : '')
+      + (shenPortraitUrl ? '<img class="wb-pet-npc-portrait" src="' + esc(shenPortraitUrl) + '" alt="' + PET_SPECIAL_CHAR_NAME + '">' : '')
       + '</div>'
       + '</div>'
       + '<div class="wb-pet-dialogue" id="wb-pet-dialogue">' + petDialogueHTML(info, state, charLine) + '</div>'
       + '</div>';
     const room = qs('#wb-pet-room', body);
+    const currentSprite = qs('#wb-pet-poke .wb-pet-fox', room);
+    if (currentSprite) {
+      currentSprite.dataset.petAnimationKey = JSON.stringify([petStorageTarget(), renderState.stage]);
+      transferPetFrames(previousSprite, currentSprite);
+    }
     if (storyMode && !(state.activeStory && state.activeStory.done)) {
       const textEl = qs('.wb-pet-dialogue-text', room);
       if (textEl) {
@@ -8700,7 +9172,8 @@ export async function initWanbanXiaowu() {
         }, 12);
       }
     }
-    resetPetIdleTimer(room);
+    if (petIdleTimer) { clearTimeout(petIdleTimer); petIdleTimer = null; }
+    if (!storyMode && action !== 'eat' && action !== 'happy') resetPetIdleTimer(room);
     resetPetAnimationLoop(room, action === 'eat' || action === 'happy');
     const feed = qs('#wb-pet-feed', room);
     const pat = qs('#wb-pet-pat', room);
@@ -8711,17 +9184,27 @@ export async function initWanbanXiaowu() {
       let next = petApplyInteraction(kind);
       const stage = next.stage === 'ordinary' ? 'adult' : next.stage;
       const auto = petAutoAction(next);
-      const shownState = auto || spriteState;
+      const shownState = kind === 'feed' || kind === 'pet' ? spriteState : (auto || spriteState);
       next.petAction = shownState;
       next.lastPetLine = next.stage === 'egg' && (kind === 'pet' || kind === 'poke') ? '......' : petQuote(info, 'pet', stage, kind === 'feed' ? 'feed' : (kind === 'pet' ? 'pet' : 'poke'), petLineFor(shownState));
       next.lastCharLine = petQuote(info, 'char', stage === 'egg' ? 'egg' : stage, kind === 'feed' ? 'feed' : (kind === 'pet' ? 'pet' : 'poke'), '');
       next = updatePetPendingStories(next, info);
       savePetTestState(next);
-      renderPetHouseLoaded(info, next);
+      const interactionTarget = petStorageTarget();
+      renderPetHouseLoaded(info, next, { action:shownState });
+      if (petStateReturnTimer) clearTimeout(petStateReturnTimer);
+      petStateReturnTimer = setTimeout(() => {
+        petStateReturnTimer = null;
+        if (!petTargetIsCurrent(interactionTarget)) return;
+        const latest = Object.assign({}, petTestState(), { petAction:'normal' });
+        savePetTestState(latest);
+        if (!latest.activeStory && qs('#wb-pet-room')) renderPetHouseLoaded(info, latest);
+      }, 4500);
       setTimeout(() => {
+        if (!petTargetIsCurrent(interactionTarget) || !qs('#wb-pet-room')) return;
         if (petTestState().stage === 'egg' && Number(petTestState().growth || 0) >= petStageCap('egg')) openPetHatchPrompt(info);
         else openNextPetStoryPrompt(info);
-      }, 80);
+      }, next.stage === 'egg' ? 80 : 2050);
     };
     if (feed) feed.onclick = () => runAction('feed', 'eat');
     if (pat) pat.onclick = () => runAction('pet', 'happy');
@@ -8743,6 +9226,7 @@ export async function initWanbanXiaowu() {
     };
     const profileBtn = qs('#wb-pet-card', room); if (profileBtn) profileBtn.onclick = e => { e.stopPropagation(); openPetProfileCard(info); };
     const newAdopt = qs('#wb-pet-new-adoption', room); if (newAdopt) newAdopt.onclick = () => {
+      if (petCharName() === PET_SPECIAL_CHAR_NAME) { openPetSpecialCompanionChoice({ forceNew:true }); return; }
       if (petRuntimeMode === 'test') { openPetTestSelect(); return; }
       const c = petFullActiveCaretaker();
       if (c) openPetAdoptionForm(c);
@@ -8766,14 +9250,22 @@ export async function initWanbanXiaowu() {
       savePetTestState(updatePetPendingStories(next, info));
       openNextPetStoryPrompt(info);
     };
-    if (reset) reset.onclick = () => petMiniConfirm('重置宠物试用版', '确定重置宠物试用版进度吗？这会清空试用版下的数值、剧情记录和日志。', () => {
+    if (reset) reset.onclick = () => petMiniConfirm('重置特别陪伴', '确定重置固定剧情进度吗？这会清空特别陪伴下的数值、剧情记录和日志。', () => {
       savePetTestState(defaultPetTestState());
       setSettings({ petInteractCount:0, petForm:'baby', petDesktopState:'normal' });
       renderPetHouse();
     });
     const restart = qs('#wb-pet-restart', room);
-    if (restart) restart.onclick = () => petMiniConfirm('是否确定重新开始？', petFullActiveCaretaker() ? '确定后会删除当前这一轮宠物及本轮全部记录，然后重新进入领养登记表；之前轮次会保留。' : '确定后会回到最初的测试入口（选择角色页面），当前宠物试用版进度会清空。', () => {
+    if (restart) restart.onclick = () => petMiniConfirm('是否确定重新开始？', petCharName() === PET_SPECIAL_CHAR_NAME ? '确定后会清空当前这轮进度，重新选择自由生成或默认剧情，再选择是否开启开挂模式。其他轮次会保留。' : petFullActiveCaretaker() ? '确定后会删除当前这一轮宠物及本轮全部记录，然后重新进入领养登记表；之前轮次会保留。' : '确定后会回到固定剧情的初始选择页，当前特别陪伴进度会清空。', () => {
       const fullCaretaker = petFullActiveCaretaker();
+      if (petRuntimeMode === 'test' || petCaretakerIsShen(fullCaretaker)) {
+        if (fullCaretaker) petFullRemoveActivePet(fullCaretaker.id);
+        else saveJSON(STORAGE_PET_TEST, defaultPetTestState());
+        petTestInfoCache = null;
+        petTestInfoLoading = null;
+        openPetSpecialCompanionChoice({ forceNew:true });
+        return;
+      }
       if (fullCaretaker) {
         petFullRemoveActivePet(fullCaretaker.id);
         openPetAdoptionForm(petFullCaretakerById(fullCaretaker.id) || fullCaretaker);
@@ -8794,9 +9286,6 @@ export async function initWanbanXiaowu() {
       };
       if (petTestState().activeStory && petTestState().activeStory.id) {
         petMiniConfirm('是否返回？', '当前正在剧情模式中，是否返回亲密互动首页？', () => {
-          const next = petTestState();
-          next.activeStory = null;
-          savePetTestState(next);
           goHub();
         });
       } else goHub();
@@ -8827,6 +9316,91 @@ export async function initWanbanXiaowu() {
     bindPetStoryInlineControls(info, room);
   }
 
+  async function ensurePetSpecialCaretaker() {
+    const card = await petAssetText('shenqibai_special.txt', '');
+    if (!card.trim()) throw new Error('沈栖白角色设定读取失败');
+    const existing = petFullData().caretakers.find(petCaretakerIsShen);
+    const role = existing?.roleContextVersion === 2 ? isolatedRole(existing) : isolatedRole({}, PET_SPECIAL_CHAR_NAME);
+    return petFullEnsureCaretaker(Object.assign(role, {
+      name:PET_SPECIAL_CHAR_NAME,
+      charName:PET_SPECIAL_CHAR_NAME,
+      avatarUrl:PET_SPECIAL_CHAR_AVATAR,
+      charDescriptionSnapshot:card,
+      injectCharDesc:true,
+      charDescMode:'auto',
+      builtinPetCaretaker:'shenqibai'
+    }));
+  }
+
+  function resumePetSpecialCompanion() {
+    const data = petFullData();
+    const saved = data.caretakers.find(c => petCaretakerIsShen(c) && c.pets?.length);
+    const route = loadJSON(SCRIPT_ID + '_petLastSpecialRoute', '');
+    if (saved && (route === 'full' || !petTrialHasSavedPet())) {
+      withPetFullActive(saved.id);
+      renderPetHouse();
+      return true;
+    }
+    if (!petTrialHasSavedPet()) return false;
+    petRuntimeMode = 'test';
+    petFullActiveCaretakerId = '';
+    petTestInfoCache = null;
+    petTestInfoLoading = null;
+    saveJSON(SCRIPT_ID + '_petLastRoute', 'test');
+    saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
+    renderPetHouse();
+    return true;
+  }
+
+  function openPetCheatModeChoice(onChoose) {
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-cheat-choice-mask';
+    mask.innerHTML = '<div class="wb-modal wb-pet-modal wb-mini-modal"><div class="wb-pet-story-choice-title">开启开挂模式？</div><div class="wb-pet-story-choice-summary">开启后，小屋中会出现“成长值 +5”按钮。选择仅作用于这次宠物旅程，续读存档时会保留。</div><div class="wb-actions"><button class="wb-btn primary" id="wb-pet-cheat-yes">是，开启</button><button class="wb-btn" id="wb-pet-cheat-no">否，正常成长</button><button class="wb-btn" id="wb-pet-cheat-cancel">返回</button></div></div>';
+    appendModalMask(mask);
+    qs('#wb-pet-cheat-yes', mask).onclick = () => { mask.remove(); onChoose(true); };
+    qs('#wb-pet-cheat-no', mask).onclick = () => { mask.remove(); onChoose(false); };
+    qs('#wb-pet-cheat-cancel', mask).onclick = () => { mask.remove(); openPetSpecialCompanionChoice({ forceNew:true }); };
+  }
+  function openPetSpecialCompanionChoice(options) {
+    if (!options?.forceNew && resumePetSpecialCompanion()) return;
+    injectPetArcadeStyle();
+    const doc = getHostDocument();
+    const old = qs('#wb-pet-special-choice-mask', doc);
+    if (old) old.remove();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-special-choice-mask';
+    const savedTip = '两种剧情各自保存。选择后会询问本轮是否开启开挂模式；自由生成需要可用的 API 配置。';
+    mask.innerHTML = '<div class="wb-modal wb-pet-modal wb-pet-story-choice"><div class="wb-pet-story-choice-title">特别陪伴</div><div class="wb-pet-story-choice-name">沈栖白</div><div class="wb-pet-story-choice-summary">先选择剧情方式。两种模式的可选项不同，进入后仍由你、沈栖白与宠物共同推进。</div><div class="wb-pet-mode-grid"><button class="wb-btn primary wb-pet-mode-choice" id="wb-pet-special-local"><b>固定剧情</b><span>从 11 条完整动物故事中选择，立即开始，不调用模型。</span><em>可选：你的名字、宠物名字、蛋外观、动物剧情<br>固定：性别、性格、能力、主支线</em></button><button class="wb-btn wb-pet-mode-choice" id="wb-pet-special-generate"><b>自由生成</b><span>由模型按本轮登记内容生成宠物档案、成长线与剧情。</span><em>基础可选：蛋外观、宠物名字、人称、模型<br>详细许愿：物种、性别、灵息能力</em></button></div><div class="wb-api-status" id="wb-pet-special-tip">' + esc(savedTip) + '</div><div class="wb-actions"><button class="wb-btn" id="wb-pet-special-back" style="flex:1;">返回</button></div></div>';
+    appendModalMask(mask);
+    qs('#wb-pet-special-back', mask).onclick = () => { mask.remove(); openPetCaretakerSelect(null, { forceFull:true }); };
+    qs('#wb-pet-special-local', mask).onclick = () => {
+      mask.remove();
+      petRuntimeMode = 'test';
+      saveJSON(SCRIPT_ID + '_petLastRoute', 'test');
+      saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
+      petFullActiveCaretakerId = '';
+      petTestInfoCache = null;
+      petTestInfoLoading = null;
+      openPetTestSelect();
+    };
+    qs('#wb-pet-special-generate', mask).onclick = async () => {
+      const btn = qs('#wb-pet-special-generate', mask);
+      const tip = qs('#wb-pet-special-tip', mask);
+      if (btn) { btn.disabled = true; btn.innerHTML = '<b>自由生成</b><span>正在读取沈栖白设定...</span>'; }
+      try {
+        const caretaker = await ensurePetSpecialCaretaker();
+        mask.remove();
+        openPetAdoptionForm(caretaker);
+      } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<b>自由生成</b><span>读取失败，点击重试。</span><em>需要可用的 API 配置</em>'; }
+        if (tip) tip.textContent = e && e.message ? e.message : String(e);
+      }
+    };
+  }
+
   function openPetCaretakerSelect(info, options) {
     injectPetArcadeStyle();
     const fullMode = !!(options && options.forceFull) || petFullIsActive() || !info;
@@ -8839,7 +9413,7 @@ export async function initWanbanXiaowu() {
       mask.className = modalMaskClass();
       mask.id = 'wb-pet-caretaker-mask';
       const rows = [{ name:petCharName(), pet:petDisplayName(info, state), test:true }].concat(saved);
-      mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">选择饲养员</div><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-add">' + petUiIcon('plus') + '</button></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + rows.map((r, i) => '<div class="wb-pet-caretaker-card" data-i="' + i + '"><div class="wb-pet-avatar">' + esc((r.name || '?').slice(0, 1)) + '</div><div><b>' + esc(r.name || '未命名') + '</b>' + (r.test ? ' <span class="wb-pill">试用版</span>' : '') + '<div class="wb-muted">当前动物：' + esc(r.pet || '暂无') + '</div></div>' + (r.test ? '<span class="wb-muted">可进入</span>' : '<button class="wb-btn wb-pet-caretaker-del" data-i="' + i + '">删除</button>') + '</div>').join('') + '</div></div></div>';
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">选择饲养员</div><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-add">' + petUiIcon('plus') + '</button></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + rows.map((r, i) => '<div class="wb-pet-caretaker-card" data-i="' + i + '"><div class="wb-pet-avatar">' + esc((r.name || '?').slice(0, 1)) + '</div><div><b>' + esc(r.name || '未命名') + '</b>' + (r.test ? ' <span class="wb-pill">特别陪伴</span>' : '') + '<div class="wb-muted">当前动物：' + esc(r.pet || '暂无') + '</div></div>' + (r.test ? '<span class="wb-muted">可进入</span>' : '<button class="wb-btn wb-pet-caretaker-del" data-i="' + i + '">删除</button>') + '</div>').join('') + '</div></div></div>';
       appendModalMask(mask);
       qs('#wb-pet-caretaker-close', mask).onclick = () => mask.remove();
       qs('#wb-pet-caretaker-add', mask).onclick = () => toast('请从灵息小窝入口添加角色');
@@ -8853,10 +9427,9 @@ export async function initWanbanXiaowu() {
     const rows = data.caretakers || [];
     const trialState = Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
     const trialInfo = null;
-    const trialSpeciesLabel = { rabbit:'兔子', dog:'小狗', cat:'猫咪', bird:'飞鸟', bala:'水豚', fox:'狐狸' };
-    const trialPetName = petDisplayName(trialInfo, trialState, trialSpeciesLabel[trialState.testSpecies] || '当前动物');
+    const trialPetName = petDisplayName(trialInfo, trialState, PET_SPECIES_LABELS[trialState.testSpecies] || '当前动物');
     const trialCycle = Number(trialState.adoptionCycle || 0) || Math.max(1, (Array.isArray(trialState.archives) ? trialState.archives.length : 0) + 1);
-    const trialHTML = '<button class="wb-pet-caretaker-card wb-pet-full-caretaker wb-pet-trial-caretaker" type="button"><div class="wb-pet-avatar wb-pet-trial-avatar">试</div>' + petSnapshotHTMLForInfo(trialState, trialInfo) + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">江维</b><span class="wb-pill wb-pet-caretaker-tag">试用版</span></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(trialPetName) + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(trialCycle)) + '只宠物</div></div></button>';
+    const trialHTML = '<button class="wb-pet-caretaker-card wb-pet-full-caretaker wb-pet-trial-caretaker" type="button"><div class="wb-pet-avatar wb-pet-trial-avatar"><img src="' + esc(PET_SPECIAL_CHAR_AVATAR) + '" alt=""></div>' + petSnapshotHTMLForInfo(trialState, trialInfo) + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">' + PET_SPECIAL_CHAR_NAME + '</b><span class="wb-pill wb-pet-caretaker-tag">默认剧情</span></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(trialPetName) + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(trialCycle)) + '只宠物</div></div></button>';
     const rowHTML = rows.map(c => {
       const pet = petFullActivePet(data, c);
       const infoObj = pet?.infoText ? parsePetInfoText(pet.infoText) : null;
@@ -8865,8 +9438,8 @@ export async function initWanbanXiaowu() {
       const snap = pet ? petSnapshotHTMLForInfo(state, infoObj) : '<div class="wb-pet-snapshot"></div>';
       const completedCount = petFullCompletedCount(c);
       const shownCycle = pet && !petFullPetCompleted(pet) ? (Number(state.adoptionCycle || 0) || completedCount + 1) : completedCount;
-      return '<button class="wb-pet-caretaker-card wb-pet-full-caretaker" data-id="' + esc(c.id) + '"><div class="wb-pet-avatar">' + avatar + '</div>' + snap + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">' + esc(c.name || '未命名') + '</b></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(pet ? petDisplayName(infoObj, state, '未命名宠物') : '暂无宠物') + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(Math.max(1, Number(shownCycle || 1)))) + '只宠物</div></div></button>';
-    }).join('') + (rows.length ? '' : '<div class="wb-api-status">还没有添加正式饲养员。可以先进入试用版，或点击右上角“+”添加角色。</div>') + trialHTML;
+      return '<button class="wb-pet-caretaker-card wb-pet-full-caretaker" data-id="' + esc(c.id) + '"><div class="wb-pet-avatar">' + avatar + '</div>' + snap + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">' + esc(c.name || '未命名') + '</b>' + (petCaretakerIsShen(c) ? '<span class="wb-pill wb-pet-caretaker-tag">自由剧情</span>' : '') + '</div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(pet ? petDisplayName(infoObj, state, '未命名宠物') : '暂无宠物') + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(Math.max(1, Number(shownCycle || 1)))) + '只宠物</div></div></button>';
+    }).join('') + (rows.length ? '' : '<div class="wb-api-status">还没有添加其他饲养员。可以先与沈栖白开始特别陪伴，或点击右上角“+”添加角色。</div>') + trialHTML;
     mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">选择饲养员</div><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-add">' + petUiIcon('plus') + '</button></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + rowHTML + '</div></div></div>';
     appendModalMask(mask);
     qs('#wb-pet-caretaker-close', mask).onclick = () => { mask.remove(); if (!(options && options.stay)) renderIntimacy(); };
@@ -8875,14 +9448,9 @@ export async function initWanbanXiaowu() {
     if (trial) trial.onclick = () => {
       mask.remove();
       if (petTrialHasSavedPet()) {
-        petRuntimeMode = 'test';
-        petFullActiveCaretakerId = '';
-        petTestInfoCache = null;
-        petTestInfoLoading = null;
-        renderPetHouse();
-      } else {
-        openPetTestSelect();
-      }
+        saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
+        resumePetSpecialCompanion();
+      } else openPetSpecialCompanionChoice({ forceNew:true });
     };
     qsa('.wb-pet-full-caretaker', mask).forEach(btn => {
       if (btn.classList.contains('wb-pet-trial-caretaker')) return;
@@ -8922,15 +9490,14 @@ export async function initWanbanXiaowu() {
 
 
   function petEggOptionHTML(selected) {
-    const eggs = [['blue','蓝色蛋'], ['purple','紫色蛋'], ['pink','粉色蛋'], ['green','绿色蛋'], ['gold','金色蛋'], ['white','白色蛋']];
+    const eggs = PET_EGG_OPTIONS.map(item => [item.id, item.label]);
     return '<div class="wb-pet-egg-grid">' + eggs.map(e => '<button class="wb-btn wb-pet-egg-choice ' + (selected === e[0] ? 'selected' : '') + '" type="button" data-egg="' + e[0] + '"><img src="' + esc(PET_ASSET_BASE + 'eggs/' + e[0] + '-1.png') + '" alt=""><span>' + e[1] + '</span></button>').join('') + '</div>';
   }
   function petAdoptionEggCardHTML(parsed, form, cycle) {
     const card = parsed?.pet_card || {};
-    const eggLabels = { blue:'蓝色蛋', purple:'紫色蛋', pink:'粉色蛋', green:'绿色蛋', gold:'金色蛋', white:'白色蛋' };
     const rawEgg = card.egg || form?.selected_egg || '';
-    const egg = eggLabels[String(rawEgg).trim()] || rawEgg || '神秘蛋';
-    const userName = form?.user_name || settings().userName || '你';
+    const egg = PET_EGG_LABELS[String(rawEgg).trim()] || rawEgg || '神秘蛋';
+    const userName = form?.user_name || '你';
     const item = (k, v, wide) => '<div class="wb-pet-profile-item' + (wide ? ' wide' : '') + '"><em>' + esc(k) + '</em><strong>' + esc(v || '???') + '</strong></div>';
     return '<div class="wb-pet-profile-card wb-pet-adopt-success-card"><div class="wb-pet-profile-top"><div class="wb-pet-profile-title"><b>灵息宠物名片</b><span>蛋形态初始档案</span></div><div class="wb-pet-profile-seal">蛋</div></div><div class="wb-pet-profile-grid">'
       + item('品种', '???', false)
@@ -8943,7 +9510,11 @@ export async function initWanbanXiaowu() {
       + item('小屋编号', '这是我们的第 ' + String(cycle || 1) + ' 个宠物', false)
       + '</div></div>';
   }
-  function openPetAdoptionForm(caretaker) {
+  function openPetAdoptionForm(caretaker, options) {
+    if (petCaretakerIsShen(caretaker) && options?.cheatMode === undefined) {
+      openPetCheatModeChoice(cheatMode => openPetAdoptionForm(caretaker, { cheatMode }));
+      return;
+    }
     injectPetArcadeStyle();
     withPetFullActive(caretaker.id);
     const doc = getHostDocument();
@@ -8953,7 +9524,7 @@ export async function initWanbanXiaowu() {
     const cycle = petFullAdoptionCycle(caretaker);
     let generated = null;
     let draft = {
-      user_name:settings().userName || petTestState().userName || '',
+      user_name:caretaker.userName && caretaker.userName !== '{{user}}' ? caretaker.userName : '',
       selected_egg:'green',
       adoption_cycle:cycle,
       wish_mode:false,
@@ -8970,12 +9541,13 @@ export async function initWanbanXiaowu() {
       const wishOpen = !!draft.wish_mode;
       const wishStyle = wishOpen ? '' : 'display:none;';
       const apiOptions = '<option value="">当前API配置（' + esc(settings().apiModel || '未配置') + '）</option>' + apiPresets().map((p, i) => '<option value="' + i + '">' + esc((p.name || ('预设' + (i + 1))) + ' · ' + (p.apiModel || '未选模型')) + '</option>').join('');
-      mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-adopt-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">领养登记表</div><span></span></div><div class="wb-pet-scroll"><div class="wb-pet-adopt-grid">'
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-adopt-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">自由生成 · 领养登记表</div><span></span></div><div class="wb-pet-scroll"><div class="wb-pet-adopt-grid">'
+        + '<div class="wb-api-status wb-pet-adopt-wide">基础选择会决定蛋外观、宠物备选名字与叙事方式；展开详细许愿后，物种、性别和灵息能力也会成为本轮生成条件。</div>'
         + '<label class="wb-field"><span>你叫什么</span><input class="wb-input" id="wb-pet-adopt-user" value="' + esc(draft.user_name || '') + '"></label>'
         + '<label class="wb-field"><span>养宠次数</span><input class="wb-input" id="wb-pet-adopt-cycle" value="' + cycle + '" readonly></label>'
-        + '<div class="wb-field wb-pet-adopt-wide"><span>选择你想要的蛋</span>' + petEggOptionHTML(draft.selected_egg) + '</div>'
-        + '<label class="wb-switch wb-pet-adopt-wide"><input id="wb-pet-wish-mode" type="checkbox" ' + (wishOpen ? 'checked' : '') + '>许愿模式</label>'
-        + '<div class="wb-pet-adopt-wide" id="wb-pet-wish-fields" style="' + wishStyle + '"><div class="wb-preset-row"><label class="wb-field" style="flex:1;"><span>品种</span><select class="wb-select" id="wb-pet-wish-species"><option value="random">随机</option><option value="rabbit">兔子</option><option value="dog">狗</option><option value="cat">猫</option><option value="bird">鹰</option><option value="bala">水豚</option><option value="fox">狐狸</option></select></label><label class="wb-field" style="flex:1;"><span>性别</span><select class="wb-select" id="wb-pet-wish-sex"><option value="random">随机</option><option value="male">男孩</option><option value="female">女孩</option></select></label></div><label class="wb-field"><span>灵息能力</span><input class="wb-input" id="wb-pet-wish-tendency" placeholder="随机 或 填写能力倾向" value="' + esc(draft.wish_tendency === 'random' ? '随机' : draft.wish_tendency) + '"></label></div>'
+        + '<div class="wb-field wb-pet-adopt-wide"><span>选择蛋的外观与初始设定</span>' + petEggOptionHTML(draft.selected_egg) + '</div>'
+        + '<label class="wb-switch wb-pet-adopt-wide"><input id="wb-pet-wish-mode" type="checkbox" ' + (wishOpen ? 'checked' : '') + '>展开详细许愿（物种 / 性别 / 灵息能力）</label>'
+        + '<div class="wb-pet-adopt-wide" id="wb-pet-wish-fields" style="' + wishStyle + '"><div class="wb-api-status">保留“随机”会交给模型决定；填写或选择的项目将作为明确生成条件。</div><div class="wb-preset-row"><label class="wb-field" style="flex:1;"><span>品种</span><select class="wb-select" id="wb-pet-wish-species"><option value="random">随机</option>' + PET_SPECIES_OPTIONS.map(item => '<option value="' + item.id + '">' + esc(item.label) + '</option>').join('') + '</select></label><label class="wb-field" style="flex:1;"><span>性别</span><select class="wb-select" id="wb-pet-wish-sex"><option value="random">随机</option><option value="male">男孩</option><option value="female">女孩</option></select></label></div><label class="wb-field"><span>灵息能力倾向</span><input class="wb-input" id="wb-pet-wish-tendency" placeholder="随机，或填写希望的能力方向" value="' + esc(draft.wish_tendency === 'random' ? '随机' : draft.wish_tendency) + '"></label></div>'
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>男孩姓名</span><input class="wb-input" id="wb-pet-name-male" placeholder="例如：小曜" value="' + esc(draft.male_name || '') + '"></label><label class="wb-field" style="flex:1;"><span>女孩姓名</span><input class="wb-input" id="wb-pet-name-female" placeholder="例如：小露" value="' + esc(draft.female_name || '') + '"></label></div>'
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>剧情人称</span><select class="wb-select" id="wb-pet-narrative-person"><option value="first">第一人称（我）</option><option value="second">第二人称（你）</option><option value="third">第三人称（TA）</option></select></label><div style="flex:1;"></div></div>'
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>模型选择</span><select class="wb-select" id="wb-pet-adopt-model">' + apiOptions + '</select></label><label class="wb-field" style="flex:1;"><span>模型生成次数</span><input class="wb-input" id="wb-pet-adopt-attempts" type="number" min="1" max="5" value="' + esc(String(draft.attempts || 3)) + '"></label></div>'
@@ -8991,7 +9563,10 @@ export async function initWanbanXiaowu() {
     };
     const collect = () => {
       const userName = (qs('#wb-pet-adopt-user', mask)?.value || '').trim() || '你';
-      setSettings({ userName:userName });
+      caretaker.userName = userName;
+      const data = petFullData();
+      const savedCaretaker = data.caretakers.find(c => c.id === caretaker.id);
+      if (savedCaretaker) { savedCaretaker.userName = userName; savePetFullData(data); }
       draft = {
         user_name:userName,
         selected_egg:draft.selected_egg,
@@ -9041,7 +9616,7 @@ export async function initWanbanXiaowu() {
     };
     const enterGeneratedHouse = (form) => {
         form = form || collect();
-        const state = Object.assign(defaultPetTestState(), { userName:form.user_name, adoptionCycle:cycle, firstSnapshot:null });
+        const state = Object.assign(defaultPetTestState(), { userName:form.user_name, adoptionCycle:cycle, firstSnapshot:null, cheatMode:petCaretakerIsShen(caretaker) && !!options?.cheatMode });
         petFullAddPet(caretaker.id, generated.raw, state, { egg:generated.parsed.pet_card?.egg || draft.selected_egg });
         petTestInfoCache = generated.parsed;
         mask.remove();
@@ -9097,7 +9672,7 @@ export async function initWanbanXiaowu() {
       '<div class="wb-pet-stage-tip"><div class="wb-pet-stage-tip-title">小提示：当前阶段——' + esc(stageName) + '</div><div class="wb-pet-stage-tip-box">' + stageTip + '</div></div>',
       '<p><strong>欢迎来到灵息小窝。</strong>这里是一套长期养宠模块：你和当前角色会共同领养、照顾、记录一只灵息宠物。它会从蛋开始成长，触发主线与支线剧情，最后走向普通宠物或灵息宠物的结局。</p>',
       '<h3>## 1. 从哪里开始？</h3>',
-      '<ul><li><strong>灵息小窝入口：</strong>点击亲密互动里的“灵息小窝”。如果已经有正在养的宠物，会直接进入该宠物页面；想换人养宠，请点小屋标题旁边的下拉按钮。</li><li><strong>选择饲养员：</strong>列表里会显示“试用版”和已添加的角色。试用版会读取本地角色数据；正式角色会走 AI 生成完整宠物文案。</li><li><strong>添加角色：</strong>右上角“+”可以从' + mark('当前世界观', 'blue') + '角色里选择饲养员。添加后，每个角色都有' + mark('独立宠物', 'green') + '、日志、剧情和日期记录。</li><li><strong>领养登记表：</strong>没有宠物的正式角色会进入登记表。填写 user 名、选择蛋、宠物名字、' + mark('API 预设', 'blue') + '和' + mark('生成次数', 'green') + '；开启' + mark('许愿模式', 'pink') + '后可以指定' + mark('品种/性别/灵息能力') + '，选择“随机”则交给 AI 决定。</li></ul>',
+      '<ul><li><strong>灵息小窝入口：</strong>点击亲密互动里的“灵息小窝”。如果已经有正在养的宠物，会直接进入该宠物页面；想换人养宠，请点小屋标题旁边的下拉按钮。</li><li><strong>特别陪伴：</strong>选择沈栖白后可以进入' + mark('固定剧情', 'green') + '或' + mark('自由生成', 'blue') + '。固定剧情可选名字、蛋外观与动物故事，其余角色和剧情设定固定；自由生成会注入沈栖白完整角色设定。</li><li><strong>添加角色：</strong>右上角“+”可以从' + mark('当前世界观', 'blue') + '角色里选择饲养员。添加后，每个角色都有' + mark('独立宠物', 'green') + '、日志、剧情和日期记录，沈栖白会以友好管理员 NPC 身份出现。</li><li><strong>领养登记表：</strong>没有宠物的自由生成会进入登记表。基础项包括 user 名、蛋、宠物名字、人称、' + mark('API 预设', 'blue') + '和' + mark('生成次数', 'green') + '；展开' + mark('详细许愿', 'pink') + '后可以指定' + mark('品种/性别/灵息能力') + '，选择“随机”则交给 AI 决定。</li></ul>',
       '<h3>## 2. 宠物有哪些阶段？</h3>',
       '<ul><li><strong>蛋形态：</strong>刚领养时只有成长值。此时右侧按钮较少，主要通过抚摸、戳戳、写日志、查看记录来陪伴它。蛋形态戳戳/抚摸的对话可能只是“......”，这是正常的。</li><li><strong>幼年期：</strong>破壳后会出现真正的动物。开始有饱食度和开心值，可以喂食、抚摸、遛弯，宠物会说话、做动作，也会逐步解锁场景。</li><li><strong>成年期：</strong>宠物更稳定，也会触发更关键的主线。成年后需要继续提高成长值，推动它走向最终选择。</li><li><strong>灵息 / 普通路线：</strong>后期剧情会让宠物选择接受灵息力量，或回归更普通的动物生活。不同路线会影响后续剧情和名片信息。</li><li><strong>旅程结束：</strong>最终剧情完成后，小屋会空出来，右侧交互按钮消失，上方会出现“领养新的宠物”。点击后可以为同一个角色开启下一轮养宠。</li></ul>',
       '<h3>## 3. 主页面怎么看？</h3>',
@@ -9105,7 +9680,7 @@ export async function initWanbanXiaowu() {
       '<h3>## 4. 右侧按钮分别做什么？</h3>',
       '<ul><li><strong>遛弯：</strong>会询问是否开启桌宠模式。确认后退出小屋；遛弯期间每生成 3 次 RP 正文增加 1 点成长值，单纯挂机不会增加。</li><li><strong>喂食：</strong>增加饱食度；如果饱食度确实被补充，也会增加成长值。会触发吃饭动作、宠物语录和可能的支线事件。</li><li><strong>抚摸：</strong>增加开心值；如果开心值确实被补充，也会增加成长值。蛋形态每 10 分钟可通过抚摸获得成长。</li><li><strong>写日志：</strong>打开手账式日志页。可以选择模型、补充今天做了什么，AI 会结合世界观、宠物名片、当天互动和剧情生成日记。</li><li><strong>记录：</strong>查看日期记录、日志记录、剧情记录。日期会按当天累计成长值变色；日志和剧情会保留当时的时间、宠物阶段和快照。</li><li><strong>开挂模式：</strong>试用/调试用金币按钮，点击增加 5 点成长值，方便测试剧情和阶段推进。</li></ul>',
       '<h3>## 5. 剧情怎么触发？</h3>',
-      '<ul><li><strong>主线剧情：</strong>通常由' + mark('成长值', 'green') + '和' + mark('阶段', 'blue') + '触发，例如蛋的觉醒、破壳、幼年成长、成年选择、灵息结局等。</li><li><strong>支线剧情：</strong>可能由' + mark('喂食/抚摸/遛弯', 'pink') + '、玩游戏、' + mark('时间/地点', 'blue') + '、概率或累计次数触发。有些事件会先进入“已触发”状态，等你回到合适场景或时间才弹出。</li><li><strong>触发弹窗：</strong>出现剧情时会先弹出小提示，显示主线/支线、剧情名和简介。你可以进入剧情，也可以放弃；放弃也会存档。</li><li><strong>剧情模式：</strong>进入后右侧交互按钮和场景切换会隐藏，上方显示“剧情模式中”。点击任意位置推进，剧情结束后点击回到小屋并保存。</li><li><strong>剧情回放：</strong>在剧情记录里可以点击放映机按钮回放已完成剧情，不会重复改变成长数据。</li></ul>',
+      '<ul><li><strong>主线剧情：</strong>通常由' + mark('成长值', 'green') + '和' + mark('阶段', 'blue') + '触发，例如蛋的觉醒、破壳、幼年成长、成年选择、灵息结局等。</li><li><strong>支线剧情：</strong>可能由' + mark('喂食/抚摸/遛弯', 'pink') + '、玩游戏、' + mark('时间/地点', 'blue') + '、概率或累计次数触发。有些事件会先进入“已触发”状态，等你回到合适场景或时间才弹出。</li><li><strong>触发弹窗：</strong>出现剧情时会展示主线/支线、剧情名和当前剧情的 summary 概要；进入后直接从现场的动作、变化或对话开始。你也可以放弃，放弃同样会存档。</li><li><strong>剧情模式：</strong>进入后右侧交互按钮和场景切换会隐藏，上方显示“剧情模式中”。点击任意位置推进，剧情结束后点击回到小屋并保存。</li><li><strong>剧情回放：</strong>在剧情记录里可以点击放映机按钮回放已完成剧情，不会重复改变成长数据。</li></ul>',
       '<h3>## 6. 日志和记录有什么用？</h3>',
       '<ul><li><strong>写日志：</strong>适合每天结束时生成一篇手账。日志会保存日期、宠物名称、宠物形态、标签、我们的关系、特别记忆存档、标题和正文。</li><li><strong>覆盖规则：</strong>同一天如果已经有日志，再保存会提示是否覆盖当天日志。</li><li><strong>日期记录：</strong>像日历一样查看成长。' + mark('当天累计成长', 'green') + '越多，日期颜色越明显；下方会列出喂食、抚摸、遛弯、游戏等加分标签。</li><li><strong>日志记录：</strong>按日期和时间列出所有日志，点击后以同样的手账版式查看。</li><li><strong>剧情记录：</strong>按日期和时间列出主线/支线剧情，保留标题、summary、触发条件和正文，并用不同颜色区分角色姓名卡片。</li><li><strong>多宠物记录：</strong>正式模式下，一个角色养过的' + mark('所有宠物', 'pink') + '都会归入该角色记录里，便于回顾第 1 只、第 2 只……宠物的全部旅程。</li></ul>',
       '<h3>## 7. 桌宠模式怎么玩？</h3>',
@@ -9133,7 +9708,7 @@ export async function initWanbanXiaowu() {
     const finalStory = id === 'M15';
     const summaryText = finalStory
       ? (petDisplayName(info, state) + '打算回到灵息缝隙了。你确定要现在和它告别么？')
-      : petRenderText(story?.summary || '有新的剧情可以体验。', info, state);
+      : petRenderText(story?.summary || story?.opening_cause || '进入剧情后查看故事内容。', info, state);
     mask.innerHTML = '<div class="wb-modal wb-pet-modal wb-mini-modal wb-pet-story-choice"><div class="wb-pet-story-choice-title">触发' + (/^S/.test(id) ? '支线剧情：' : '主线剧情：') + '</div><div class="wb-pet-story-choice-name">' + esc(petRenderText(story?.title || id, info, state)) + '</div><div class="wb-pet-story-choice-summary">' + esc(summaryText) + '</div><div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-story-play" style="flex:1;">' + (finalStory ? '确定' : '进入剧情') + '</button><button class="wb-btn" id="wb-pet-story-skip">' + (finalStory ? '再陪它一会' : '放弃剧情') + '</button></div></div>';
     appendModalMask(mask);
     qs('#wb-pet-story-play', mask).onclick = () => {
@@ -9245,15 +9820,16 @@ export async function initWanbanXiaowu() {
         renderPetHouse();
         return;
       }
-      showConfirm('开始下一个宠物？', petDisplayName(info, state) + '的结局已经保存。是否开始下一个宠物试用版？旧宠物记录会归档保留。', () => {
+      showConfirm('开始下一个宠物？', petDisplayName(info, state) + '的结局已经保存。是否开始下一段特别陪伴？旧宠物记录会归档保留。', () => {
         const ended = petTestState();
         const fresh = defaultPetTestState();
         fresh.testEgg = ended.testEgg;
         fresh.testSpecies = ended.testSpecies;
-        fresh.userName = ended.userName || settings().userName || '';
+        fresh.testPetName = ended.testPetName;
+        fresh.userName = ended.userName || '';
         fresh.archives = [ended].concat(ended.archives || []).slice(0, 10);
         savePetTestState(fresh);
-        renderPetHouse();
+        openPetSpecialCompanionChoice({ forceNew:true });
       }, renderPetHouse);
       return;
     }
@@ -9270,9 +9846,7 @@ export async function initWanbanXiaowu() {
     let index = 0;
     const draw = () => {
       const visible = lines.slice(0, index + 1);
-      const hasShen = visible.some(line => line.speaker === '沈栖白');
       mask.innerHTML = '<div class="wb-modal wb-summary-modal"><div class="wb-modal-title">' + esc(petRenderText(story.title || id, info, state)) + '</div>'
-        + (hasShen ? '<img src="' + esc(PET_ASSET_BASE + 'scene/shenqibai.png') + '" alt="" style="width:min(42vw,512px);height:min(42vw,512px);max-width:512px;max-height:512px;object-fit:contain;float:right;margin:0 0 10px 12px;border:1px solid var(--wb-border);background:transparent;">' : '')
         + '<div class="wb-api-status wb-text-segments" style="max-height:52vh;overflow:auto;">' + visible.map(line => petRpgLineHTML(line, info, state)).join('') + '</div>'
         + '<div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-story-next" style="flex:1;">' + (index + 1 >= lines.length ? '保存剧情' : '继续') + '</button><button class="wb-btn" id="wb-pet-story-close">稍后</button></div></div>';
       qs('#wb-pet-story-next', mask).onclick = () => {
@@ -9342,9 +9916,9 @@ export async function initWanbanXiaowu() {
       if (!row.day.adopted) acc[row.date] = Number(acc[row.date] || 0) + petDayGrowthTotal(row.day);
       return acc;
     }, {});
-    const dexEggs = ['blue','purple','pink','green','gold','white'];
-    const dexEggNames = { blue:'蓝色蛋', purple:'紫色蛋', pink:'粉色蛋', green:'绿色蛋', gold:'金色蛋', white:'蓝白蛋' };
-    const dexSpecies = ['rabbit','fox','dog','cat','bird','bala'];
+    const dexEggs = PET_EGG_IDS;
+    const dexEggNames = PET_EGG_LABELS;
+    const dexSpecies = PET_SPECIES_IDS;
     const dexForms = [
       { id:'baby', name:'幼崽', stage:'juvenile', story:'M05' },
       { id:'adult', name:'成年', stage:'adult', story:'M08' },
@@ -9408,7 +9982,8 @@ export async function initWanbanXiaowu() {
     const petDexPixelIcon = key => {
       const eggKeys = new Set(['blue', 'purple', 'pink', 'green', 'gold', 'white']);
       const palette = {
-        rabbit:'#ffb6ca', fox:'#ff9a42', dog:'#d69b68', cat:'#fffdf4', bird:'#81d884', bala:'#c59b72'
+        rabbit:'#ffb6ca', fox:'#ff9a42', dog:'#d69b68', cat:'#fffdf4', bird:'#81d884', bala:'#c59b72',
+        otter:'#8d6749', hedgehog:'#a58b78', redpanda:'#c8583b', alpaca:'#f5dfc7', sikadeer:'#c79255'
       };
       const fill = eggKeys.has(key) ? '#ffd45c' : (palette[key] || 'var(--wb-accent)');
       const dark = '#22324d', light = '#fffdf4', blush = '#ff8fa3', beak = '#ffd45c';
@@ -9420,7 +9995,12 @@ export async function initWanbanXiaowu() {
         dog:[r(4,7,5,8,'#8d6749'),r(15,7,5,8,'#8d6749'),r(7,6,10,10,fill),r(8,14,8,5,light),r(8,10,2,2,dark),r(14,10,2,2,dark),r(11,13,2,2,dark),r(10,16,4,1,dark),r(9,7,2,2,light),r(6,17,4,2,fill),r(14,17,4,2,fill)],
         cat:[r(8,4,2,2,fill),r(7,6,4,4,fill),r(14,4,2,2,fill),r(13,6,4,4,fill),r(8,7,1,2,blush),r(15,7,1,2,blush),r(6,8,12,10,fill),r(8,15,8,4,'#eaf7ff'),r(8,11,2,2,dark),r(14,11,2,2,dark),r(11,14,2,1,dark),r(8,16,2,1,blush),r(15,16,2,1,blush),r(3,13,4,1,dark),r(17,13,4,1,dark),r(3,15,4,1,dark),r(17,15,4,1,dark)],
         bird:[r(10,4,6,4,fill),r(7,8,11,9,fill),r(5,10,4,5,fill),r(18,10,3,2,beak),r(14,8,2,2,dark),r(9,17,8,2,fill),r(10,19,2,2,dark),r(15,19,2,2,dark),r(9,8,3,2,light)],
-        bala:[r(5,8,14,9,fill),r(7,6,3,3,fill),r(15,6,3,3,fill),r(7,17,10,2,fill),r(8,11,2,2,dark),r(15,11,2,2,dark),r(11,13,3,2,'#6f5038'),r(9,15,6,1,dark),r(6,9,2,2,light)]
+        bala:[r(5,8,14,9,fill),r(7,6,3,3,fill),r(15,6,3,3,fill),r(7,17,10,2,fill),r(8,11,2,2,dark),r(15,11,2,2,dark),r(11,13,3,2,'#6f5038'),r(9,15,6,1,dark),r(6,9,2,2,light)],
+        otter:[r(7,6,3,3,fill),r(14,6,3,3,fill),r(6,8,12,10,fill),r(8,13,8,5,'#f3ddbd'),r(8,10,2,2,dark),r(14,10,2,2,dark),r(11,13,2,2,dark),r(5,17,4,2,fill),r(15,17,6,2,fill),r(19,18,3,1,fill)],
+        hedgehog:[r(4,7,3,3,'#645b62'),r(6,5,3,4,'#81747a'),r(9,4,3,4,'#645b62'),r(12,5,3,3,'#81747a'),r(15,6,3,4,'#645b62'),r(5,8,14,10,'#81747a'),r(7,9,10,9,fill),r(8,11,2,2,dark),r(14,11,2,2,dark),r(17,13,3,2,dark),r(9,15,2,1,blush)],
+        redpanda:[r(7,4,3,4,fill),r(14,4,3,4,fill),r(6,7,12,10,fill),r(8,8,8,7,light),r(8,10,2,2,dark),r(14,10,2,2,dark),r(11,13,2,2,dark),r(5,17,4,2,'#4d3435'),r(15,17,3,2,'#4d3435'),r(18,15,4,2,fill),r(20,17,3,2,'#f3c7a3')],
+        alpaca:[r(9,2,2,5,fill),r(14,2,2,5,fill),r(8,5,8,4,fill),r(7,8,10,10,fill),r(9,10,6,6,light),r(9,11,2,2,dark),r(14,11,2,2,dark),r(11,14,3,1,dark),r(8,18,2,3,fill),r(14,18,2,3,fill)],
+        sikadeer:[r(7,2,2,5,'#d8ad58'),r(6,2,1,2,'#d8ad58'),r(9,1,1,3,'#d8ad58'),r(15,2,2,5,'#d8ad58'),r(17,2,1,2,'#d8ad58'),r(14,1,1,3,'#d8ad58'),r(7,7,10,10,fill),r(8,8,2,2,light),r(14,8,2,2,light),r(8,11,2,2,dark),r(14,11,2,2,dark),r(11,14,2,2,dark),r(8,17,2,3,fill),r(14,17,2,3,fill)]
       };
       const body = maps[key] ? maps[key].join('') : egg();
       return '<svg class="wb-pet-dex-pixel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" shape-rendering="crispEdges">' + body + '</svg>';
@@ -9448,16 +10028,17 @@ export async function initWanbanXiaowu() {
       qs('#wb-pet-dex-home', mask).onclick = drawHome;
       qsa('.wb-pet-dex-card.unlocked', mask).forEach(card => card.onclick = () => {
         const sprite = qs('.wb-pet-dex-fox', card);
+        if (sprite?.classList.contains('animating')) return;
         if (sprite) sprite.style.setProperty('--wb-pet-sprite', 'url(' + (sprite.dataset.happy || sprite.dataset.normal || '') + ')');
         card.classList.add('happy');
-        if (sprite) sprite.classList.add('animating');
+        playPetFrames(sprite, getHostWindow());
         setTimeout(() => {
           if (sprite) {
             sprite.style.setProperty('--wb-pet-sprite', 'url(' + (sprite.dataset.normal || '') + ')');
             sprite.classList.remove('animating');
           }
           card.classList.remove('happy');
-        }, 1500);
+        }, 2050);
       });
     };
     const drawDates = (offset = 0) => {
@@ -9530,7 +10111,7 @@ export async function initWanbanXiaowu() {
       qsa('.wb-pet-record-story', mask).forEach(btn => btn.onclick = () => {
         const row = stories[Number(btn.dataset.i)];
         const item = row.item || {};
-        mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head(item.title || '剧情') + '<button class="wb-btn" id="wb-pet-story-list">返回列表</button><div class="wb-pet-scroll">' + petStoryPageHTML(item, row.ctx.info, row.ctx.state) + '</div></div>';
+        mask.innerHTML = '<div class="wb-modal wb-pet-modal">' + head(petRenderText(item.title || '剧情', row.ctx.info, row.ctx.state)) + '<button class="wb-btn" id="wb-pet-story-list">返回列表</button><div class="wb-pet-scroll">' + petStoryPageHTML(item, row.ctx.info, row.ctx.state) + '</div></div>';
         bindClose();
         qs('#wb-pet-story-list', mask).onclick = drawStories;
         const replay = qs('.wb-pet-story-replay', mask);
@@ -9572,6 +10153,8 @@ export async function initWanbanXiaowu() {
   function openPetLogModal(info) {
     injectPetArcadeStyle();
     const state = petTestState();
+    const target = petStorageTarget();
+    const roleCfg = petCaretakerPromptConfig();
     const today = todayKey();
     const existing = state.logs[today] || null;
     const doc = getHostDocument();
@@ -9595,7 +10178,7 @@ export async function initWanbanXiaowu() {
       try {
         const selectedApi = qs('#wb-pet-log-model', mask)?.value || '';
         const api = selectedApi === '__local' ? { apiUrl:'', apiKey:'', apiModel:'' } : apiFieldsFromPresetIndex(selectedApi);
-        const cfg = Object.assign({}, petCaretakerPromptConfig(), api);
+        const cfg = Object.assign({}, roleCfg, api);
         generated = await generatePetDailyLog(info, state, note, cfg);
         const preview = qs('#wb-pet-log-preview', mask); if (preview) preview.innerHTML = renderPreview();
       } catch(e) {
@@ -9619,12 +10202,13 @@ export async function initWanbanXiaowu() {
     qs('#wb-pet-log-save', mask).onclick = () => {
       if (!generated) { toast('请先生成日志'); return; }
       const saveNow = () => {
-        const next = petTestState();
+        updatePetTargetState(target, next => {
         next.logs = Object.assign({}, next.logs || {}, { [today]:Object.assign({}, generated, { savedAt:Date.now(), date:today, pet_name:petDisplayName(info, next, generated?.pet_name || '宠物'), pet_stage:petDisplayStage(next), snapshot:petSnapshotData(next) }) });
-        savePetTestState(next);
+        return next;
+        });
         mask.remove();
         toast('日志已保存');
-        renderPetHouse();
+        if (petTargetIsCurrent(target)) renderPetHouse();
       };
       if (existing) petMiniConfirm('覆盖当天日志？', '当前保存会覆盖当天日志，是否确定？', saveNow);
       else saveNow();
@@ -9789,7 +10373,7 @@ export async function initWanbanXiaowu() {
       apiDetailsToggle.textContent = open ? '收起配置预设模型' : '展开配置预设模型';
     };
     const avatarInput = qs('#wb-avatar-url'); if (avatarInput) avatarInput.oninput = debounceAutoSaveInjection;
-    const saveAvatarBtn = qs('#wb-save-current-avatar'); if (saveAvatarBtn) saveAvatarBtn.onclick = () => { const input = qs('#wb-avatar-url'); const typed = input ? input.value.trim() : ''; if (typed) { autoSaveInjectionSettingsFromUI(); toast('已保存头像 URL，优先使用该头像'); return; } const url = findCurrentCardAvatar(); if (!url) { toast('未读取到当前角色卡头像'); return; } if (input) input.value = url; autoSaveInjectionSettingsFromUI(); toast('已保存当前角色卡头像到世界观注入'); };
+    const saveAvatarBtn = qs('#wb-save-current-avatar'); if (saveAvatarBtn) saveAvatarBtn.onclick = () => { const input = qs('#wb-avatar-url'); const typed = input ? input.value.trim() : ''; if (typed) { autoSaveInjectionSettingsFromUI(); toast('已保存头像 URL，优先使用该头像'); return; } const url = findCharacterAvatarByName(roleNameFromWorldUI()); if (!url) { toast('未读取到当前角色卡头像'); return; } if (input) input.value = url; autoSaveInjectionSettingsFromUI(); toast('已保存当前角色卡头像到世界观注入'); };
     const clearAvatarBtn = qs('#wb-clear-avatar'); if (clearAvatarBtn) clearAvatarBtn.onclick = () => { const input = qs('#wb-avatar-url'); if (input) input.value = ''; autoSaveInjectionSettingsFromUI(); toast('已清除世界观头像'); };
     qs('#wb-load-models-btn').onclick = loadModelsFromUI;
     const apiModelSelect = qs('#wb-api-model'); if (apiModelSelect) apiModelSelect.onchange = updateApiStatusUI;
@@ -9825,14 +10409,13 @@ export async function initWanbanXiaowu() {
     };
     const refreshWorldbook = qs('#wb-refresh-worldbook'); if (refreshWorldbook) refreshWorldbook.onclick = refreshWorldbookList;
     const lazyWorldInject = qs('#wb-lazy-world-inject'); if (lazyWorldInject) lazyWorldInject.onchange = async () => { autoSaveInjectionSettingsFromUI(); if (lazyWorldInject.checked) await applyLazyWorldInject(); };
-    const userDescSource = qs('#wb-user-desc-source'); if (userDescSource) userDescSource.onchange = () => { if (userDescSource.value === 'auto') { const persona = readCurrentUserPersonaFromST(); const input = qs('#wb-user-persona'); if (input) input.value = formatAutoUserPersona(persona); toast(persona ? '已自动导入当前User人设' : '未读取到当前User人设，可手动补充'); } autoSaveInjectionSettingsFromUI(); };
+    const userDescSource = qs('#wb-user-desc-source'); if (userDescSource) userDescSource.onchange = () => { if (userDescSource.value === 'auto') { if (roleNameFromWorldUI() !== hostRoleName()) { userDescSource.value = 'manual'; toast('请先在酒馆打开对应角色，再导入其 User 设定'); return; } const persona = readCurrentUserPersonaFromST(); const input = qs('#wb-user-persona'); if (input) input.value = formatAutoUserPersona(persona); toast(persona ? '已自动导入当前User人设' : '未读取到当前User人设，可手动补充'); } autoSaveInjectionSettingsFromUI(); };
     const worldAutoMountBtn = qs('#wb-world-auto-mount-btn'); if (worldAutoMountBtn) worldAutoMountBtn.onclick = openWorldAutoMountModal;
     const worldAutoMount = qs('#wb-world-auto-mount'); if (worldAutoMount) worldAutoMount.onchange = async () => { await applyWorldAutoMount(worldAutoMount.value || '', true); };
-    if (worldAutoMount && worldAutoMount.value) setTimeout(() => applyWorldAutoMount(worldAutoMount.value, false), 0);
     ['#wb-inject-user-desc','#wb-inject-char-desc','#wb-char-desc-mode','#wb-special-language-enabled','#wb-special-language','#wb-inject-chat','#wb-intimacy-mode','#wb-summary-select'].forEach(sel => { const el = qs(sel); if (el) el.onchange = () => { const pv = qs('#wb-summary-preview'); if (pv) pv.textContent = summaryPreview(qs('#wb-summary-select').value); const wrap = qs('#wb-manual-char-wrap'); if (wrap && qs('#wb-char-desc-mode')) wrap.style.display = qs('#wb-char-desc-mode').value === 'manual' ? '' : 'none'; const langWrap = qs('#wb-special-language-wrap'); if (langWrap && qs('#wb-special-language-enabled')) langWrap.style.display = qs('#wb-special-language-enabled').checked ? '' : 'none'; autoSaveInjectionSettingsFromUI(); const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(settings()); }; });
     const up = qs('#wb-user-persona'); if (up) up.oninput = debounceAutoSaveInjection;
     const mp = qs('#wb-manual-char-persona'); if (mp) mp.oninput = () => { const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(Object.assign({}, settings(), { charDescMode: 'manual', manualCharPersona: mp.value.trim(), injectCharDesc: true })); debounceAutoSaveInjection(); };
-    const cn = qs('#wb-char-name'); if (cn) cn.oninput = () => { const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(Object.assign({}, settings(), { charName: cn.value.trim() || '{{char}}', injectCharDesc: true })); debounceAutoSaveInjection(); };
+    const cn = qs('#wb-char-name'); if (cn) cn.onchange = autoSaveInjectionSettingsFromUI;
     const bp = qs('#wb-break-limit-prompt'); if (bp) bp.oninput = debounceAutoSaveInjection;
     qs('#wb-manage-summary').onclick = openSummaryManager;
     qs('#wb-save-world-preset').onclick = saveWorldPresetFromUI;
@@ -9893,6 +10476,16 @@ export async function initWanbanXiaowu() {
   }
   function autoSaveInjectionSettingsFromUI() {
     if (!qs('#wb-inject-user-desc')) return;
+    const previous = settings();
+    const enteredName = (qs('#wb-char-name') && qs('#wb-char-name').value.trim()) || hostRoleName();
+    if (enteredName !== companionName()) {
+      const source = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}))[enteredName] || worldPresetForRole(enteredName) || {};
+      const snapshot = captureRoleContext(source, enteredName);
+      setSettings(snapshot);
+      saveRoleContext(snapshot);
+      renderSettings();
+      return;
+    }
     setSettings({
       lazyWorldInject: !!(qs('#wb-lazy-world-inject') && qs('#wb-lazy-world-inject').checked),
       injectUserDesc: qs('#wb-inject-user-desc').checked,
@@ -9913,6 +10506,17 @@ export async function initWanbanXiaowu() {
       selectedWorldEntries: selectedWorldEntriesFromUI(),
       selectedWorldPresetName: selectedWorldPresetNameFromUI()
     });
+    const cfg = settings();
+    if (previous.charName !== cfg.charName || cfg.charDescMode === 'manual') {
+      cfg.charDescriptionSnapshot = '';
+      cfg.characterCardSnapshot = null;
+      cfg.characterAvatar = '';
+    }
+    cfg.roleContextVersion = undefined;
+    cfg.summarySnapshot = summarySnapshotFromId(cfg.summaryId);
+    const snapshot = captureRoleContext(cfg, enteredName);
+    saveRoleContext(snapshot);
+    setSettings(snapshot);
   }
   function debounceAutoSaveInjection() { if (wbAutoSaveTimer) clearTimeout(wbAutoSaveTimer); wbAutoSaveTimer = setTimeout(autoSaveInjectionSettingsFromUI, 250); }
   function flushSettingsProgress() {
@@ -9971,6 +10575,9 @@ export async function initWanbanXiaowu() {
       STORAGE_THEATERS,
       STORAGE_LINE_PRESET_SELECTION,
       STORAGE_WORLD_PRESETS,
+      STORAGE_ROLE_CONTEXTS,
+      STORAGE_PET_FULL,
+      STORAGE_PET_TEST,
       STORAGE_SUMMARIES,
       STORAGE_SUMMARY_REQ,
       STORAGE_PROGRESS,
@@ -9989,7 +10596,7 @@ export async function initWanbanXiaowu() {
     if (key === STORAGE_SETTINGS) {
       const raw = safeObject(value);
       const clean = {};
-      Object.keys(DEFAULT_SETTINGS).forEach(k => {
+      [...new Set([...Object.keys(DEFAULT_SETTINGS), ...Object.keys(ROLE_DEFAULTS)])].forEach(k => {
         if (Object.prototype.hasOwnProperty.call(raw, k)) clean[k] = raw[k];
       });
       clean.selectedWorldEntries = safeArray(clean.selectedWorldEntries);
@@ -9999,6 +10606,8 @@ export async function initWanbanXiaowu() {
       delete clean.apiModel;
       return Object.assign({}, DEFAULT_SETTINGS, clean, currentApi || {});
     }
+    if (key === STORAGE_ROLE_CONTEXTS) return Object.fromEntries(Object.entries(safeObject(value)).map(([name, role]) => [name, isolatedRole(safeObject(role), name)]));
+    if (key === STORAGE_PET_FULL || key === STORAGE_PET_TEST) return safeObject(value);
     if (key === STORAGE_WORLD_PRESETS || key === STORAGE_SUMMARIES) return safeArray(value).filter(x => x && typeof x === 'object');
     if (key === STORAGE_SETTINGS || key === STORAGE_SCORES || key === STORAGE_LINES || key === STORAGE_ROLE_LINES || key === STORAGE_THEATERS || key === STORAGE_LINE_PRESET_SELECTION || key === STORAGE_PROGRESS || key === STORAGE_RECORDS) return safeObject(value);
     if (key === STORAGE_WORD_GUESS_BANK) return (Array.isArray(value) || isPlainObject(value)) ? value : {};
@@ -10103,7 +10712,7 @@ export async function initWanbanXiaowu() {
   function deleteApiPresetFromUI() { const idx = parseInt(qs('#wb-api-preset').value, 10); const arr = apiPresets(); if (!arr[idx]) return; showConfirm('删除 API 预设','确定删除这个 API 预设吗？',()=>{ arr.splice(idx,1); saveApiPresets(arr); renderSettings(); }); }
   function selectedWorldEntriesFromUI() { return qsa('#wb-worldbook-list .wb-tag.active').map(x => ({ label: x.dataset.label || x.textContent, content: x.dataset.content || '', wbName: x.dataset.wbName || '', uid: x.dataset.uid || '' })); }
   function selectedWorldText(cfg) { const entries = (cfg.selectedWorldEntries || []).filter(x => x && (x.content || x.label)); return entries.map(x => '[' + (x.label || '世界书条目') + ']\n' + (x.content || '')).join('\n\n'); }
-  function selectedSummaryText(cfg) { if (cfg.summarySnapshot && (cfg.summarySnapshot.content || cfg.summarySnapshot.name)) return '[' + (cfg.summarySnapshot.name || '大总结') + ']\n' + (cfg.summarySnapshot.content || ''); if (!cfg.summaryId) return ''; const s = summaries().find(x => x.id === cfg.summaryId); return s ? ('[' + (s.name || '大总结') + ']\n' + (s.content || '')) : ''; }
+  function selectedSummaryText(cfg) { if (cfg.summarySnapshot && (cfg.summarySnapshot.content || cfg.summarySnapshot.name)) return '[' + (cfg.summarySnapshot.name || '大总结') + ']\n' + (cfg.summarySnapshot.content || ''); if (cfg.roleContextVersion === 2 || !cfg.summaryId) return ''; const s = summaries().find(x => x.id === cfg.summaryId); return s ? ('[' + (s.name || '大总结') + ']\n' + (s.content || '')) : ''; }
   function restoreSelectedWorldEntries() { const cfg = settings(); if (cfg.selectedWorldEntries && cfg.selectedWorldEntries.length) renderWorldbookTags(cfg.selectedWorldEntries, true); }
   function renderWorldbookTags(entries, activeAll) {
     const list = qs('#wb-worldbook-list'); if (!list) return;
@@ -10150,6 +10759,8 @@ export async function initWanbanXiaowu() {
     el.textContent = names.length ? ('已发现：' + names.join('、') + (mode ? ('（自动挂载：' + (mode === 'blue' ? '蓝灯' : '蓝灯+绿灯') + '）') : '')) : '未发现当前角色卡或聊天挂载的世界书。';
   }
   async function refreshWorldbookList() {
+    const target = roleNameFromWorldUI();
+    if (target !== hostRoleName()) { toast('请先在酒馆打开对应角色，再读取世界书'); return; }
     let manualMode = false;
     const auto = qs('#wb-world-auto-mount');
     if (auto && auto.value) {
@@ -10160,10 +10771,19 @@ export async function initWanbanXiaowu() {
     const list = qs('#wb-worldbook-list'); if (list) list.innerHTML = '<span class="wb-muted">正在读取挂载条目...</span>';
     try {
       const out = await getWorldbookEntriesByMode('');
-      renderWorldbookTags(out, false); await updateMountedWorldbookNamesAsync(); autoSaveInjectionSettingsFromUI(); toast(manualMode ? '进入手动挂载世界书模式' : (out.length ? ('已刷新 ' + out.length + ' 个世界书条目，可自行选择') : '当前未发现可读取的世界书条目'));
+      if (roleNameFromWorldUI() !== target || hostRoleName() !== target) return;
+      renderWorldbookTags(out, false);
+      autoSaveInjectionSettingsFromUI();
+      await updateMountedWorldbookNamesAsync();
+      if (roleNameFromWorldUI() === target) toast(manualMode ? '进入手动挂载世界书模式' : (out.length ? ('已刷新 ' + out.length + ' 个世界书条目，可自行选择') : '当前未发现可读取的世界书条目'));
     } catch(e) { if (list) list.innerHTML = '<span class="wb-muted">读取失败：当前环境未暴露世界书接口</span>'; toast('世界书读取失败'); }
   }
   async function applyWorldAutoMount(mode, announce) {
+    const target = roleNameFromWorldUI();
+    if (target !== hostRoleName()) {
+      if (announce) toast('请先在酒馆打开“' + target + '”，再读取它的世界书');
+      return;
+    }
     const auto = qs('#wb-world-auto-mount');
     if (auto) auto.value = mode || '';
     setWorldAutoMountControlText();
@@ -10172,13 +10792,15 @@ export async function initWanbanXiaowu() {
     const list = qs('#wb-worldbook-list'); if (list) list.innerHTML = '<span class="wb-muted">正在自动挂载世界书...</span>';
     try {
       const out = await getWorldbookEntriesByMode(mode);
+      if (roleNameFromWorldUI() !== target || hostRoleName() !== target) return;
       renderWorldbookTags(out, true);
-      await updateMountedWorldbookNamesAsync();
       autoSaveInjectionSettingsFromUI();
+      await updateMountedWorldbookNamesAsync();
       if (announce) toast(out.length ? ('已自动挂载 ' + out.length + ' 个世界书条目') : '当前没有符合灯色的世界书条目');
     } catch(e) { if (list) list.innerHTML = '<span class="wb-muted">自动挂载失败</span>'; toast('自动挂载失败'); }
   }
   async function applyLazyWorldInject() {
+    if (roleNameFromWorldUI() !== hostRoleName()) { toast('请先在酒馆打开对应角色，再自动导入设定'); return; }
     const persona = readCurrentUserPersonaFromST();
     const userSource = qs('#wb-user-desc-source'); if (userSource) userSource.value = 'auto';
     const up = qs('#wb-user-persona'); if (up && persona) up.value = persona;
@@ -10321,12 +10943,10 @@ export async function initWanbanXiaowu() {
     const names = [];
     const doc = getHostDocument();
     // SillyTavern stores the real book name in option text; option value is often just an index.
-    qsa('#world_info option:selected, #world_info option:checked', doc).forEach(opt => addWorldName(names, opt.textContent || opt.label || opt.value));
     qsa('.character_world_info_selector option:selected, .character_extra_world_info_selector option:selected', doc).forEach(opt => addWorldName(names, opt.textContent || opt.label || opt.value));
     try {
       const $ = getHostWindow().jQuery || getHostWindow().$ || window.jQuery || window.$;
       if ($) {
-        $('#world_info option:selected').each((_, opt) => addWorldName(names, opt.textContent || opt.label || opt.value));
         $('.character_world_info_selector option:selected, .character_extra_world_info_selector option:selected').each((_, opt) => addWorldName(names, opt.textContent || opt.label || opt.value));
       }
     } catch(e) {}
@@ -10336,9 +10956,7 @@ export async function initWanbanXiaowu() {
     try {
       const mod = await import('/scripts/world-info.js');
       const names = [];
-      addWorldName(names, mod.selected_world_info || []);
       const wi = mod.getWorldInfoSettings ? mod.getWorldInfoSettings()?.world_info : (mod.world_info || {});
-      addWorldName(names, wi?.globalSelect || []);
       const ctx = getHostContext();
       const char = ctx?.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : null;
       if (char) {
@@ -10359,7 +10977,6 @@ export async function initWanbanXiaowu() {
     try {
       const ctx = getHostContext();
       if (!ctx) return names;
-      add(getMountedWorldNamesFromDom());
       const char = ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx.character || null);
       const charData = char?.data || char || {};
       add([charData?.extensions?.world, charData?.world, charData?.character_book?.name]);
@@ -10371,8 +10988,7 @@ export async function initWanbanXiaowu() {
         add(found?.extraBooks || []);
       }
       const chatMeta = ctx.chatMetadata || {};
-      const wiSettings = ctx.worldInfoSettings || getHostWindow().world_info || window.world_info || {};
-      add([chatMeta.world_info, chatMeta.worldInfo, chatMeta.world, ctx.world_names, ctx.worldInfo, ctx.globalWorldInfo, wiSettings]);
+      if (!ctx.groupId) add([chatMeta.world_info, chatMeta.worldInfo, chatMeta.world]);
     } catch(e) { console.warn('[玩伴小屋] getCurrentWorldBookNames failed:', e); }
     return names;
   }
@@ -10413,6 +11029,7 @@ export async function initWanbanXiaowu() {
   }
   function currentUserDescription(cfg) {
     if (cfg.injectUserDesc === false) return '不注入';
+    if (cfg.roleContextVersion === 2) return cfg.userDescriptionSnapshot || cfg.userPersona || '未填写';
     if (cfg.userDescSource !== 'auto' && cfg.userPersona && cfg.userPersona.trim()) return cfg.userPersona.trim();
     if (cfg.userDescSource === 'auto') {
       const imported = readCurrentUserPersonaFromST();
@@ -10427,11 +11044,12 @@ export async function initWanbanXiaowu() {
     if (cfg.injectCharDesc === false) return '不注入';
     if (cfg.charDescMode === 'manual') return String(cfg.manualCharPersona || '').trim() || '未填写手动角色描述';
     if (cfg.charDescriptionSnapshot && String(cfg.charDescriptionSnapshot).trim()) return String(cfg.charDescriptionSnapshot).trim();
+    if (cfg.roleContextVersion === 2) return characterCardText(cfg.characterCardSnapshot) || '未填写该角色描述';
     const ctx = getHostContext();
-    const char = ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null);
+    const char = cfg.charName && cfg.charName !== '{{char}}' ? hostCharacterForRole(cfg.charName, cfg.characterAvatar) : (ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null));
     const charData = char?.data || char || {};
     const name = cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}');
-    const desc = (charData.description || ctx?.description || '').trim();
+    const desc = characterCardText(char);
     return name + '：' + (desc || '未读取到当前角色描述');
   }
   function summaryPreview(id) { const s = summaries().find(x => x.id === id); if (!s) return '当前不注入大总结。'; const txt = (s.content || '').replace(/\s+/g, ' ').slice(0, 140); return '[' + (s.name || '大总结') + '] ' + txt + ((s.content || '').length > 140 ? '...' : ''); }
@@ -10498,6 +11116,7 @@ export async function initWanbanXiaowu() {
     ].join('\n');
   }
   async function callApiText(cfg, prompt, systemPrompt, maxTokens, debugMeta) {
+    prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
     const url = apiChatUrl(cfg.apiUrl);
     if (!url) throw new Error('请先配置API基础URL');
     if (!cfg.apiModel) throw new Error('请先选择模型');
@@ -10525,6 +11144,7 @@ export async function initWanbanXiaowu() {
   }
 
   async function callApiTextStream(cfg, prompt, systemPrompt, maxTokens, onDelta) {
+    prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
     const url = apiChatUrl(cfg.apiUrl);
     if (!url) throw new Error('请先配置API基础URL');
     if (!cfg.apiModel) throw new Error('请先选择模型');
@@ -10660,6 +11280,7 @@ export async function initWanbanXiaowu() {
       breakLimitPrompt: qs('#wb-break-limit-prompt') ? qs('#wb-break-limit-prompt').value.trim() : '',
       userDescSource: qs('#wb-user-desc-source') ? (qs('#wb-user-desc-source').value === 'auto' ? 'auto' : 'manual') : 'manual',
       userPersona: qs('#wb-user-persona').value.trim(),
+      userName: settings().userName || '{{user}}',
       charDescMode: qs('#wb-char-desc-mode') ? qs('#wb-char-desc-mode').value : 'auto',
       manualCharPersona: qs('#wb-manual-char-persona') ? qs('#wb-manual-char-persona').value.trim() : '',
       charName,
@@ -10674,31 +11295,7 @@ export async function initWanbanXiaowu() {
   }
   async function applyWorldPresetToGame(pr) {
     if (!pr) return false;
-    const matched = (pr.selectedWorldEntries || []).map(x => ({ label:x.label || '', content:x.content || '', wbName:x.wbName || '', uid:x.uid || '' }));
-    const presetRoleName = normalizePresetName(pr.charName && pr.charName !== '{{char}}' ? pr.charName : (pr.name || companionName()));
-    setSettings({
-      lazyWorldInject: !!pr.lazyWorldInject,
-      injectUserDesc: pr.injectUserDesc !== false,
-      injectCharDesc: pr.injectCharDesc !== false,
-      injectChat: !!pr.injectChat,
-      specialLanguageEnabled: !!pr.specialLanguageEnabled,
-      specialLanguage: specialLanguageOptions().includes(pr.specialLanguage) ? pr.specialLanguage : '粤语',
-      intimacyMode: !!pr.intimacyMode,
-      breakLimitPrompt: pr.breakLimitPrompt || '',
-      userDescSource: pr.userDescSource === 'auto' ? 'auto' : 'manual',
-      userName: pr.userName || '{{user}}',
-      userPersona: pr.userPersona || '',
-      charDescMode: pr.charDescMode || 'auto',
-      manualCharPersona: pr.manualCharPersona || '',
-      charName: pr.charName || '{{char}}',
-      charDescriptionSnapshot: pr.charDescriptionSnapshot || '',
-      avatarUrl: pr.avatarUrl || findCharacterAvatarByName(presetRoleName) || '',
-      summaryId: pr.summaryId || '',
-      summarySnapshot: pr.summarySnapshot || null,
-      worldAutoMountMode: ['blue','bluegreen'].includes(pr.worldAutoMountMode) ? pr.worldAutoMountMode : '',
-      selectedWorldEntries: matched
-    });
-    refreshGameCompanionPanel();
+    saveRoleContext(captureRoleContext(pr, pr.charName || pr.name));
     return true;
   }
   function refreshGameCompanionPanel() {
@@ -10707,21 +11304,15 @@ export async function initWanbanXiaowu() {
   }
   async function applyLinePresetSelection(game, value) {
     if (!value) return;
-    if (value.indexOf('world::') === 0) {
-      const pr = worldPresets()[parseInt(value.slice(7), 10)];
-      const name = normalizePresetName(pr && pr.name);
-      if (pr) await applyWorldPresetToGame(pr);
-      setCurrentLinePreset(game, name);
-      toast('已切换世界观/语录预设：' + name);
-      return;
-    }
-	    const name = normalizePresetName(value.replace(/^line::/, ''));
-	    const pr = worldPresets().find(x => normalizePresetName(x.name) === name);
-	    if (pr) await applyWorldPresetToGame(pr);
-	    else { setSettings({ charName: name, charDescriptionSnapshot: '', avatarUrl: findCharacterAvatarByName(name) || '' }); refreshGameCompanionPanel(); }
-	    setCurrentLinePreset(game, name);
-	    toast(pr ? ('已切换语录并同步设定：' + name) : ('已切换语录：' + name));
-	  }
+    if (gameStarted && currentGame === game) { renderLinePresetSelect(game); toast('请先结束本局，再切换陪伴角色'); return; }
+    const pr = value.startsWith('world::') ? worldPresets()[parseInt(value.slice(7), 10)] : null;
+    const name = normalizePresetName(pr ? pr.name : value.replace(/^line::/, ''));
+    if (pr) await applyWorldPresetToGame(pr);
+    else rolePromptConfig(name);
+    setCurrentLinePreset(game, name);
+    refreshGameCompanionPanel();
+    toast('已切换角色：' + name);
+  }
 
   function startContinueCountdown(mask, game, state) {
     const modal = qs('.wb-modal', mask) || mask;
@@ -10791,6 +11382,7 @@ export async function initWanbanXiaowu() {
       if (game === 'paopao') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','paopao_clutch'], ['score','paopao_drop'], ['score','paopao_bomb_fail'], ['score','paopao_clear_all'], ['score','long_run']];
       if (game === 'zuma') return [['score','normal'], ['score','record'], ['score','zuma_chain_master'], ['score','zuma_clutch'], ['score','zuma_sharpshooter'], ['score','zuma_toolbox'], ['score','zuma_endurance'], ['score','long_run']];
       if (game === 'watersort') return [['score','normal'], ['score','record'], ['score','watersort_perfect'], ['score','watersort_efficient'], ['score','watersort_no_hint'], ['score','watersort_extra_save'], ['score','watersort_endurance'], ['score','long_run']];
+      if (game === 'flappybird') return [['score','normal'], ['score','record'], ['score','flappy_streak'], ['score','flappy_close_call'], ['score','flappy_speed'], ['score','flappy_endurance'], ['score','flappy_quick_crash'], ['score','long_run']];
       if (game === 'game1010') return [['score','normal'], ['score','record'], ['score','game1010_strategy'], ['score','game1010_bad_luck'], ['score','game1010_clutch'], ['score','long_run']];
       if (game === 'turkey') return [['score','normal'], ['score','record'], ['score','super_good'], ['score','turkey_hot'], ['score','turkey_endure'], ['score','turkey_minimal'], ['score','turkey_clutch'], ['score','turkey_clear_all'], ['score','bad_luck'], ['score','turkey_tools'], ['score','long_run']];
       if (game === 'spider') return [['score','normal'], ['score','record'], ['score','spider_chain_master'], ['score','spider_four_empty'], ['score','spider_clear_table'], ['score','spider_clutch'], ['score','super_good'], ['score','bad_luck'], ['score','long_run']];
@@ -10921,8 +11513,13 @@ export async function initWanbanXiaowu() {
 	      ,watersort_perfect:'倒瓶子无尽模式至少6关未使用辅助，重点写独立整理复杂水层。'
 	      ,watersort_efficient:'倒瓶子连续5步以上合并同色水，重点写一气呵成的整理过程。'
 	      ,watersort_no_hint:'倒瓶子无尽模式完成至少10关且从未提示，重点写user不看答案。'
-	      ,watersort_extra_save:'倒瓶子无尽模式使用额外空瓶并完成至少10关，重点写单空瓶难关被救回。'
+	      ,watersort_extra_save:'倒瓶子无尽模式使用额外空瓶并完成至少10关，重点写每关唯一一次加瓶机会如何缓解周转压力。'
 	      ,watersort_endurance:'倒瓶子无尽模式完成至少20关，重点写颜色和空瓶压力提高后仍持续整理。'
+	      ,flappy_streak:'像素鸟单局穿过至少20组管道，重点写user稳定控制拍翅节奏。'
+	      ,flappy_close_call:'像素鸟累计至少5次贴近管道边缘极限通过，重点写擦边瞬间的紧张。'
+	      ,flappy_speed:'像素鸟进入第8难度阶段的高速封顶区，重点写管道加速、缝隙变窄后user仍在飞行。'
+	      ,flappy_endurance:'像素鸟单局存活至少60秒，重点写长时间保持专注和节奏。'
+	      ,flappy_quick_crash:'像素鸟8秒内、3次拍翅以内且零分撞击，可以轻松调侃开局过快结束，同时邀请user再来一局。'
     };
     const sceneText = jobs.map(([outcome, special]) => {
       const resultText = outcome === 'score' ? '单人分数结算' : formatRecordResultForPrompt(outcome);
@@ -10957,8 +11554,8 @@ export async function initWanbanXiaowu() {
   function promptConfigForGame(game) {
     const cfg = settings();
     const select = qs('#wb-line-preset-select');
-    let promptCfg = cfg;
     let preset = currentLinePreset(game);
+    let promptCfg = rolePromptConfig(preset, cfg);
 	    if (select && select.value && select.value.indexOf('world::') === 0) {
 	      const pr = worldPresets()[parseInt(select.value.slice(7), 10)];
 	      if (pr) { preset = normalizePresetName(pr.name); promptCfg = rolePromptConfig(preset, cfg, pr); }
@@ -11823,33 +12420,21 @@ export async function initWanbanXiaowu() {
     renderSettings();
   }
   function resetCurrentWorldDefaultFromUI() {
-    const name = normalizePresetName(companionName());
-    showConfirm('恢复当前角色卡默认', '确定将当前世界观注入设置恢复为“' + name + '”的角色卡默认内容吗？已保存的角色和世界观预设不会被删除，前置提示词 / 破限词会保留。', () => {
-      const keepBreak = qs('#wb-break-limit-prompt') ? qs('#wb-break-limit-prompt').value.trim() : (settings().breakLimitPrompt || '');
-      setSettings({
-        lazyWorldInject: false,
-        userDescSource: 'manual',
-        userName: '{{user}}',
-        injectCharDesc: true,
-        charDescMode: 'auto',
-        manualCharPersona: '',
-        charName: '{{char}}',
-        charDescriptionSnapshot: '',
-        avatarUrl: '',
-        summaryId: '',
-        summarySnapshot: null,
-        worldAutoMountMode: '',
-        selectedWorldEntries: [],
-        selectedWorldPresetName: '',
-        specialLanguageEnabled: false,
-        specialLanguage: '粤语',
-        breakLimitPrompt: keepBreak
-      });
+    const name = normalizePresetName(hostRoleName() || companionName());
+    showConfirm('恢复当前角色卡默认', '将读取酒馆当前角色“' + name + '”的默认设定。其他角色的独立配置和已保存预设会保留。', () => {
+      const role = captureRoleContext({
+        charName:name,
+        userDescSource:'auto',
+        breakLimitPrompt:name === companionName() ? (qs('#wb-break-limit-prompt')?.value || '') : ''
+      }, name);
+      saveRoleContext(role);
+      setSettings(role);
       renderSettings();
-      toast('已恢复当前角色卡默认配置');
+      toast('已恢复对应角色卡的默认设定');
     });
   }
   async function loadWorldPresetFromUI() {
+    if (wbAutoSaveTimer) { clearTimeout(wbAutoSaveTimer); wbAutoSaveTimer = null; }
     const idx = parseInt(qs('#wb-world-preset').value, 10);
     const pr = worldPresets()[idx];
     if (!pr) { setSettings({ selectedWorldPresetName: '' }); return; }
@@ -11898,7 +12483,9 @@ export async function initWanbanXiaowu() {
       selectedWorldEntries: matched,
       selectedWorldPresetName: normalizePresetName(pr.name || qs('#wb-char-name')?.value || companionName())
     });
-    if (qs('#wb-world-auto-mount') && qs('#wb-world-auto-mount').value) await applyWorldAutoMount(qs('#wb-world-auto-mount').value, false);
+    const snapshot = captureRoleContext(pr, pr.charName || pr.name);
+    saveRoleContext(snapshot);
+    setSettings(snapshot);
     applyRoleToAllGames(normalizePresetName(pr.name || qs('#wb-char-name')?.value || companionName()));
     const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(settings());
     toast('角色和世界观已按保存快照载入');
@@ -11907,6 +12494,7 @@ export async function initWanbanXiaowu() {
 
   function renderGame(id) {
     stopGame();
+    currentRoundRoleContext = null;
     currentGame = id;
     currentRoundLineEvents = [];
     currentRoundTheaterInfo = null;
@@ -11966,7 +12554,12 @@ export async function initWanbanXiaowu() {
       return;
     }
     if (!resumeState) clearProgress(id);
+    currentRoundRoleContext = resumeState?.roleContext
+      ? isolatedRole(resumeState.roleContext) : isolatedRole(rolePromptConfig(activeGameRoleName(id)));
+    setCurrentLinePreset(id, currentRoundRoleContext.charName);
     gameStarted = true;
+    renderLinePresetSelect(id);
+    refreshGameCompanionPanel();
     gamePaused = false;
     firstMoverAwaitingUserAction = !!(needsFirstMoverChoice(id) && savedState && savedState.firstMover && !storedState && !savedState.userActed);
     gameAccumulatedMs = Math.max(0, Number(resumeState?.durationMs || 0));
@@ -11997,6 +12590,7 @@ export async function initWanbanXiaowu() {
     if (id === 'paopao') startPaopao(resumeState);
     if (id === 'zuma') activeGameController = createZumaGame(resumeState, modularGameEnvironment(id));
     if (id === 'watersort') activeGameController = createWaterSortGame(resumeState, modularGameEnvironment(id));
+    if (id === 'flappybird') activeGameController = createFlappyBirdGame(resumeState, modularGameEnvironment(id));
     if (id === 'game1010') startGame1010(resumeState);
     if (id === 'turkey') startTurkey(resumeState);
     if (id === 'spider') startSpider(resumeState);
@@ -12327,7 +12921,7 @@ function showGameRecords(game, page) {
     ];
 	  }
   async function generateDoubleTheater(game, outcome, special, scoreText, cfgOverride) {
-    const cfg = cfgOverride || settings(); const fallback = doubleTheaterFallback(game, outcome, special);
+    const cfg = cfgOverride || rolePromptConfig(activeGameRoleName(game)); const fallback = doubleTheaterFallback(game, outcome, special);
     if (!cfg.apiUrl || !cfg.apiModel) return fallback;
     const intimacyText = cfg.intimacyMode ? '开启。允许成年角色之间更亲近、更暧昧、更依赖，允许含蓄的NSFW暗示；禁止未成年人相关性内容、强迫、失控或违法内容。' : '关闭。保持自然陪伴和轻松亲近，禁止色情行为和露骨内容。';
     const prefix = (cfg.breakLimitPrompt || '').trim();
@@ -12365,11 +12959,11 @@ function showGameRecords(game, page) {
     const fallback = roleName + '回顾了这局' + ((GAME_META[game] || {}).name || '游戏') + '：' + (rec.scoreText || formatRecordResult(rec.result)) + '。用时不长，但关键过程很清楚；你有几步处理得不错，也有可以调整的地方。下次再开局，可以从这次的转折点开始改。';
     if (!cfg.apiUrl || !cfg.apiModel) { updateRecord(game, recordId, { log:fallback }); toast('已生成离线日志'); return fallback; }
 	    const theaterInfo = rec.theaterInfo || {};
-	    const logCfg = rolePromptConfig(roleName, cfg);
+	    const logCfg = rec.roleContext ? withRoleContext(cfg, rec.roleContext) : rolePromptConfig(roleName, cfg);
 	    const normalizedScoreText = String(rec.scoreText || '').replace(new RegExp(String(roleName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '{{char}}').replace(new RegExp('TA' + '赢', 'g'), '{{char}}赢').replace(/TA/g, '{{char}}');
 	    const theaterText = String(theaterInfo.text || (rec.favoriteTheater && rec.favoriteTheater.text) || '').trim();
 	    const prompt = [(logCfg.breakLimitPrompt || '').trim(), specialLanguageRequirement('log', logCfg), ...(promptTemplates().gameLog || PROMPT_TEMPLATES.gameLog),'游戏：' + ((GAME_META[game] || {}).name || game),'','游戏情况（记录表字段，均为 user 视角）：\n' + gameLogSituation(game, rec) + '\n' + gameLogFieldRules(game, roleName),'','原始结算文本：\n' + normalizedScoreText,'','结果：\n' + formatRecordResultForPrompt(rec.result),'','用时：\n' + formatDuration(rec.durationMs),'','本局详细过程数据：\n' + gameLogDetailText(game, rec),'','本局触发过的角色语录：\n' + lineEventLogText(rec.lineEvents),'','本局触发的小剧场主题：\n' + (theaterInfo.title || '角色互动小剧场'),'','本局小剧场触发条件：\n' + (theaterInfo.condition || theaterConditionForSpecial(game, theaterInfo.special || '', roleName)),'','本局实际小剧场内容：\n' + (theaterText || '无'),'','当前游戏全部特殊小剧场规则：\n' + gameTheaterConditionRules(game, roleName),'','前几次同角色同游戏日志：\n' + (recentGameLogs(game, roleName) || '无'),'','陪伴者：\n' + roleName,'','角色描述：\n' + currentCharDescription(logCfg),'','世界背景：\n' + (selectedWorldText(logCfg) || '无'),'','大总结：\n' + (selectedSummaryText(logCfg) || '无')].filter(Boolean).join('\n');
-	    let log = fallback; try { log = await callApiText(cfg, prompt, promptTemplates().systems.gameLog || PROMPT_TEMPLATES.systems.gameLog); } catch(e) { toast('日志生成失败，已使用本地日志'); } updateRecord(game, recordId, { log }); return log;
+	    let log = fallback; try { log = await callApiText(logCfg, prompt, promptTemplates().systems.gameLog || PROMPT_TEMPLATES.systems.gameLog); } catch(e) { toast('日志生成失败，已使用本地日志'); } updateRecord(game, recordId, { log }); return log;
   }
   async function showGameOver(game, title, scoreText, result, meta) {
     clearProgress(game);
@@ -12448,11 +13042,9 @@ function showGameRecords(game, page) {
     return '<div class="wb-companion ' + (cfg.companion ? 'on' : '') + '" id="wb-comp"><div class="wb-comp-row"><div class="wb-avatar">' + av + '</div><div class="wb-comp-main"><div class="wb-comp-name">' + esc(name) + '</div><div class="wb-speech wb-text-segments" id="wb-speech">...</div></div></div></div>';
   }
   function findAvatar() {
-    const rolePreset = currentGame ? worldPresetForRole(activeGameRoleName(currentGame)) : null;
-    const fixed = ((rolePreset && rolePreset.avatarUrl) || settings().avatarUrl || '').trim();
-    if (fixed) return fixed;
     const roleName = currentGame ? activeGameRoleName(currentGame) : companionName();
-    return findCharacterAvatarByName(roleName) || findCurrentCardAvatar();
+    const cfg = rolePromptConfig(roleName);
+    return cfg.avatarUrl || cfg.defaultAvatarUrl || findCharacterAvatarByName(roleName) || '';
   }
   function avatarUrlFromValue(value) {
     const raw = String(value || '').trim();
@@ -12468,28 +13060,13 @@ function showGameRecords(game, page) {
     return '/thumbnail?type=avatar&file=' + encodeURIComponent(raw);
   }
   function findCharacterAvatarByName(name) {
-    const target = String(name || '').trim().toLowerCase();
-    const targetPreset = normalizePresetName(name).toLowerCase();
-    if (!target || target === '{{char}}') return '';
-    const ctx = getHostContext() || {};
-    const chars = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const cleanAvatarName = value => String(value || '').replace(/^.*[\\/]/, '').replace(/\.[^/.]+$/, '').trim().toLowerCase();
-    for (const char of chars) {
-      const data = char?.data || char || {};
-      const sourceNames = [data.name, char?.name, data.ch_name, data.avatar, char?.avatar].filter(Boolean);
-      const names = sourceNames.flatMap(x => [String(x).trim().toLowerCase(), normalizePresetName(x).toLowerCase(), cleanAvatarName(x), normalizePresetName(cleanAvatarName(x)).toLowerCase()]);
-      if (!names.includes(target) && !names.includes(targetPreset)) continue;
-      const avatar = data.avatarUrl || data.avatar_url || char?.avatarUrl || char?.avatar_url || data.avatar || char?.avatar;
-      const url = avatarUrlFromValue(avatar);
-      if (url) return url;
-    }
-    return '';
+    const char = hostCharacterForRole(name);
+    if (!char) return '';
+    const data = char.data || char;
+    return avatarUrlFromValue(data.avatarUrl || data.avatar_url || char.avatarUrl || char.avatar_url || char.avatar || data.avatar);
   }
   function findCurrentCardAvatar() {
-    for (const s of ['#avatar_div img', '.mes[is_user="false"] .avatar img', '.last_mes .avatar img', '.avatar img']) {
-      const img = qs(s); if (img && img.src) return img.src;
-    }
-    return '';
+    return findCharacterAvatarByName(hostRoleName());
   }
   function speak(game, event) {
     const cfg = settings(); if (!cfg.companion) return;
@@ -12517,7 +13094,7 @@ function showGameRecords(game, page) {
     const failKey = targetRole + '::' + game;
     clearTheaterCacheForGame(game, targetRole);
     delete theaterGenerationFailures[failKey];
-    const cfg = cfgOverride || settings();
+    const cfg = cfgOverride || rolePromptConfig(targetRole);
     const jobs = theaterJobsForGame(game);
 	    let pack = theaterPackFallback(game, jobs, targetRole);
     let apiFailed = '';
@@ -12554,7 +13131,7 @@ function showGameRecords(game, page) {
     if (lineGenerationBusy) { toast('已有角色数据生成任务正在进行'); return; }
     const cfg = settings(); const btn = qs('#wb-generate-lines'); if (!btn) return; btn.disabled = true; btn.textContent = '生成中';
     let preset = currentLinePreset(game);
-    let promptCfg = cfg;
+    let promptCfg = rolePromptConfig(preset, cfg);
     let failed = false;
     try {
       const select = qs('#wb-line-preset-select');
@@ -12583,7 +13160,6 @@ function showGameRecords(game, page) {
         const generatedWordBank = game === 'wordguess' && data && Array.isArray(data.word_bank) && data.word_bank.length;
         data = normalizeGeneratedLines(game, data, preset);
         if (generatedWordBank) saveWordGuessBankSource('role');
-        saveRoleLineSet(game, preset, data);
         saveRoleLineSetForName(game, preset, preset, data);
         renderLinePresetSelect(game);
       }
@@ -12602,7 +13178,7 @@ function showGameRecords(game, page) {
 	    const tpl = (cfg.linePromptOverride || '').trim() ? { header:String(cfg.linePromptOverride).split(/\r?\n/), rules:[], output:[] } : (promptTemplates().lineGeneration || PROMPT_TEMPLATES.lineGeneration);
 	    const userDesc = currentUserDescription(cfg);
     const charDesc = currentCharDescription(cfg);
-    const chatDesc = cfg.injectChat ? '请参考当前最新聊天记录的关系氛围（插件不直接上传聊天全文时按此要求处理）' : '不注入';
+    const chatDesc = cfg.injectChat ? (cfg.chatSnapshot || '该角色没有保存聊天记录') : '不注入';
     const wbText = selectedWorldText(cfg) || '无';
     const summaryText = selectedSummaryText(cfg) || '无';
     const recentRole = normalizePresetName((cfg && cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : companionName());
@@ -12772,6 +13348,7 @@ function showGameRecords(game, page) {
     });
   }
   async function callApi(cfg, prompt, debugMeta) {
+    prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
     const url = apiChatUrl(cfg.apiUrl);
     if (!url) throw new Error('请先配置API基础URL');
     if (!cfg.apiModel) throw new Error('请先选择模型');
@@ -17774,7 +18351,7 @@ function showGameRecords(game, page) {
   }
 
   async function createWordGuessRounds(count, forceFallback, scope) {
-    const cfg=settings();
+    const cfg=rolePromptConfig(activeGameRoleName('wordguess'));
     const role = displayCharName();
     const normalize = item => normalizeWordGuessRoundData(item) || (() => { const word=String(item?.word||'').trim(); if(!word) return null; const clues=Array.isArray(item.clues)?item.clues.map(x=>String(x).trim()).filter(Boolean).slice(0,5):[]; while(clues.length<5) clues.push(clues[clues.length-1] || '这个词和现在的场景有关，你再靠近一点想。'); const raw=item.interactions||{}; const interactions={ start:String(raw.start||('我把“' + word + '”藏好了，先给你一条不太好猜的线。')), clue:String(raw.clue||'我再换一种说法，你听听是不是离它近一点。'), clue_late:String(raw.clue_late||'这个提示已经很近了，再往前一点就要碰到答案了。'), guess:String(raw.guess||'这个答案还没贴到它的影子，我再把线索往它身边推一点。'), win:String(raw.win||('猜中了。' + role + '把“' + word + '”轻轻重复了一遍，像确认你们刚才抓住了同一个小秘密。')), reveal:String(raw.reveal||('答案是“' + word + '”。' + role + '把它说出来时，语气里带着一点只属于这个词的温柔。')) }; return { word, type:String(item.type||'未分类'), length:parseInt(item.length,10)||word.length, clues, interactions }; })();
     const fallback = async () => selectWordGuessRounds((await defaultWordGuessBank()).map(normalize).filter(Boolean), Math.max(5, count || 5), scope);

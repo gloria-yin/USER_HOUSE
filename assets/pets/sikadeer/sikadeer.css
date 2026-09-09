@@ -1,0 +1,31 @@
+.wb-sikadeer {
+  width: 128px;
+  height: 128px;
+  background-repeat:no-repeat;
+  background-size:400% 100%;
+  image-rendering:auto;
+  animation:wbSikadeerFrames 2s steps(4) infinite;
+}
+
+.wb-sikadeer.baby.normal { background-image:url('./baby/normal.png'); }
+.wb-sikadeer.baby.happy { background-image:url('./baby/happy.png'); }
+.wb-sikadeer.baby.eat { background-image:url('./baby/eat.png'); }
+.wb-sikadeer.baby.sleep { background-image:url('./baby/sleep.png'); }
+.wb-sikadeer.baby.sad { background-image:url('./baby/sad.png'); }
+
+.wb-sikadeer.adult.normal { background-image:url('./adult/normal.png'); }
+.wb-sikadeer.adult.happy { background-image:url('./adult/happy.png'); }
+.wb-sikadeer.adult.eat { background-image:url('./adult/eat.png'); }
+.wb-sikadeer.adult.sleep { background-image:url('./adult/sleep.png'); }
+.wb-sikadeer.adult.sad { background-image:url('./adult/sad.png'); }
+
+.wb-sikadeer.magic.normal { background-image:url('./magic/normal.png'); }
+.wb-sikadeer.magic.happy { background-image:url('./magic/happy.png'); }
+.wb-sikadeer.magic.eat { background-image:url('./magic/eat.png'); }
+.wb-sikadeer.magic.sleep { background-image:url('./magic/sleep.png'); }
+.wb-sikadeer.magic.sad { background-image:url('./magic/sad.png'); }
+
+@keyframes wbSikadeerFrames {
+  from { background-position-x:0; }
+  to { background-position-x:100%; }
+}

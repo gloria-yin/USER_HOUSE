@@ -1,0 +1,31 @@
+.wb-hedgehog {
+  width: 128px;
+  height: 128px;
+  background-repeat:no-repeat;
+  background-size:400% 100%;
+  image-rendering:auto;
+  animation:wbHedgehogFrames 2s steps(4) infinite;
+}
+
+.wb-hedgehog.baby.normal { background-image:url('./baby/normal.png'); }
+.wb-hedgehog.baby.happy { background-image:url('./baby/happy.png'); }
+.wb-hedgehog.baby.eat { background-image:url('./baby/eat.png'); }
+.wb-hedgehog.baby.sleep { background-image:url('./baby/sleep.png'); }
+.wb-hedgehog.baby.sad { background-image:url('./baby/sad.png'); }
+
+.wb-hedgehog.adult.normal { background-image:url('./adult/normal.png'); }
+.wb-hedgehog.adult.happy { background-image:url('./adult/happy.png'); }
+.wb-hedgehog.adult.eat { background-image:url('./adult/eat.png'); }
+.wb-hedgehog.adult.sleep { background-image:url('./adult/sleep.png'); }
+.wb-hedgehog.adult.sad { background-image:url('./adult/sad.png'); }
+
+.wb-hedgehog.magic.normal { background-image:url('./magic/normal.png'); }
+.wb-hedgehog.magic.happy { background-image:url('./magic/happy.png'); }
+.wb-hedgehog.magic.eat { background-image:url('./magic/eat.png'); }
+.wb-hedgehog.magic.sleep { background-image:url('./magic/sleep.png'); }
+.wb-hedgehog.magic.sad { background-image:url('./magic/sad.png'); }
+
+@keyframes wbHedgehogFrames {
+  from { background-position-x:0; }
+  to { background-position-x:100%; }
+}

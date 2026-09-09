@@ -1,0 +1,31 @@
+.wb-alpaca {
+  width: 128px;
+  height: 128px;
+  background-repeat:no-repeat;
+  background-size:400% 100%;
+  image-rendering:auto;
+  animation:wbAlpacaFrames 2s steps(4) infinite;
+}
+
+.wb-alpaca.baby.normal { background-image:url('./baby/normal.png'); }
+.wb-alpaca.baby.happy { background-image:url('./baby/happy.png'); }
+.wb-alpaca.baby.eat { background-image:url('./baby/eat.png'); }
+.wb-alpaca.baby.sleep { background-image:url('./baby/sleep.png'); }
+.wb-alpaca.baby.sad { background-image:url('./baby/sad.png'); }
+
+.wb-alpaca.adult.normal { background-image:url('./adult/normal.png'); }
+.wb-alpaca.adult.happy { background-image:url('./adult/happy.png'); }
+.wb-alpaca.adult.eat { background-image:url('./adult/eat.png'); }
+.wb-alpaca.adult.sleep { background-image:url('./adult/sleep.png'); }
+.wb-alpaca.adult.sad { background-image:url('./adult/sad.png'); }
+
+.wb-alpaca.magic.normal { background-image:url('./magic/normal.png'); }
+.wb-alpaca.magic.happy { background-image:url('./magic/happy.png'); }
+.wb-alpaca.magic.eat { background-image:url('./magic/eat.png'); }
+.wb-alpaca.magic.sleep { background-image:url('./magic/sleep.png'); }
+.wb-alpaca.magic.sad { background-image:url('./magic/sad.png'); }
+
+@keyframes wbAlpacaFrames {
+  from { background-position-x:0; }
+  to { background-position-x:100%; }
+}
