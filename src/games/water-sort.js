@@ -629,6 +629,7 @@ export function createWaterSortGame(state, env) {
 
   function destroy() {
     if (destroyed) return;
+    save(true);
     destroyed = true;
     timers.forEach(timer => win.clearTimeout(timer));
     timers.clear();

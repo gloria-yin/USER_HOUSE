@@ -523,15 +523,23 @@ export function createFlappyBirdGame(savedState, env) {
 
   function destroy() {
     if (destroyed) return;
+    save(true);
     destroyed = true;
     if (animationFrame) win.cancelAnimationFrame(animationFrame);
     canvas.removeEventListener('pointerdown', onPointerDown);
     doc.removeEventListener('keydown', onKeyDown);
+    win.removeEventListener?.('pagehide', saveOnLeave);
+    doc.removeEventListener?.('visibilitychange', saveOnHidden);
   }
+
+  function saveOnLeave() { save(true); }
+  function saveOnHidden() { if (doc.hidden) save(true); }
 
   ensurePipeQueue();
   canvas.addEventListener('pointerdown', onPointerDown, { passive:false });
   doc.addEventListener('keydown', onKeyDown);
+  win.addEventListener?.('pagehide', saveOnLeave);
+  doc.addEventListener?.('visibilitychange', saveOnHidden);
   env.setScore(state.score);
   env.speak(restored ? 'resume' : 'start');
   updateUI();
