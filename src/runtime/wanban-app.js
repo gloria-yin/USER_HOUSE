@@ -9,6 +9,7 @@ import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from 
 import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
 import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage } from './storage.js';
 import { parsePetInfo, parsePetStoryLines, assertPetInfo } from './pet-info.js';
+import { parseGeneratedJson } from './generated-json.js';
 
 // Runtime migrated from 益智小游戏/玩伴小屋V1.0.1.json.
 // Keep this file behavior-compatible with the original script; split new code into src/* modules when extending.
@@ -120,6 +121,8 @@ export async function initWanbanXiaowu() {
   let currentTab = 'single';
   let currentGame = null;
   let activeGameController = null;
+  let gameEntryTimer = null;
+  let gameEntryObserver = null;
   let snakeTimer = null;
   let tetrisTimer = null;
   let watermelonTimer = null;
@@ -317,6 +320,8 @@ export async function initWanbanXiaowu() {
 	    batchAttempts: 1,
 	    batchLinesApiChoice: 'default',
 	    batchTheaterApiChoice: 'default',
+      batchLinesMaxTokens: 0,
+      batchTheaterMaxTokens: 0,
 	    customFonts: [],
 	    selectedFont: '',
 	    lastTab: 'single',
@@ -2558,9 +2563,25 @@ export async function initWanbanXiaowu() {
     return w && w[name] !== undefined ? w[name] : (window[name] !== undefined ? window[name] : undefined);
   }
   let messageNotifyBound = false;
-  let messageNotifyLastSignature = null;
-  let messageNotifyRecent = { key:'', at:0 };
+  const messageNotifySeen = new Set();
   let messageNotifyPollTimer = null;
+  function messageNotificationChatKey() {
+    const ctx = getHostContext() || {};
+    let chatId = ctx.chatId || ctx.chat_id || ctx.characters?.[ctx.characterId]?.chat || '';
+    try { if (typeof ctx.getCurrentChatId === 'function') chatId = ctx.getCurrentChatId() || chatId; } catch (_) {}
+    return JSON.stringify([ctx.groupId ?? '', ctx.characterId ?? '', chatId]);
+  }
+  function messageNotificationSignature(msg, text) {
+    if (!msg || !isAssistantMessage(msg)) return '';
+    const chat = getHostContext()?.chat;
+    const index = Array.isArray(chat) ? chat.indexOf(msg) : -1;
+    return JSON.stringify([messageNotificationChatKey(), index >= 0 ? index : (msg.message_id ?? msg.id ?? msg.send_date ?? 'latest'), hostMessageStableKey(null, msg, text)]);
+  }
+  function rememberMessageNotification(signature) {
+    if (!signature) return;
+    messageNotifySeen.add(signature);
+    if (messageNotifySeen.size > 100) messageNotifySeen.delete(messageNotifySeen.values().next().value);
+  }
   function pauseGameForMessageNotify() {
     if (!gameStarted || !currentGame || gamePaused) return;
     if ((GAME_META[currentGame] || {}).mode === 'double') return;
@@ -2608,51 +2629,50 @@ export async function initWanbanXiaowu() {
     const firstPart = paragraphs.length ? paragraphs.join('\n\n') : body.replace(/\s+/g, ' ').trim();
     return firstPart.slice(0, 200).trim();
   }
-  function sendMessageFinishedNotification(messageId, text) {
+  function sendMessageFinishedNotification(messageId, text, message) {
     const cfg = settings();
     if (!cfg.messageNotify) return;
-    const shell = qs('#' + SHELL_ID);
-    if (!shell || !shell.classList.contains('wb-shell-visible') || !currentGame) return;
+    const signature = messageNotificationSignature(message || messageFromHost(messageId), text);
+    if (!signature || !String(text || '').trim() || messageNotifySeen.has(signature)) return;
+    rememberMessageNotification(signature);
+    if (!gameStarted || !currentGame || !isGameSurfaceVisible()) return;
     const preview = extractTaggedBody(text) || 'RP正文已生成。';
-    const stableKey = preview.replace(/\s+/g, '').slice(0, 160);
-    const now = Date.now();
-    if (stableKey && messageNotifyRecent.key === stableKey && now - messageNotifyRecent.at < 8000) return;
-    const signature = String(messageId == null ? 'latest' : messageId) + '::' + preview;
-    if (signature === messageNotifyLastSignature) return;
-    messageNotifyLastSignature = signature;
-    messageNotifyRecent = { key:stableKey, at:now };
     pauseGameForMessageNotify();
     notifyBeep();
     try { const nav = getHostWindow().navigator || navigator; if (nav && nav.vibrate) nav.vibrate([180, 80, 220]); } catch(e) {}
-    showTextModal('RP正文完成提醒', preview);
+    const doc = getHostDocument();
+    qs('#wb-message-notify-mask', doc)?.remove();
+    const mask = doc.createElement('div');
+    mask.id = 'wb-message-notify-mask';
+    mask.className = modalMaskClass();
+    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">RP正文完成提醒</div><div class="wb-api-status wb-text-segments">' + esc(preview) + '</div><div class="wb-actions"><button class="wb-btn" id="wb-message-notify-close">关闭</button></div></div>';
+    appendModalMask(mask);
+    qs('#wb-message-notify-close', mask).onclick = () => mask.remove();
   }
   function messageFromHost(messageId) {
+    const ctx = getHostContext();
+    if (Array.isArray(ctx?.chat)) {
+      if (messageId == null) return ctx.chat[ctx.chat.length - 1] || null;
+      return ctx.chat[messageId] || null;
+    }
     const w = getHostWindow();
     try {
       const getter = w.getChatMessages || window.getChatMessages;
       if (typeof getter === 'function') {
-        const arr = getter(messageId);
-        if (Array.isArray(arr) && arr[0]) return arr[0];
+        const arr = getter(messageId == null ? '-1' : messageId);
+        if (Array.isArray(arr) && arr.length) return messageId == null ? arr[arr.length - 1] : arr[0];
       }
-    } catch(e) {}
-    try {
-      const ctx = w.SillyTavern && typeof w.SillyTavern.getContext === 'function' ? w.SillyTavern.getContext() : null;
-      const chat = ctx && Array.isArray(ctx.chat) ? ctx.chat : null;
-      if (chat && messageId != null && chat[messageId]) return chat[messageId];
-      if (chat && chat.length) return chat[chat.length - 1];
     } catch(e) {}
     return null;
   }
   function primeMessageNotifyBaseline() {
     const msg = messageFromHost(null);
     if (!msg || !isAssistantMessage(msg)) return;
-    const id = msg.id ?? msg.swipe_id ?? msg.send_date ?? 'latest';
     const text = String(msg.message || msg.mes || msg.text || '');
-    const preview = extractTaggedBody(text) || '';
-    if (preview) messageNotifyLastSignature = String(id) + '::' + preview;
+    rememberMessageNotification(messageNotificationSignature(msg, text));
   }
   function isAssistantMessage(msg) {
-    if (!msg) return true;
+    if (!msg) return false;
     if (msg.role) return msg.role === 'assistant';
     if (msg.is_system) return false;
     if (msg.is_user === false) return true;
@@ -2696,7 +2716,7 @@ export async function initWanbanXiaowu() {
     const text = msg ? String(msg.message || msg.mes || msg.text || '') : '';
     if (countPetGrowth) recordPetWalkRpGeneration(messageId, msg, text);
     if (!settings().messageNotify) return;
-    sendMessageFinishedNotification(messageId, text);
+    sendMessageFinishedNotification(messageId, text, msg);
   }
   function bindMessageNotifyEvents() {
     if (messageNotifyBound) return;
@@ -2704,17 +2724,14 @@ export async function initWanbanXiaowu() {
     const eventSource = hostValue('eventSource');
     const eventTypes = hostValue('event_types') || hostValue('eventTypes') || hostValue('tavern_events') || {};
     const eventName = eventTypes.MESSAGE_RECEIVED || 'MESSAGE_RECEIVED';
-    const updateNames = [eventTypes.MESSAGE_UPDATED, eventTypes.MESSAGE_SWIPED, eventTypes.CHARACTER_MESSAGE_RENDERED, 'MESSAGE_UPDATED', 'MESSAGE_SWIPED', 'CHARACTER_MESSAGE_RENDERED'].filter(Boolean);
     if (eventSource && typeof eventSource.on === 'function') {
       eventSource.on(eventName, handleHostMessageReceived);
-      updateNames.forEach(name => { try { eventSource.on(name, (id, type) => handleHostMessageReceived(id, type, false)); } catch(e) {} });
       messageNotifyBound = true;
       startMessageNotifyPolling();
       return;
     }
     if (eventSource && typeof eventSource.addEventListener === 'function') {
       eventSource.addEventListener(eventName, e => handleHostMessageReceived(e && e.detail && e.detail.message_id, e && e.detail && e.detail.type));
-      updateNames.forEach(name => { try { eventSource.addEventListener(name, e => handleHostMessageReceived(e && e.detail && e.detail.message_id, e && e.detail && e.detail.type, false)); } catch(err) {} });
       messageNotifyBound = true;
       startMessageNotifyPolling();
       return;
@@ -2729,17 +2746,31 @@ export async function initWanbanXiaowu() {
   }
   function startMessageNotifyPolling() {
     if (messageNotifyPollTimer) return;
-    let pendingSig = '', pendingAt = 0;
+    primeMessageNotifyBaseline();
+    let chatKey = messageNotificationChatKey();
+    const initial = messageFromHost(null);
+    let pendingSig = messageNotificationSignature(initial, initial?.message || initial?.mes || initial?.text || '');
+    let deliveredSig = pendingSig, pendingAt = 0;
     messageNotifyPollTimer = setInterval(() => {
       if (!settings().messageNotify && !settings().petDesktopEnabled) return;
       const msg = messageFromHost(null);
+      const currentChatKey = messageNotificationChatKey();
+      if (currentChatKey !== chatKey) {
+        chatKey = currentChatKey;
+        primeMessageNotifyBaseline();
+        pendingSig = deliveredSig = messageNotificationSignature(msg, msg?.message || msg?.mes || msg?.text || '');
+        return;
+      }
       if (!isAssistantMessage(msg)) return;
-      const id = msg.id ?? msg.swipe_id ?? msg.send_date ?? 'latest';
       const text = String(msg.message || msg.mes || msg.text || '');
       if (!text.trim()) return;
-      const sig = String(id) + '::' + text;
+      const sig = messageNotificationSignature(msg, text);
       if (sig !== pendingSig) { pendingSig = sig; pendingAt = Date.now(); return; }
-      if (Date.now() - pendingAt >= 1400) handleHostMessageReceived(id, undefined, !messageNotifyBound);
+      if (sig !== deliveredSig && Date.now() - pendingAt >= 1400) {
+        deliveredSig = sig;
+        // Poll only as a fallback; rendering or editing history is not a completion event.
+        if (!messageNotifyBound) handleHostMessageReceived(null);
+      }
     }, 1200);
   }
 
@@ -2758,6 +2789,8 @@ export async function initWanbanXiaowu() {
     return guardedSave;
   }
   function stopGame(options) {
+    cancelGameEntryPrompt();
+    qs('#wb-message-notify-mask')?.remove();
     const opts = Object.assign({ save:true, record:true }, options || {});
     const stoppedGame = currentGame;
     const wasStarted = !!(gameStarted && stoppedGame);
@@ -4622,6 +4655,8 @@ export async function initWanbanXiaowu() {
     render();
   }
   function closePopupShell() {
+    cancelGameEntryPrompt();
+    qs('#wb-message-notify-mask')?.remove();
     if (gameStarted && currentGame) stopGame();
     else flushAllProgressSaves();
     const doc = getHostDocument();
@@ -8183,6 +8218,18 @@ export async function initWanbanXiaowu() {
       '输出时间：' + seconds + 's'
     ].join('\n');
   }
+  function apiResponseText(json) {
+    const choice = json.choices?.[0] || {};
+    const content = choice.message?.content || choice.text || json.output_text || '';
+    const text = Array.isArray(content) ? content.map(part => typeof part === 'string' ? part : (part?.text || '')).join('') : String(content);
+    if (choice.finish_reason === 'length') {
+      const error = new Error('AI返回被截断，请提高模型输出上限');
+      error.rawOutput = text;
+      throw error;
+    }
+    if (!text.trim()) throw new Error('API没有返回正文内容' + (choice.finish_reason ? '（结束原因：' + choice.finish_reason + '）' : ''));
+    return text;
+  }
   async function callApiText(cfg, prompt, systemPrompt, maxTokens, debugMeta) {
     prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
     const url = apiChatUrl(cfg.apiUrl);
@@ -8201,10 +8248,7 @@ export async function initWanbanXiaowu() {
       if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error('API错误 ' + res.status + ': ' + t.slice(0, 120)); }
       const json = await res.json();
       fillApiDebugMeta(debugMeta, json);
-      const choice = json.choices?.[0] || {};
-      const txt = choice.message?.content || choice.text || json.output_text || '';
-      if (!txt) throw new Error('API响应格式异常');
-      if (choice.finish_reason === 'length') throw new Error('AI返回被截断，请提高模型输出上限或减少生成内容');
+      const txt = apiResponseText(json);
       return stripJsonFence(txt);
     } finally {
       if (debugMeta) debugMeta.durationMs = Date.now() - started;
@@ -8543,8 +8587,9 @@ export async function initWanbanXiaowu() {
     lastStorageWriteError = '小剧场写入后读回校验失败';
     return false;
   }
-  function theaterStylePromptLines() {
-    return (promptTemplates().theater || PROMPT_TEMPLATES.theater).filter(line => !/请生成3条|只输出JSON数组|不要编号|数组包含3条|如果分段|推荐把每条|第一条小剧场|第二条小剧场|第三条小剧场|^\s*\[|^\s*\]/.test(String(line || '')));
+  function theaterStylePromptLines(override) {
+    const lines = String(override || '').trim() ? String(override).split(/\r?\n/) : (promptTemplates().theater || PROMPT_TEMPLATES.theater);
+    return lines.flatMap(line => String(line || '').split(/(?<=[。；])/)).map(line => line.trim()).filter(line => line && !/JSON\s*数组|生成\s*[3三]\s*条|数组包含\s*[3三]\s*条|如果分段|推荐把每条|第[一二三]条小剧场|^\s*\[|^\s*\]/i.test(line));
   }
   function theaterPackSystemPrompt(jobs) {
     const keys = jobs.map(([outcome, special]) => theaterPackKey(outcome, special)).join(', ');
@@ -8554,24 +8599,15 @@ export async function initWanbanXiaowu() {
     return '{\n' + keys.map(k => '  "' + k + '": ["短句1", "短句2", "短句3", "短句4", "短句5", "短句6", "短句7", "短句8"]').join(',\n') + '\n}';
   }
   function wordGuessJsonSkeleton() {
-    return '{\n'
-      + '  "random": ["碎碎念1", "碎碎念2", "碎碎念3", "碎碎念4", "碎碎念5", "碎碎念6", "碎碎念7", "碎碎念8"],\n'
-      + '  "user_win": ["user赢定语录1", "user赢定语录2", "user赢定语录3", "user赢定语录4", "user赢定语录5", "user赢定语录6", "user赢定语录7", "user赢定语录8"],\n'
-      + '  "user_lose": ["{{char}}赢定语录1", "{{char}}赢定语录2", "{{char}}赢定语录3", "{{char}}赢定语录4", "{{char}}赢定语录5", "{{char}}赢定语录6", "{{char}}赢定语录7", "{{char}}赢定语录8"],\n'
-      + '  "word_bank": [\n'
-      + '    {\n'
-      + '      "word": "答案",\n'
-      + '      "length": 2,\n'
-      + '      "type": "分类",\n'
-      + '      "clues": ["描述1", "描述2", "描述3", "描述4", "描述5"],\n'
-      + '      "start_line": "本词刚开始时{{char}}说的一句话",\n'
-      + '      "wrong_lines": ["猜错1", "猜错2", "猜错3", "猜错4", "猜错5"],\n'
-      + '      "next_lines": ["下一条1", "下一条2", "下一条3", "下一条4"],\n'
-      + '      "win_line": "猜中后{{char}}说的话",\n'
-      + '      "reveal_line": "揭晓答案后{{char}}说的话"\n'
-      + '    }\n'
-      + '  ]\n'
-      + '}';
+    const entries = (count, label) => Array.from({ length:count }, (_, i) => label + (i + 1));
+    return JSON.stringify({
+      random:entries(8, '碎碎念'), user_win:entries(8, '整局胜利语录'), user_lose:entries(8, '整局失败语录'),
+      word_bank:Array.from({ length:7 }, (_, i) => ({
+        word:'词' + '一二三四五六七'[i], length:2, type:'分类',
+        clues:entries(5, '本题描述'), start_line:'本题开场语', wrong_lines:entries(5, '本题猜错语录'),
+        next_lines:entries(4, '本题下一条提示语录'), win_line:'本题猜中语录', reveal_line:'本题揭晓语录'
+      }))
+    }, null, 2);
   }
   function theaterPackJsonSkeleton(jobs) {
     return '{\n' + jobs.map(([outcome, special]) => {
@@ -8634,8 +8670,9 @@ export async function initWanbanXiaowu() {
     return [
       prefix,
       specialLanguageRequirement('theater', cfg),
-      ...((cfg.theaterPromptOverride || '').trim() ? String(cfg.theaterPromptOverride).split(/\r?\n/) : theaterStylePromptLines()),
+      ...theaterStylePromptLines(cfg.theaterPromptOverride),
       '请一次性生成下列所有小剧场场景。必须完整生成全部场景和全部内容，任何一个小剧场key都不能遗漏。',
+      '每个场景生成3条小剧场，每条约180到260字。',
       '【最重要的输出格式】',
       '1. 只输出一个JSON对象，顶层必须是 { }，绝对不能是 [ ]。',
       '2. 顶层key必须完整且只能使用“场景”里列出的key，禁止新增、漏掉、改名、翻译key。',
@@ -8654,7 +8691,8 @@ export async function initWanbanXiaowu() {
       '规则说明：如果结果里出现“{{char}}赢”，表示当前角色获胜，也就是原先的角色获胜。',
       '角色描述：' + currentCharDescription(cfg),
       '世界背景：' + (selectedWorldText(cfg) || '无'),
-      '大总结：' + (selectedSummaryText(cfg) || '无')
+      '大总结：' + (selectedSummaryText(cfg) || '无'),
+      generationRetryPrompt(cfg)
     ].filter(Boolean).join('\n');
   }
   function promptConfigForGame(game) {
@@ -8677,30 +8715,6 @@ export async function initWanbanXiaowu() {
     s = s.replace(new RegExp('^\\s*' + fence + '(?:json)?\\s*', 'i'), '').replace(new RegExp('\\s*' + fence + '\\s*$', 'i'), '').trim();
     return s;
   }
-  function extractJsonCandidate(s) {
-    const firstObj = s.indexOf('{'), firstArr = s.indexOf('[');
-    let start = -1;
-    if (firstObj >= 0 && (firstArr < 0 || firstObj < firstArr)) start = firstObj;
-    else if (firstArr >= 0) start = firstArr;
-    if (start < 0) return '';
-    const stack = [];
-    let quote = '', escNext = false;
-    for (let i = start; i < s.length; i++) {
-      const ch = s[i];
-      if (escNext) { escNext = false; continue; }
-      if (ch === '\\') { escNext = true; continue; }
-      if (quote) { if (ch === quote) quote = ''; continue; }
-      if (ch === '"' || ch === "'") { quote = ch; continue; }
-      if (ch === '{') stack.push('}');
-      else if (ch === '[') stack.push(']');
-      else if (ch === '}' || ch === ']') {
-        if (stack[stack.length - 1] !== ch) return '';
-        stack.pop();
-        if (!stack.length) return s.slice(start, i + 1);
-      }
-    }
-    return s.slice(start);
-  }
   async function fetchWithTimeout(url, options, timeoutMs) {
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs || 45000) : null;
@@ -8721,6 +8735,16 @@ export async function initWanbanXiaowu() {
     if (!cfg.apiUrl || !cfg.apiModel) return 0;
     return (tasks || []).length * Math.max(1, parseInt(attempts, 10) || 1);
   }
+  function generationMaxTokens(cfg, game, part) {
+    const configured = Number(part === 'theater' ? cfg.batchTheaterMaxTokens : cfg.batchLinesMaxTokens);
+    const estimated = part === 'theater' ? theaterJobsForGame(game).length * 1400 + 2048
+      : (game === 'wordguess' ? 16384 : Object.keys(DEFAULT_LINES[game] || {}).length * 640 + 2048);
+    return Math.max(4096, Math.min(65536, Math.ceil(configured > 0 ? configured : estimated)));
+  }
+  function generationRetryPrompt(cfg) {
+    return cfg.generationRetryReason ? '【上次生成失败，请修正】\n' + String(cfg.generationRetryReason).slice(0, 2000)
+      + '\n本次仍须一次性重新输出完整JSON，不要只补缺失项，不要解释修正过程。' : '';
+  }
   async function generateLineOnlyForGame(game, promptCfg, preset, roleName, onAiCall, options) {
     const opts = options || {};
     let data = null;
@@ -8730,7 +8754,7 @@ export async function initWanbanXiaowu() {
     const targetRole = normalizePresetName(roleName || companionName());
     const failKey = targetRole + '::' + game;
     if (promptCfg.apiUrl && promptCfg.apiModel) {
-      try { if (onAiCall) onAiCall(GAME_META[game].name + '语录'); data = await callLineApiBatches(promptCfg, game, apiDebug); rawOutput = JSON.stringify(data, null, 2); assertGeneratedLinesShape(game, data); }
+      try { if (onAiCall) onAiCall(GAME_META[game].name + '语录'); data = await callLineApiBatches(promptCfg, game, apiDebug); rawOutput = apiDebug.rawOutput || JSON.stringify(data, null, 2); assertGeneratedLinesShape(game, data); }
       catch(apiErr) { apiFailed = apiErr && apiErr.message ? apiErr.message : '语录API失败'; rawOutput = rawOutput || (apiErr && apiErr.rawOutput ? apiErr.rawOutput : ''); console.warn('[玩伴小屋] line API failed:', apiErr); }
     }
     if (apiFailed && opts.skipOnApiFailure) {
@@ -8783,25 +8807,36 @@ export async function initWanbanXiaowu() {
     mask.id = 'wb-batch-lines-mask';
     const defaultLineTpl = promptTemplates().lineGeneration || PROMPT_TEMPLATES.lineGeneration || {};
     const defaultLinePromptText = [].concat(defaultLineTpl.header || [], defaultLineTpl.rules || [], defaultLineTpl.output || []).join('\n');
-    const defaultTheaterPromptText = (promptTemplates().theater || PROMPT_TEMPLATES.theater).join('\n');
+    const defaultTheaterPromptText = theaterStylePromptLines().join('\n');
 	    mask.innerHTML = '<div class="wb-modal wb-summary-modal wb-batch-lines-modal"><div class="wb-modal-title">批量生成角色数据</div><label class="wb-field"><span>角色</span><select class="wb-select" id="wb-batch-role">' + roleOptions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('') + '</select></label><div class="wb-preset-row"><label class="wb-field" style="flex:1;margin:0;"><span>语录 API</span><select class="wb-select" id="wb-batch-lines-api">' + apiSelectOptions + '</select></label><label class="wb-field" style="flex:1;margin:0;"><span>小剧场 API</span><select class="wb-select" id="wb-batch-theater-api">' + apiSelectOptions + '</select></label></div><label class="wb-field"><span>生成次数</span><input class="wb-input" id="wb-batch-attempts" type="number" min="1" max="5" step="1" value="' + savedAttempts + '"><div class="wb-muted">每项数据最多生成的总次数；失败才会继续下一次，成功后停止。</div></label><div class="wb-actions" style="margin-bottom:8px;"><button class="wb-btn" id="wb-batch-all" type="button">全选</button><button class="wb-btn" id="wb-batch-missing" type="button">全选未生成</button><button class="wb-btn" id="wb-batch-clear" type="button">全部取消</button></div><div class="wb-worldbook-list" id="wb-batch-game-list" style="display:grid;grid-template-columns:1fr;max-height:360px;"></div><div class="wb-field" style="margin-top:10px;"><label>语录提示词</label><textarea class="wb-textarea" id="wb-batch-line-prompt" style="min-height:110px;">' + esc(cfg.batchLinePromptOverride || defaultLinePromptText) + '</textarea><button class="wb-btn" id="wb-batch-line-restore" type="button">恢复默认语录提示词</button></div><div class="wb-field"><label>小剧场提示词</label><textarea class="wb-textarea" id="wb-batch-theater-prompt" style="min-height:110px;">' + esc(cfg.batchTheaterPromptOverride || defaultTheaterPromptText) + '</textarea><button class="wb-btn" id="wb-batch-theater-restore" type="button">恢复默认小剧场提示词</button></div><div class="wb-sticky-actions"><div class="wb-api-status" id="wb-batch-info">请选择要生成的数据。</div><div class="wb-actions" style="margin-top:8px;"><button class="wb-btn primary" id="wb-batch-start" style="flex:1;">生成并覆盖</button><button class="wb-btn" id="wb-batch-cancel">返回</button></div></div></div>';
 	    appendModalMask(mask);
 	    const linesApiSel = qs('#wb-batch-lines-api', mask);
 	    const theaterApiSel = qs('#wb-batch-theater-api', mask);
+      const outputLimits = doc.createElement('div');
+      outputLimits.className = 'wb-preset-row';
+      outputLimits.innerHTML = ['lines', 'theater'].map(part => {
+        const value = Number(part === 'lines' ? cfg.batchLinesMaxTokens : cfg.batchTheaterMaxTokens) || '';
+        return '<label class="wb-field" style="flex:1;"><span>' + (part === 'lines' ? '语录' : '小剧场') + '最大输出 Token</span><input class="wb-input" id="wb-batch-' + part + '-tokens" type="number" min="4096" max="65536" placeholder="自动按完整内容估算" value="' + value + '"><div class="wb-muted">留空自动估算；也可按模型支持范围填写。每次请求生成完整内容。</div></label>';
+      }).join('');
+      qs('#wb-batch-attempts', mask).closest('label').before(outputLimits);
 	    if (linesApiSel && Array.from(linesApiSel.options).some(o => o.value === String(cfg.batchLinesApiChoice || 'default'))) linesApiSel.value = String(cfg.batchLinesApiChoice || 'default');
 	    if (theaterApiSel && Array.from(theaterApiSel.options).some(o => o.value === String(cfg.batchTheaterApiChoice || 'default'))) theaterApiSel.value = String(cfg.batchTheaterApiChoice || 'default');
-	    qs('#wb-batch-line-restore', mask).onclick = () => { qs('#wb-batch-line-prompt', mask).value = defaultLinePromptText; setSettings({ batchLinePromptOverride:'' }); };
-	    qs('#wb-batch-theater-restore', mask).onclick = () => { qs('#wb-batch-theater-prompt', mask).value = defaultTheaterPromptText; setSettings({ batchTheaterPromptOverride:'' }); };
-	    const linePromptBox = qs('#wb-batch-line-prompt', mask); if (linePromptBox) linePromptBox.oninput = () => setSettings({ batchLinePromptOverride: linePromptBox.value === defaultLinePromptText ? '' : linePromptBox.value });
-	    const theaterPromptBox = qs('#wb-batch-theater-prompt', mask); if (theaterPromptBox) theaterPromptBox.oninput = () => setSettings({ batchTheaterPromptOverride: theaterPromptBox.value === defaultTheaterPromptText ? '' : theaterPromptBox.value });
+	    qs('#wb-batch-line-restore', mask).onclick = () => { qs('#wb-batch-line-prompt', mask).value = defaultLinePromptText; setSettings({ batchLinePromptOverride:'' }); resetBatchConfirm(); };
+	    qs('#wb-batch-theater-restore', mask).onclick = () => { qs('#wb-batch-theater-prompt', mask).value = defaultTheaterPromptText; setSettings({ batchTheaterPromptOverride:'' }); resetBatchConfirm(); };
+	    const linePromptBox = qs('#wb-batch-line-prompt', mask); if (linePromptBox) linePromptBox.oninput = () => { setSettings({ batchLinePromptOverride: linePromptBox.value === defaultLinePromptText ? '' : linePromptBox.value }); resetBatchConfirm(); };
+	    const theaterPromptBox = qs('#wb-batch-theater-prompt', mask); if (theaterPromptBox) theaterPromptBox.oninput = () => { setSettings({ batchTheaterPromptOverride: theaterPromptBox.value === defaultTheaterPromptText ? '' : theaterPromptBox.value }); resetBatchConfirm(); };
 	    const selectedRole = () => normalizePresetName(qs('#wb-batch-role', mask)?.value || companionName());
 	    const selectedTasks = () => qsa('.wb-batch-part:checked', mask).map(x => ({ game:x.dataset.game, part:x.dataset.part }));
 	    const selectedAttempts = () => Math.max(1, Math.min(5, parseInt(qs('#wb-batch-attempts', mask)?.value, 10) || 1));
+      const selectedOutputLimit = part => {
+        const value = Number(qs('#wb-batch-' + part + '-tokens', mask)?.value);
+        return value > 0 ? Math.max(4096, Math.min(65536, Math.ceil(value))) : 0;
+      };
 	    const selectedApiConfig = part => {
 	      const id = qs(part === 'theater' ? '#wb-batch-theater-api' : '#wb-batch-lines-api', mask)?.value || 'default';
 	      const pr = id === 'default' ? null : apis[parseInt(id, 10)];
 	      const api = pr || cfg;
-	      return { apiUrl: api.apiUrl || '', apiKey: api.apiKey || '', apiModel: api.apiModel || '' };
+	      return { apiUrl: api.apiUrl || '', apiKey: api.apiKey || '', apiModel: api.apiModel || '', batchLinesMaxTokens:selectedOutputLimit('lines'), batchTheaterMaxTokens:selectedOutputLimit('theater') };
 	    };
 	    const selectedCallCount = (tasks, attempts) => (tasks || []).filter(task => { const api = selectedApiConfig(task.part); return api.apiUrl && api.apiModel; }).length * Math.max(1, parseInt(attempts, 10) || 1);
 	    const selectedApiName = part => {
@@ -8838,14 +8873,22 @@ export async function initWanbanXiaowu() {
 	    qs('#wb-batch-attempts', mask).oninput = () => { setSettings({ batchAttempts: selectedAttempts() }); refresh(); };
 	    qs('#wb-batch-lines-api', mask).onchange = () => { setSettings({ batchLinesApiChoice: qs('#wb-batch-lines-api', mask).value || 'default' }); refresh(); };
 	    qs('#wb-batch-theater-api', mask).onchange = () => { setSettings({ batchTheaterApiChoice: qs('#wb-batch-theater-api', mask).value || 'default' }); refresh(); };
+      ['lines', 'theater'].forEach(part => {
+        qs('#wb-batch-' + part + '-tokens', mask).oninput = () => {
+          setSettings({ [part === 'lines' ? 'batchLinesMaxTokens' : 'batchTheaterMaxTokens']:selectedOutputLimit(part) });
+          refresh();
+        };
+      });
     renderGameList();
     qs('#wb-batch-cancel', mask).onclick = () => mask.remove();
 	    qs('#wb-batch-start', mask).onclick = async () => {
 	      if (lineGenerationBusy) { if (lineGenerationKind === 'batch') requestBatchLineGenerationCancel(); else toast('已有角色数据生成任务正在进行'); return; }
 	      if (!pendingBatch) {
-	        const linePromptOverride = qs('#wb-batch-line-prompt', mask)?.value || '';
-	        const theaterPromptOverride = qs('#wb-batch-theater-prompt', mask)?.value || '';
-		        setSettings({ batchLinePromptOverride: linePromptOverride === defaultLinePromptText ? '' : linePromptOverride, batchTheaterPromptOverride: theaterPromptOverride === defaultTheaterPromptText ? '' : theaterPromptOverride, batchAttempts: selectedAttempts(), batchLinesApiChoice: qs('#wb-batch-lines-api', mask).value || 'default', batchTheaterApiChoice: qs('#wb-batch-theater-api', mask).value || 'default' });
+	        const linePromptText = qs('#wb-batch-line-prompt', mask)?.value || '';
+	        const theaterPromptText = qs('#wb-batch-theater-prompt', mask)?.value || '';
+          const linePromptOverride = linePromptText === defaultLinePromptText ? '' : linePromptText;
+          const theaterPromptOverride = theaterPromptText === defaultTheaterPromptText ? '' : theaterPromptText;
+		        setSettings({ batchLinePromptOverride: linePromptOverride, batchTheaterPromptOverride: theaterPromptOverride, batchAttempts: selectedAttempts(), batchLinesApiChoice: qs('#wb-batch-lines-api', mask).value || 'default', batchTheaterApiChoice: qs('#wb-batch-theater-api', mask).value || 'default' });
 	        const tasks = selectedTasks();
 	        if (!tasks.length) { toast('请先选择要生成的数据'); return; }
 	        const attempts = selectedAttempts();
@@ -8894,17 +8937,23 @@ export async function initWanbanXiaowu() {
 	            let last = false;
 	            for (let attempt = 0; attempt < attempts; attempt++) {
 	              if (batchLineGenerationCancel) return false;
-	              const attemptLabel = label + ' 第' + (attempt + 1) + '次';
 	              batchStatus(label, attempt);
 	              if (debugItem) {
 	                debugItem.ok = false;
 	                debugItem.reason = '生成中';
 	                debugItem.output = attemptLogs.concat(['【第' + (attempt + 1) + '次】生成中...']).join('\n\n');
 	              }
-	              const taskCfg = Object.assign({}, basePromptCfg, task.part === 'lines' ? lineApi : theaterApi);
-	              last = task.part === 'lines'
-	                ? await generateLineOnlyForGame(task.game, taskCfg, preset, role, progress, { skipOnApiFailure:true })
-	                : await preGenerateTheaters(task.game, taskCfg, progress, role, { skipOnApiFailure:true });
+	              const taskCfg = Object.assign({}, basePromptCfg, task.part === 'lines' ? lineApi : theaterApi, { generationRetryReason:last && last.skipped ? last.reason : '' });
+                try {
+	                last = task.part === 'lines'
+	                  ? await generateLineOnlyForGame(task.game, taskCfg, preset, role, progress, { skipOnApiFailure:true })
+	                  : await preGenerateTheaters(task.game, taskCfg, progress, role, { skipOnApiFailure:true });
+                  if (last !== false && !last?.skipped && !batchTaskPersisted(task, role, preset, last?.persistedSignature)) {
+                    last = Object.assign({}, last, { skipped:true, reason:'输出已生成，但写入后读回校验未通过' });
+                  }
+                } catch (error) {
+                  last = { skipped:true, reason:error?.message || String(error), output:error?.rawOutput || '' };
+                }
 	              if (debugItem && last && last.debug) {
 	                debugItem.inputTokensTotal = (debugItem.inputTokensTotal || 0) + (last.debug.inputTokensActual || last.debug.inputTokensEstimated || 0);
 	                debugItem.durationMsTotal = (debugItem.durationMsTotal || 0) + (last.debug.durationMs || 0);
@@ -8923,11 +8972,7 @@ export async function initWanbanXiaowu() {
 	            setLineGenerationStatus('正在批量生成数据：' + taskDone + '/' + taskTotal + '（准备生成' + label + '）', true);
 	            const debugItem = { label, game:task.game, part:task.part, ok:false, reason:'等待生成', inputTokensTotal:0, durationMsTotal:0, output:'等待开始' };
 	            batchGenerationDebug.push(debugItem);
-	            let completed = await runTask(task, label, debugItem);
-	            if (completed !== false && !(completed && completed.skipped) && !batchTaskPersisted(task, role, preset, completed.persistedSignature)) {
-	              debugItem.output += '\n\n【写入校验】失败：读回内容与本次输出不一致。';
-	              completed = { skipped:true, reason:'输出已生成，但写入后校验未通过，已按失败处理，没有计入已生成', output:debugItem.output };
-	            }
+	            const completed = await runTask(task, label, debugItem);
 	            if (completed !== false && !(completed && completed.skipped)) taskDone++;
 	            debugItem.ok = !(completed && completed.skipped) && completed !== false;
 	            debugItem.reason = (completed && completed.reason) || (completed === false ? '已中断或未完成' : '');
@@ -9631,6 +9676,36 @@ export async function initWanbanXiaowu() {
   }
   function deleteWorldPresetFromUI() { const idx=parseInt(qs('#wb-world-preset').value,10); const arr=worldPresets(); if(!arr[idx]) return; showConfirm('删除角色和世界观','确定删除这个角色和世界观预设吗？',()=>{ arr.splice(idx,1); saveWorldPresets(arr); renderSettings(); }); }
 
+  function cancelGameEntryPrompt() {
+    if (gameEntryTimer != null) clearTimeout(gameEntryTimer);
+    gameEntryTimer = null;
+    gameEntryObserver?.disconnect();
+    gameEntryObserver = null;
+  }
+  function scheduleGameEntryPrompt(game, startCover) {
+    cancelGameEntryPrompt();
+    const check = () => {
+      gameEntryTimer = null;
+      if (!startCover?.isConnected || startCover.style.display === 'none' || currentGame !== game || gameStarted || !isGameSurfaceVisible()) {
+        cancelGameEntryPrompt();
+        return;
+      }
+      if (qs('.wb-modal-mask')) {
+        if (!gameEntryObserver) {
+          gameEntryObserver = new (getHostWindow().MutationObserver)(() => {
+            if (gameEntryTimer == null) gameEntryTimer = setTimeout(check, 0);
+          });
+          gameEntryObserver.observe(qs('#' + POPUP_ID) || getHostDocument().body, { childList:true, subtree:true });
+        }
+        return;
+      }
+      const saved = gameProgress(game);
+      cancelGameEntryPrompt();
+      if (saved && hasPlayableProgress(game, saved)) showProgressChoice(game, saved);
+      else if (game === 'linklink' || game === 'blackjack') startCurrentGame(game);
+    };
+    gameEntryTimer = setTimeout(check, 60);
+  }
   function renderGame(id) {
     if (!gameStarted) syncCurrentHostRoleContext();
     stopGame();
@@ -9672,9 +9747,7 @@ export async function initWanbanXiaowu() {
     const genBtn = qs('#wb-generate-lines'); if (genBtn) genBtn.onclick = () => openSingleGenerateChoice(id);
     updateLineGenerationStatusUI();
     if (!needsFirstMoverChoice(id) && !['linklink','blackjack'].includes(id) && DEFAULT_LINES[id] && DEFAULT_LINES[id].start) speak(id, 'start');
-    const startCover = qs('#wb-start-cover-btn');
-    if (id === 'linklink' || id === 'blackjack') setTimeout(() => { const saved = gameProgress(id); if (!qs('.wb-modal-mask') && startCover?.isConnected && startCover.style.display !== 'none' && currentGame === id && !gameStarted && !(saved && hasPlayableProgress(id, saved))) startCurrentGame(id); }, 30);
-    setTimeout(() => { const saved = gameProgress(id); if (!qs('.wb-modal-mask') && startCover?.isConnected && startCover.style.display !== 'none' && currentGame === id && saved && hasPlayableProgress(id, saved) && !gameStarted) showProgressChoice(id, saved); }, 60);
+    scheduleGameEntryPrompt(id, qs('#wb-start-cover-btn'));
   }
 
   function startCurrentGame(id, savedState, options) {
@@ -9696,6 +9769,7 @@ export async function initWanbanXiaowu() {
       return;
     }
     if (!resumeState) clearProgress(id);
+    cancelGameEntryPrompt();
     currentRoundRoleContext = resumeState?.roleContext
       ? isolatedRole(resumeState.roleContext) : isolatedRole(rolePromptConfig(activeGameRoleName(id)));
     currentRoundProgressRecordId = String(resumeState?.progressRecordId || ('rec_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
@@ -10247,7 +10321,7 @@ function showGameRecords(game, page) {
     const apiDebug = {};
     if (cfg.apiUrl && cfg.apiModel) {
       const prompt = buildTheaterPackPrompt(game, cfg, jobs);
-      try { if (onAiCall) onAiCall(GAME_META[game].name + '小剧场'); rawOutput = await callApiText(cfg, prompt, theaterPackSystemPrompt(jobs), 12000, apiDebug); pack = normalizeTheaterPack(game, jobs, parseGeneratedJson(rawOutput)); }
+      try { if (onAiCall) onAiCall(GAME_META[game].name + '小剧场'); rawOutput = await callApiText(cfg, prompt, theaterPackSystemPrompt(jobs), generationMaxTokens(cfg, game, 'theater'), apiDebug); pack = normalizeTheaterPack(game, jobs, parseGeneratedJson(rawOutput)); }
       catch(e) { apiFailed = e && e.message ? e.message : '小剧场API失败'; rawOutput = rawOutput || (e && e.rawOutput ? e.rawOutput : ''); console.warn('[玩伴小屋] theater pack failed:', e); }
     }
     if (apiFailed) {
@@ -10372,7 +10446,8 @@ function showGameRecords(game, page) {
 	        '【当前挂载的世界书】\n' + wbText,
 	        '【导入大总结】\n' + summaryText,
 	        '【最近5条游戏日志】\n' + recentLogs,
-	        '【亲密氛围模式】\n' + intimacyText
+        '【亲密氛围模式】\n' + intimacyText,
+        generationRetryPrompt(cfg)
 	      ].filter(Boolean).join('\n');
 	    }
 	    return [
@@ -10395,7 +10470,8 @@ function showGameRecords(game, page) {
 	      '【最近5条游戏日志】\n' + recentLogs,
 	      '【亲密氛围模式】\n' + intimacyText,
 	      ...(tpl.rules || []),
-	      ...(tpl.output || [])
+	      ...(tpl.output || []),
+        generationRetryPrompt(cfg)
 	    ].filter(Boolean).join('\n');
 	  }
   function apiChatUrl(url) {
@@ -10405,17 +10481,6 @@ function showGameRecords(game, page) {
     base = base.endsWith('/') ? base : base + '/';
     if (!base.includes('/v1/') && !base.endsWith('v1/')) base += 'v1/';
     return base + 'chat/completions';
-  }
-  function parseGeneratedJson(text) {
-    let s = stripJsonFence(text);
-    try { return JSON.parse(s); } catch(e) {}
-    const sub = extractJsonCandidate(s);
-    if (sub) {
-      try { return JSON.parse(sub); } catch(e2) {}
-    }
-    const err = new Error('AI返回内容不是可解析JSON');
-    err.rawOutput = s;
-    throw err;
   }
   function normalizeGeneratedLines(game, data, roleName) {
     const events = Object.keys(DEFAULT_LINES[game] || {});
@@ -10504,7 +10569,7 @@ function showGameRecords(game, page) {
       if (!valid.length) throw new Error('语录事件“' + k + '”没有有效短句');
     });
   }
-  async function callApi(cfg, prompt, debugMeta) {
+  async function callApi(cfg, prompt, debugMeta, maxTokens) {
     prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
     const url = apiChatUrl(cfg.apiUrl);
     if (!url) throw new Error('请先配置API基础URL');
@@ -10517,20 +10582,20 @@ function showGameRecords(game, page) {
     try {
       const res = await fetchWithTimeout(url, {
         method: 'POST', headers,
-        body: JSON.stringify({ model: cfg.apiModel, messages, temperature: 0.85, max_tokens: 6144 })
-      }, 300000);
+        body: JSON.stringify({ model: cfg.apiModel, messages, temperature: 0.55, max_tokens: maxTokens || 6144 })
+      }, 600000);
       if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error('API错误 ' + res.status + ': ' + t.slice(0, 120)); }
       const json = await res.json();
       fillApiDebugMeta(debugMeta, json);
-      const txt = json.choices?.[0]?.message?.content || json.choices?.[0]?.text || json.output_text || '';
-      if (!txt) throw new Error('API响应格式异常');
+      const txt = apiResponseText(json);
+      if (debugMeta) debugMeta.rawOutput = txt;
       return parseGeneratedJson(txt);
     } finally {
       if (debugMeta) debugMeta.durationMs = Date.now() - started;
     }
   }
   async function callLineApiBatches(cfg, game, debugMeta) {
-    return callApi(cfg, buildPrompt(game, cfg), debugMeta);
+    return callApi(cfg, buildPrompt(game, cfg), debugMeta, generationMaxTokens(cfg, game, 'lines'));
   }
   function fallbackGenerated(game, cfg) { const who = currentCharDescription(cfg).includes('未读取') ? '我陪你' : '按现在的语气陪你'; const out = {}; Object.keys(DEFAULT_LINES[game] || {}).forEach(k => out[k] = [who + '，这一刻我记下了。', '别急，下一步更重要。', '这局还没结束，继续。', '我在旁边看着你，这一步很稳。', '这个节奏可以，先保持住。', '我们再把这一局往前推一点。']); return out; }
   function setScore(game, value) {
