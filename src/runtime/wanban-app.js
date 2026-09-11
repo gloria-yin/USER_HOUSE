@@ -1,4 +1,5 @@
 import { getRequestHeaders } from '../../../../../../script.js';
+import { yaml } from '../../../../../../lib.js';
 import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 import { createZumaGame } from '../games/zuma.js';
@@ -6,6 +7,8 @@ import { createWaterSortGame } from '../games/water-sort.js';
 import { createFlappyBirdGame } from '../games/flappy-bird.js';
 import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js';
 import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
+import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage } from './storage.js';
+import { parsePetInfo, parsePetStoryLines, assertPetInfo } from './pet-info.js';
 
 // Runtime migrated from 益智小游戏/玩伴小屋V1.0.1.json.
 // Keep this file behavior-compatible with the original script; split new code into src/* modules when extending.
@@ -97,6 +100,8 @@ export async function initWanbanXiaowu() {
   const STORAGE_WORD_GUESS_BANK = SCRIPT_ID + '_wordGuessBank_v1';
   const STORAGE_WORD_GUESS_BANK_SOURCE = SCRIPT_ID + '_wordGuessBankSource_v1';
   const STORAGE_WORD_GUESS_BANK_FILTER = SCRIPT_ID + '_wordGuessBankFilter_v1';
+  try { compactLegacyStorage(localStorage, SCRIPT_ID + '_', [STORAGE_SUMMARY_REQ]); }
+  catch (error) { console.warn('[玩伴小屋] storage unavailable:', error); }
   const WORD_GUESS_DEFAULT_BANK_URL = new URL('./wanban-wordguess-bank.txt', import.meta.url).href;
   const EXTENSION_UPDATE_FALLBACKS = ['/USER_HOUSE', '/wanban-xiaowu'];
   let updateCheckStarted = false;
@@ -142,6 +147,9 @@ export async function initWanbanXiaowu() {
   let currentRoundTheaterInfo = null;
   let progressSaveTimers = {};
   let progressSaveCache = {};
+  const progressDeleteCache = new Set();
+  let pendingRecords = null;
+  const pendingPetStates = new Map();
   let defaultWordGuessBankCache = null;
   let theaterCache = safeObject(loadJSON(STORAGE_THEATERS, {}));
   let lastMenuOpenAt = 0;
@@ -162,6 +170,7 @@ export async function initWanbanXiaowu() {
   let lineGenerationStatus = '当前状态：空闲';
   let lineGenerationKind = '';
   let lastStorageWriteError = '';
+  let lastStorageWarningAt = 0;
   let batchLineGenerationCancel = false;
   let lineGenerationFailures = {};
   let theaterGenerationFailures = {};
@@ -475,15 +484,19 @@ export async function initWanbanXiaowu() {
   function qs(s, root) { return (root || getHostDocument()).querySelector(s); }
   function qsa(s, root) { return Array.from((root || getHostDocument()).querySelectorAll(s)); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
-  function loadJSON(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch(e) { return fallback; } }
+  function loadJSON(key, fallback) { try { const v = localStorage.getItem(key); return v ? decodeStoredJSON(v) : fallback; } catch(e) { console.warn('[玩伴小屋] saved data read failed:', key, e); return fallback; } }
   function saveJSON(key, value) {
     try {
-      localStorage.setItem(key, JSON.stringify(value));
+      writeStoredJSON(localStorage, key, value);
       lastStorageWriteError = '';
       return true;
     } catch(e) {
       lastStorageWriteError = e && e.message ? e.message : '浏览器本地存储写入失败';
       console.warn('[玩伴小屋] local storage write failed:', key, e);
+      if (Date.now() - lastStorageWarningAt > 10000) {
+        lastStorageWarningAt = Date.now();
+        toast('保存失败：浏览器存储空间不足或不可用。请先导出备份；本次数据尚未保存。');
+      }
       return false;
     }
   }
@@ -1000,7 +1013,7 @@ export async function initWanbanXiaowu() {
     const extra = game === currentGame ? { lineEvents: currentRoundLineEvents.slice(-120), roleContext:currentRoundRoleContext, progressRecordId:currentRoundProgressRecordId || prev.progressRecordId || '' } : {};
     const durationMs = game === currentGame ? currentGameDurationMs() : (state && state.durationMs) || prev.durationMs || 0;
     const petRewardNextMs = game === currentGame ? gamePetRewardNextMs : (state && state.petRewardNextMs) || prev.petRewardNextMs || nextPetGameRewardThreshold(durationMs);
-    return Object.assign({ savedAt: Date.now(), startedAt }, extra, state || {}, { durationMs, petRewardNextMs });
+    return JSON.parse(JSON.stringify(Object.assign({}, state || {}, extra, { initialized:true, savedAt:Date.now(), startedAt, durationMs, petRewardNextMs })));
   }
   function flushProgressSave(game) {
     if (!game || !progressSaveCache[game]) return;
@@ -1010,11 +1023,24 @@ export async function initWanbanXiaowu() {
     }
     const p = progress();
     p[game] = progressSaveCache[game];
-    delete progressSaveCache[game];
-    saveJSON(STORAGE_PROGRESS, p);
+    if (saveJSON(STORAGE_PROGRESS, p)) delete progressSaveCache[game];
   }
-  function flushAllProgressSaves() { Object.keys(progressSaveCache).forEach(flushProgressSave); }
-  function gameProgress(game) { flushProgressSave(game); const p = progress()[game]; return p && p.savedAt ? p : null; }
+  function flushAllProgressSaves() {
+    Array.from(progressDeleteCache).forEach(clearProgress);
+    Object.keys(progressSaveCache).forEach(flushProgressSave);
+    flushRecordsSave();
+    flushPetStateSaves();
+  }
+  function gameProgress(game) {
+    if (progressDeleteCache.has(game)) { clearProgress(game); return null; }
+    flushProgressSave(game);
+    const p = progressSaveCache[game] || progress()[game];
+    if (p?.progressRecordId && (records()[game] || []).some(r => r.id === p.progressRecordId && resultOutcome(r.result) !== 'in_progress')) {
+      clearProgress(game);
+      return null;
+    }
+    return p && p.savedAt ? p : null;
+  }
   function currentGameDurationMs() {
     const active = isGameOnlineActive() && gameActiveStartedAt ? Math.max(0, Date.now() - gameActiveStartedAt) : 0;
     return Math.max(0, (gameAccumulatedMs || 0) + active);
@@ -1032,6 +1058,7 @@ export async function initWanbanXiaowu() {
     return Math.max(first, (Math.floor(Math.max(0, Number(durationMs || 0)) / step) + 1) * step);
   }
   function petApplyTimedGameGrowth() {
+    if (!petFullIsActive() && (petRuntimeMode === 'full' || !petTrialHasSavedPet())) return;
     let state = applyPetVisitAndDecay(petTestState());
     if (state.ended) return;
     const today = todayKey();
@@ -1051,7 +1078,8 @@ export async function initWanbanXiaowu() {
   }
   function applyTimedGameRewards(durationMs) {
     while (durationMs >= gamePetRewardNextMs) {
-      petApplyTimedGameGrowth();
+      try { petApplyTimedGameGrowth(); }
+      catch (error) { console.warn('[玩伴小屋] timed pet reward failed:', error); toast('宠物成长保存失败：' + error.message); }
       gamePetRewardNextMs += 10 * 60 * 1000;
     }
   }
@@ -1084,6 +1112,7 @@ export async function initWanbanXiaowu() {
     }
   }
   function saveProgress(game, state, options) {
+    progressDeleteCache.delete(game);
     progressSaveCache[game] = buildProgressEntry(game, state);
     if (options && options.immediate) {
       flushProgressSave(game);
@@ -1102,7 +1131,8 @@ export async function initWanbanXiaowu() {
     if (game === 'sudoku') clearSudokuStateSnapshot();
     const p = progress();
     delete p[game];
-    saveJSON(STORAGE_PROGRESS, p);
+    if (saveJSON(STORAGE_PROGRESS, p)) progressDeleteCache.delete(game);
+    else progressDeleteCache.add(game);
   }
   function wordGuessBank(roleName) {
     const raw = loadJSON(STORAGE_WORD_GUESS_BANK, []);
@@ -1193,6 +1223,7 @@ export async function initWanbanXiaowu() {
   function hasPlayableProgress(game, state) {
     if (!state) return false;
     if (game === 'sudoku') return isValidSudokuProgressState(state);
+    if (state.initialized === true) return true;
     if (game === 'linklink') return !!(state.board && state.board.length && state.timeLeft > 0);
     if (game === 'wordguess') return !!(state.completed || state.clueIndex || state.revealed || (state.guesses && state.guesses.length));
     if (game === 'guessnumber') return !!(state.tries || (state.history && state.history.length));
@@ -1221,8 +1252,43 @@ export async function initWanbanXiaowu() {
     if (game === 'tetris') return !!state.score || (Array.isArray(state.board) && state.board.some(row => row.some(Boolean))) || !!(state.piece && (Number(state.piece.y) > 0 || Number(state.piece.x) !== 3));
     return true;
   }
-  function records() { const all = safeObject(loadJSON(STORAGE_RECORDS, {})); let changed = false; Object.keys(all || {}).forEach(game => { if (!Array.isArray(all[game])) { all[game] = []; changed = true; return; } (all[game] || []).forEach((r, i) => { if (!r.id) { r.id = 'rec_legacy_' + game + '_' + (r.savedAt || Date.now()) + '_' + i; changed = true; } if (r.log == null) { r.log = ''; changed = true; } }); }); if (changed) saveJSON(STORAGE_RECORDS, all); return all || {}; }
-  function saveRecords(v) { saveJSON(STORAGE_RECORDS, v); }
+  function records() {
+    const all = safeObject(pendingRecords ? JSON.parse(JSON.stringify(pendingRecords)) : loadJSON(STORAGE_RECORDS, {}));
+    let changed = false;
+    Object.keys(all).forEach(game => {
+      if (!Array.isArray(all[game])) { all[game] = []; changed = true; return; }
+      all[game] = all[game].filter(record => {
+        if (record && typeof record === 'object' && !Array.isArray(record)) return true;
+        changed = true;
+        return false;
+      });
+      all[game].forEach((r, i) => {
+        if (!r.id) { r.id = 'rec_legacy_' + game + '_' + (r.savedAt || Date.now()) + '_' + i; changed = true; }
+        if (r.log == null) { r.log = ''; changed = true; }
+      });
+    });
+    if (changed) saveRecords(all);
+    return all;
+  }
+  function refreshRecordSaveStatus() {
+    const status = qs('#wb-record-save-status');
+    if (status) status.textContent = pendingRecords
+      ? '游戏记录尚未写入本地，暂存在当前页面。请重试保存或导出备份；刷新或关闭网页会丢失未保存内容。'
+      : '游戏记录已保存，刷新后可在记录中查看。';
+    const retry = qs('#wb-record-save-retry');
+    if (retry) retry.hidden = !pendingRecords;
+    const backup = qs('#wb-record-save-backup');
+    if (backup) backup.hidden = !pendingRecords;
+  }
+  function flushRecordsSave() {
+    if (pendingRecords && saveJSON(STORAGE_RECORDS, pendingRecords)) pendingRecords = null;
+    refreshRecordSaveStatus();
+    return !pendingRecords;
+  }
+  function saveRecords(v) {
+    pendingRecords = JSON.parse(JSON.stringify(v));
+    return flushRecordsSave();
+  }
   function companionName() { const cfg = settings(); const ctx = getHostContext(); const char = ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null); const charData = char?.data || char || {}; return (cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}'); }
   function displayCharNameForGame(game) { return settings().companion ? activeGameRoleName(game) : 'TA'; }
   function displayCharName() { return displayCharNameForGame(currentGame); }
@@ -1331,7 +1397,8 @@ export async function initWanbanXiaowu() {
     all[game] = [item].concat(all[game].filter(record => record.id !== id)).slice(0, 100);
     saveRecords(all);
     currentRoundProgressRecordId = '';
-    petApplyGameReward(g, result, item.durationMs, currentRoundRecord);
+    try { petApplyGameReward(g, result, item.durationMs, currentRoundRecord); }
+    catch (error) { console.warn('[玩伴小屋] pet game reward failed:', error); toast('宠物陪玩奖励保存失败：' + error.message); }
     return item;
   }
   function progressScoreValue(state) {
@@ -1347,6 +1414,7 @@ export async function initWanbanXiaowu() {
   function recordInterruptedGame(game) {
     if (!game || !gameStarted) return null;
     flushProgressSave(game);
+    if (progressSaveCache[game]) return null;
     const allProgress = progress();
     const state = allProgress[game];
     if (!state || !hasPlayableProgress(game, state)) return null;
@@ -2675,6 +2743,20 @@ export async function initWanbanXiaowu() {
     }, 1200);
   }
 
+  function registerLegacyGameSave(id, saveState) {
+    const controller = {
+      save() { guardedSave(true); flushProgressSave(id); },
+      destroy() { destroyed = true; }
+    };
+    let destroyed = false;
+    const guardedSave = force => {
+      if (destroyed || activeGameController !== controller || currentGame !== id || !gameStarted) return;
+      saveState(force);
+    };
+    guardedSave.isActive = () => !destroyed && activeGameController === controller && currentGame === id && gameStarted;
+    activeGameController = controller;
+    return guardedSave;
+  }
   function stopGame(options) {
     const opts = Object.assign({ save:true, record:true }, options || {});
     const stoppedGame = currentGame;
@@ -2794,7 +2876,8 @@ export async function initWanbanXiaowu() {
   let petTestInfoCache = null;
   let petTestInfoLoading = null;
   let petFullActiveCaretakerId = '';
-  let petRuntimeMode = '';
+  let petRuntimeMode = loadJSON(SCRIPT_ID + '_petLastRoute', '') === 'test' ? 'test'
+    : (safeObject(loadJSON(STORAGE_PET_FULL, {})).caretakers?.length ? 'full' : 'test');
   const PET_SPECIAL_CHAR_NAME = '沈栖白';
   const PET_SPECIAL_CHAR_AVATAR = PET_ASSET_BASE + 'scene/shenqibai.png';
   let petShenPortraitSelection = null;
@@ -2818,8 +2901,8 @@ export async function initWanbanXiaowu() {
   const PET_STAGE_CAP = { egg:100, juvenile:100, adult:100, spirit:50, ordinary:50 };
   function petCaretakerIsShen(caretaker) {
     const c = caretaker || {};
-    return c.builtinPetCaretaker === 'shenqibai'
-      || String(c.name || c.charName || '').trim() === PET_SPECIAL_CHAR_NAME;
+    const name = String(c.name || c.charName || '').trim();
+    return name ? name === PET_SPECIAL_CHAR_NAME : c.builtinPetCaretaker === 'shenqibai';
   }
   const PET_MAIN_TRIGGERS = [
     { id:'M01', stage:'any', at:0 },
@@ -2838,82 +2921,20 @@ export async function initWanbanXiaowu() {
     { id:'M14', stage:'chosen', at:25 },
     { id:'M15', stage:'chosen', at:50, final:true }
   ];
-  function cleanPetInfoText(text) {
-    return String(text || '').replace(/\r\n/g, '\n').split('\n')
-      .filter(line => !/^\s*```/.test(line) && !/^\s*<\/?p(?:e|s)t_info>\s*$/.test(line))
-      .join('\n');
-  }
-  function parsePetInfoValue(line) {
-    const m = String(line || '').match(/^\s*([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
-    if (!m) return null;
-    const raw = m[2].trim();
-    const quoted = raw.length >= 2 && ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")));
-    return { key:m[1], value:quoted ? raw.slice(1, -1) : raw };
-  }
-  function stripPetQuote(value) {
-    return String(value || '').trim().replace(/^-\s*/, '').replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
-  }
-  function parsePetStoryLines(raw) {
-    return String(raw || '').split('\n').map(line => {
-      const m = line.trim().match(/^\[([^\]]+)\]\s*(.*)$/);
-      return m ? { speaker:m[1], text:m[2] } : { speaker:'旁白', text:line.trim() };
-    }).filter(x => x.text);
-  }
-  function parsePetFields(lines) {
-    const out = {};
-    for (let i = 0; i < lines.length; i++) {
-      const parsed = parsePetInfoValue(lines[i]);
-      if (!parsed) continue;
-      if (parsed.key === 'story' && /^\|-/.test(parsed.value)) {
-        const story = [];
-        i++;
-        while (i < lines.length) {
-          const next = parsePetInfoValue(lines[i]);
-          if (next && next.key !== 'story' && !/^\s+\[/.test(lines[i])) { i--; break; }
-          story.push(String(lines[i] || '').replace(/^\s{2,4}/, ''));
-          i++;
-        }
-        out.story = story.join('\n').trim();
-      } else if (parsed.key !== 'variants' && parsed.key !== 'trigger') {
-        out[parsed.key] = parsed.value;
-      }
-    }
-    return out;
-  }
-  function parsePetTrigger(lines) {
-    const trigger = {};
-    let inside = false;
-    lines.forEach(line => {
-      const parsed = parsePetInfoValue(line);
-      if (!parsed) return;
-      if (parsed.key === 'trigger') { inside = true; return; }
-      if (inside && ['title','opening_cause','story'].includes(parsed.key)) { inside = false; return; }
-      if (!inside) return;
-      let value = parsed.value;
-      if (value === 'null') value = null;
-      else if (/^\d+(\.\d+)?$/.test(value)) value = Number(value);
-      trigger[parsed.key] = value;
-    });
-    return trigger;
-  }
-  function normalizePetStory(item, petName) {
-    if (!item) return null;
-    return Object.assign({}, item, {
-      title: item.title || item.id || '剧情',
-      summary: item.summary || item.opening_cause || '',
-      story: item.story || '',
-      lines: parsePetStoryLines(item.story || ''),
-      petName: petName || '宠物'
-    });
-  }
+
   function defaultPetFullData() { return { activeCaretakerId:'', caretakers:[] }; }
   function petFullData() {
     const data = Object.assign(defaultPetFullData(), safeObject(loadJSON(STORAGE_PET_FULL, {})));
-    data.caretakers = Array.isArray(data.caretakers) ? data.caretakers : [];
-    data.caretakers.forEach(c => { c.pets = Array.isArray(c.pets) ? c.pets : []; });
+    data.caretakers = Array.isArray(data.caretakers) ? data.caretakers.filter(c => c && typeof c === 'object' && c.id) : [];
+    data.caretakers.forEach(c => { c.pets = Array.isArray(c.pets) ? c.pets.filter(p => p && typeof p === 'object' && p.id) : []; });
     return data;
   }
-  function savePetFullData(data) { saveJSON(STORAGE_PET_FULL, Object.assign(defaultPetFullData(), data || {})); }
+  function savePetFullData(data) {
+    if (!saveJSON(STORAGE_PET_FULL, Object.assign(defaultPetFullData(), data || {}))) {
+      throw new Error('宠物存档写入失败：' + lastStorageWriteError);
+    }
+    return true;
+  }
   function petFullActiveCaretaker(data) {
     if (petRuntimeMode === 'test') return null;
     const all = data || petFullData();
@@ -2922,20 +2943,25 @@ export async function initWanbanXiaowu() {
     return all.caretakers.find(c => c.pets?.length) || all.caretakers[0] || null;
   }
   function petFullActivePet(data, caretaker) {
-    if (petRuntimeMode === 'test') return null;
+    if (petRuntimeMode === 'test' && !caretaker) return null;
     const c = caretaker || petFullActiveCaretaker(data);
     if (!c) return null;
     return (c.pets || []).find(p => p.id === c.activePetId) || (c.pets || [])[0] || null;
   }
   function petFullIsActive() { return !!petFullActivePet(); }
   function withPetFullActive(caretakerId) {
-    petRuntimeMode = 'full';
-    petFullActiveCaretakerId = caretakerId || '';
     const data = petFullData();
-    data.activeCaretakerId = petFullActiveCaretakerId;
+    if (!data.caretakers.some(c => c.id === caretakerId)) throw new Error('饲养员档案不存在，请重新选择角色');
+    if (data.activeCaretakerId !== caretakerId) {
+      data.activeCaretakerId = caretakerId;
+      savePetFullData(data);
+    }
+    petRuntimeMode = 'full';
+    petFullActiveCaretakerId = caretakerId;
+    clearPetTimers();
+    qsa('#wb-pet-hatch-mask, #wb-pet-route-choice, #wb-pet-story-prompt').forEach(mask => mask.remove());
     saveJSON(SCRIPT_ID + '_petLastRoute', 'full');
     if (petCaretakerIsShen(data.caretakers.find(c => c.id === caretakerId))) saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'full');
-    savePetFullData(data);
     petTestInfoCache = null;
     petTestInfoLoading = null;
   }
@@ -2961,19 +2987,35 @@ export async function initWanbanXiaowu() {
   function petTargetIsCurrent(target) {
     return JSON.stringify(target) === JSON.stringify(petStorageTarget());
   }
+  function flushPetStateSaves() {
+    for (const { target, state } of Array.from(pendingPetStates.values())) {
+      try { updatePetTargetState(target, () => state); }
+      catch (error) { console.warn('[玩伴小屋] pet state still pending:', error); }
+    }
+  }
   function updatePetTargetState(target, update) {
+    const key = JSON.stringify(target);
+    const pending = pendingPetStates.get(key)?.state;
+    const prepare = stored => {
+      const state = JSON.parse(JSON.stringify(update(Object.assign(defaultPetTestState(), pending || stored || {}))));
+      pendingPetStates.set(key, { target, state });
+      return state;
+    };
     if (target.mode === 'test') {
       const state = Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
-      if ((state.journeyId || '') !== target.journeyId) return;
-      saveJSON(STORAGE_PET_TEST, update(state));
+      if ((state.journeyId || '') !== target.journeyId) { pendingPetStates.delete(key); throw new Error('原宠物旅程已更换，无法保存到新宠物'); }
+      if (!saveJSON(STORAGE_PET_TEST, prepare(state))) throw new Error('宠物记录保存失败：' + lastStorageWriteError);
+      pendingPetStates.delete(key);
       return;
     }
     const data = petFullData();
     const caretaker = data.caretakers.find(c => c.id === target.caretakerId);
     const pet = caretaker?.pets.find(p => p.id === target.petId);
-    if (!pet) return;
-    pet.state = update(Object.assign(defaultPetTestState(), pet.state || {}));
+    if (!pet) { pendingPetStates.delete(key); throw new Error('原宠物档案已不存在，无法保存记录'); }
+    pet.state = prepare(pet.state);
+    if (pet.state.ended) pet.endedAt = pet.endedAt || pet.state.endedAt || Date.now();
     savePetFullData(data);
+    pendingPetStates.delete(key);
   }
   function petFullCaretakerById(id) { return (petFullData().caretakers || []).find(c => c.id === id) || null; }
   function petFullPetCompleted(pet) {
@@ -3138,7 +3180,7 @@ export async function initWanbanXiaowu() {
       '对规则异常认真，发现规则漏洞时又会第一个拿来做无害恶作剧',
       '面对陌生环境很警觉，熟悉后却会把最喜欢的东西挑剔地分给两人',
       '在外面像可靠小队长，回家后会为争一个熟悉位置用小聪明绕路',
-      '会为两人保守大秘密，却很爱透露沈栖白如何向它排练一句普通邀请',
+      '会为两人保守大秘密，却很爱透露{{char}}如何向它排练一句普通邀请',
       '擅长照顾队员，轮到自己难过时会先装忙，直到熟悉的人蹲到它看得见的距离'
     ];
     const partnerPatterns = [
@@ -3245,6 +3287,7 @@ export async function initWanbanXiaowu() {
   }
   function petCaretakerPromptConfig(caretaker) {
     const c = caretaker || petFullActiveCaretaker();
+    if (!c && petRuntimeMode === 'full') throw new Error('当前饲养员档案不存在，请重新选择角色');
     if (!c || petCaretakerIsShen(c)) {
       const source = c && c.roleContextVersion === 2 ? c : {
         charName:PET_SPECIAL_CHAR_NAME,
@@ -3289,8 +3332,8 @@ export async function initWanbanXiaowu() {
   }
   function petFullEnsureCaretaker(opt) {
     const data = petFullData();
-    const builtin = String(opt.builtinPetCaretaker || '');
-    let c = data.caretakers.find(x => builtin ? (x.builtinPetCaretaker === builtin || (builtin === 'shenqibai' && petCaretakerIsShen(x))) : (!x.builtinPetCaretaker && x.name === opt.name));
+    const builtin = petCaretakerIsShen(opt) ? 'shenqibai' : '';
+    let c = data.caretakers.find(x => builtin === 'shenqibai' ? petCaretakerIsShen(x) : (!petCaretakerIsShen(x) && x.name === opt.name));
     const fields = ['worldIndex', ...Object.keys(ROLE_DEFAULTS)];
     if (!c) {
       c = { id:'petc_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), name:opt.name, avatarUrl:opt.avatarUrl || '', activePetId:'', pets:[], createdAt:Date.now() };
@@ -3300,15 +3343,18 @@ export async function initWanbanXiaowu() {
       c.avatarUrl = opt.avatarUrl ?? c.avatarUrl ?? '';
       fields.forEach(k => { if (opt[k] !== undefined) c[k] = opt[k]; });
     }
+    c.builtinPetCaretaker = builtin;
     data.activeCaretakerId = c.id;
     savePetFullData(data);
     withPetFullActive(c.id);
     return c;
   }
   function petFullAddPet(caretakerId, infoText, state, meta) {
+    assertPetInfo(parsePetInfoText(infoText));
     const data = petFullData();
     const c = data.caretakers.find(x => x.id === caretakerId);
-    if (!c) return null;
+    if (!c) throw new Error('饲养员档案尚未保存，请重新添加该角色');
+    assertPetCaretakerContent(infoText, c);
     const id = 'pet_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
     const pet = Object.assign({ id, infoText, state:Object.assign(defaultPetTestState(), state || {}), createdAt:Date.now() }, meta || {});
     c.pets = c.pets || [];
@@ -3335,84 +3381,17 @@ export async function initWanbanXiaowu() {
     return true;
   }
 
-  function parsePetInfoText(text) {
-    const cleaned = cleanPetInfoText(text);
-    const lines = cleaned.split('\n');
-    const info = { pet_card:{}, main_story:[], side_story:[], quotes:{ char:{}, pet:{} }, parseWarnings:[] };
-    const cardStart = lines.findIndex(line => /^\s*pet_card\s*:\s*$/.test(line));
-    const mainStart = lines.findIndex(line => /^\s*main_story\s*:\s*$/.test(line));
-    const sideStart = lines.findIndex(line => /^\s*side_story\s*:\s*$/.test(line));
-    const quotesStart = lines.findIndex(line => /^\s*quotes\s*:\s*$/.test(line));
-    if (cardStart >= 0 && mainStart > cardStart) {
-      lines.slice(cardStart + 1, mainStart).forEach(line => {
-        const parsed = parsePetInfoValue(line);
-        if (parsed) info.pet_card[parsed.key] = parsed.value;
-      });
+  function parsePetInfoText(text) { return parsePetInfo(text, yaml.parse); }
+  function assertPetCaretakerContent(text, caretaker) {
+    if (!petCaretakerIsShen(caretaker) && /沈栖白|沈店长|栖光宠物店|\[沈\]/.test(String(text || ''))) {
+      throw new Error('内容混入了沈栖白专属角色，请为当前饲养员重新生成或修正后导入');
     }
-    const storyEnd = quotesStart >= 0 ? quotesStart : lines.length;
-    const storyLines = lines.slice(mainStart >= 0 ? mainStart + 1 : 0, storyEnd);
-    const starts = [];
-    storyLines.forEach((line, i) => {
-      const m = line.match(/^\s*-\s*id:\s*([A-Z]+\d+)/);
-      if (m) starts.push({ index:i, id:m[1] });
-    });
-    starts.forEach((start, idx) => {
-      const block = storyLines.slice(start.index, idx + 1 < starts.length ? starts[idx + 1].index : storyLines.length);
-      const id = start.id;
-      if (id === 'M14' || id === 'M15') {
-        const item = Object.assign({ id, variants:{} }, parsePetFields(block));
-        ['spirit','ordinary'].forEach(route => {
-          const routeIdx = block.findIndex(line => new RegExp('^\\s*' + route + '\\s*:\\s*$').test(line));
-          if (routeIdx >= 0) {
-            const otherIdx = block.findIndex((line, i) => i > routeIdx && /^\s*(spirit|ordinary)\s*:\s*$/.test(line));
-            item.variants[route] = normalizePetStory(Object.assign({ id, route }, parsePetFields(block.slice(routeIdx + 1, otherIdx >= 0 ? otherIdx : block.length))), info.pet_card.pet_name);
-          }
-        });
-        info.main_story.push(item);
-      } else if (/^M\d+/.test(id)) {
-        info.main_story.push(normalizePetStory(Object.assign({ id }, parsePetFields(block)), info.pet_card.pet_name));
-      } else {
-        const item = normalizePetStory(Object.assign({ id, trigger:parsePetTrigger(block) }, parsePetFields(block)), info.pet_card.pet_name);
-        info.side_story.push(item);
-      }
-    });
-    if (quotesStart >= 0) {
-      let target = null, stage = null, action = null;
-      const quoteLines = lines.slice(quotesStart + 1);
-      quoteLines.forEach((raw, idx) => {
-        const line = raw.trim();
-        if (!line) return;
-        const nextMeaningful = quoteLines.slice(idx + 1).map(x => x.trim()).find(Boolean) || '';
-        if (line === 'char:' || (line === 'pet:' && /^(egg|juvenile|adult|spirit):\s*$/.test(nextMeaningful))) { target = line.slice(0, -1); stage = null; action = null; return; }
-        if (!target) return;
-        const key = line.match(/^([A-Za-z_]+):\s*(.*)$/);
-        if (key) {
-          if (['egg','juvenile','adult','spirit'].includes(key[1])) {
-            stage = key[1]; action = null;
-            info.quotes[target][stage] = info.quotes[target][stage] || {};
-          } else if (['feed','pet','poke','sleep','sad'].includes(key[1]) && stage) {
-            action = key[1];
-            info.quotes[target][stage][action] = key[2] === '[]' ? [] : [];
-          }
-          return;
-        }
-        if (target && stage && action && /^-\s*/.test(line)) {
-          info.quotes[target][stage][action].push(stripPetQuote(line));
-        }
-      });
-    }
-    info.mainById = {};
-    info.sideById = {};
-    info.main_story.forEach(item => { if (item && item.id) info.mainById[item.id] = item; });
-    info.side_story.forEach(item => { if (item && item.id) info.sideById[item.id] = item; });
-    if (info.main_story.length < 15) info.parseWarnings.push('主线数量少于15，当前解析到 ' + info.main_story.length);
-    if (info.side_story.length < 6) info.parseWarnings.push('支线数量少于6，当前解析到 ' + info.side_story.length);
-    return info;
   }
   async function loadPetTestInfo() {
     const activeFullPet = petFullActivePet();
     if (activeFullPet && activeFullPet.infoText) {
-      petTestInfoCache = parsePetInfoText(activeFullPet.infoText);
+      assertPetCaretakerContent(activeFullPet.infoText, petFullActiveCaretaker());
+      petTestInfoCache = assertPetInfo(parsePetInfoText(activeFullPet.infoText));
       return petTestInfoCache;
     }
     if (petRuntimeMode === 'full') throw new Error('当前角色尚未生成宠物档案');
@@ -3432,7 +3411,7 @@ export async function initWanbanXiaowu() {
         return res.text();
       })
       .then(text => {
-        const info = parsePetInfoText(text);
+        const info = assertPetInfo(parsePetInfoText(text));
         // Fixed companion files use {{pet}} / {{egg}} as authoring markers.
         // The player's selection is the only runtime source of truth.
         info.pet_card.pet_name = testPetName;
@@ -3443,10 +3422,8 @@ export async function initWanbanXiaowu() {
       })
       .catch(e => {
         console.warn('[玩伴小屋] pet test info load failed:', e);
-        const info = parsePetInfoText('');
-        info.parseWarnings.push('特别陪伴文本读取失败：' + (e && e.message ? e.message : e));
-        if (petTargetIsCurrent(target)) petTestInfoCache = info;
-        return info;
+        if (petTargetIsCurrent(target)) { petTestInfoLoading = null; petTestInfoCache = null; }
+        throw e;
       });
     return petTestInfoLoading;
   }
@@ -3472,6 +3449,8 @@ export async function initWanbanXiaowu() {
     };
   }
   function petTestState() {
+    const pending = pendingPetStates.get(JSON.stringify(petStorageTarget()));
+    if (pending) return JSON.parse(JSON.stringify(pending.state));
     const activeFullPet = petFullActivePet();
     if (activeFullPet) return Object.assign(defaultPetTestState(), safeObject(activeFullPet.state || {}));
     if (petRuntimeMode === 'full') return defaultPetTestState();
@@ -3486,9 +3465,9 @@ export async function initWanbanXiaowu() {
       || (Array.isArray(raw.completedSide) && raw.completedSide.length));
   }
   function savePetTestState(state) {
-    if (savePetFullActivePetState(state)) return;
-    if (petRuntimeMode === 'full') return;
-    saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), state || {}));
+    if (petRuntimeMode === 'full' && !petFullIsActive()) throw new Error('当前角色尚无宠物，请先完成领养');
+    try { updatePetTargetState(petStorageTarget(), () => state); return true; }
+    catch (error) { toast(error.message + '；进度暂存在当前页面，请重试保存或导出备份后再关闭网页。'); return false; }
   }
   function petStageCap(stage) {
     return PET_STAGE_CAP[stage] || 100;
@@ -3601,7 +3580,8 @@ export async function initWanbanXiaowu() {
   }
   function petQuote(info, who, stage, action, fallback) {
     const quotes = info && info.quotes && info.quotes[who] && info.quotes[who][stage] && info.quotes[who][stage][action];
-    if (Array.isArray(quotes) && quotes.length) return quotes[Math.floor(Math.random() * quotes.length)];
+    const matching = Array.isArray(quotes) ? quotes.filter(line => petCharName() === PET_SPECIAL_CHAR_NAME || !/沈栖白|沈店长|栖光宠物店/.test(line)) : [];
+    if (matching.length) return matching[Math.floor(Math.random() * matching.length)];
     if (stage === 'ordinary') return petQuote(info, who, 'adult', action, fallback);
     return fallback || '';
   }
@@ -3871,6 +3851,7 @@ export async function initWanbanXiaowu() {
     return state;
   }
   function petApplyGameReward(gameMeta, result, durationMs, recordBroken) {
+    if (!petFullIsActive() && (petRuntimeMode === 'full' || !petTrialHasSavedPet())) return;
     let state = applyPetVisitAndDecay(petTestState());
     if (state.ended) return;
     const mode = gameMeta && gameMeta.mode;
@@ -4151,9 +4132,11 @@ export async function initWanbanXiaowu() {
     }).filter(Boolean).join('\n\n');
   }
   async function generatePetDesktopChat(kind, userText) {
+    const target = petStorageTarget();
     const cfg = petCaretakerPromptConfig();
     const state = applyPetVisitAndDecaySaved();
-    const info = petTestInfoCache || {};
+    const info = await loadPetTestInfo();
+    if (!petTargetIsCurrent(target)) throw new Error('饲养员已切换，请重新发起聊天');
     cfg.userName = state.userName || cfg.userName;
     const petCardText = petCardPromptText(info, state);
     const fallback = kind === 'comment' ? '我刚刚像趴在窗台上一样看完啦，这段剧情里有一点亮晶晶的地方。' : '我听见啦。今天也要慢慢照顾我，不许偷偷忘记。';
@@ -4169,13 +4152,16 @@ export async function initWanbanXiaowu() {
       (cfg.breakLimitPrompt || '').trim(),
       '语言要求：宠物聊天只使用自然、普通的中文输出，不要套用当前角色的日语/古风/外语等特殊语言风格。',
       basePrompt,
+      '【本次饲养员身份】\n{{char}}只对应' + cfg.charName + '。' + (petCaretakerIsShen(cfg) ? '' : '不引入沈栖白或沈店长，不套用特别陪伴的角色设定。'),
       '【当前共同养宠角色】\n' + currentCharDescription(cfg),
       '【当前用户设定】\n' + currentUserDescription(cfg),
       '【宠物名片】\n' + petCardText,
-      '【当前角色保存的剧情内容】\n' + (cfg.chatSnapshot || '无'),
+      '【当前角色剧情内容】\n' + (cfg.charName === hostRoleName() ? (recentChatText(8) || cfg.chatSnapshot || '无') : (cfg.chatSnapshot || '无')),
       kind === 'comment' ? '任务：评论最近几层楼的故事剧情，像读者一样说出你的感受。' : '用户对你说：' + (userText || '')
     ].filter(Boolean).join('\n\n');
-    return (await callApiText(cfg, prompt, '你是可爱的桌面宠物，只输出宠物回复正文。', 900)).trim();
+    const reply = (await callApiText(cfg, prompt, '你是可爱的桌面宠物，只输出宠物回复正文。', 900)).trim();
+    assertPetCaretakerContent(reply, cfg);
+    return reply;
   }
   function updatePetDesktopPanels(el) {
     if (!el) return;
@@ -4477,13 +4463,14 @@ export async function initWanbanXiaowu() {
         if (action === 'status') { el.classList.toggle('status-on'); updatePetDesktopPanels(el); }
         if (action === 'talk') { el.classList.toggle('chat-on'); updatePetDesktopPanels(el); }
         if (action === 'home') {
+          stopGame();
           setSettings({ petDesktopEnabled:false, petDesktopState:'normal', petForm:petCurrentForm() });
           petReturnHouseOnRender = true;
           syncPetDesktop();
           syncFloatingBall();
           currentTab = 'intimacy';
           currentGame = null;
-          buildPopup();
+          buildPopup({ tab:'intimacy' });
         }
       };
     });
@@ -4584,7 +4571,7 @@ export async function initWanbanXiaowu() {
       });
     }
   }
-	  function buildPopup() {
+  function buildPopup(options) {
 	    applySelectedFont();
     invalidateCurrentHostAvatarCache();
     const doc = getHostDocument();
@@ -4605,11 +4592,12 @@ export async function initWanbanXiaowu() {
       }
       if (!shell.dataset.leaveBound) {
         win.addEventListener('pagehide', () => {
-          if (!gameStarted || !currentGame) return;
+          if (!gameStarted || !currentGame) { flushAllProgressSaves(); return; }
           try { activeGameController?.save?.(); } catch(e) {}
           commitGameActiveDuration(true, true);
           flushAllProgressSaves();
           recordInterruptedGame(currentGame);
+          flushRecordsSave();
         });
         shell.dataset.leaveBound = '1';
       }
@@ -4626,7 +4614,11 @@ export async function initWanbanXiaowu() {
     shell.style.display = ((getHostWindow().innerWidth || 800) <= 768) ? 'block' : 'flex';
     syncMobileShellViewport();
     p.style.display = 'flex';
-    restoreWindowState();
+    if (options?.tab && ['single', 'double', 'intimacy', 'settings'].includes(options.tab)) {
+      currentTab = options.tab;
+      currentGame = null;
+      saveWindowState(currentTab, '');
+    } else restoreWindowState();
     render();
   }
   function closePopupShell() {
@@ -4805,7 +4797,13 @@ export async function initWanbanXiaowu() {
     qs('#wb-pet-test-enter', body).onclick = () => {
       const userName = (qs('#wb-pet-test-user', body)?.value || '').trim() || '你';
       const testPetName = (qs('#wb-pet-test-name', body)?.value || '').trim() || PET_DEFAULT_STORY_NAMES[selectedSpecies] || '宠物';
-      saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { userName, testEgg:selectedEgg, testSpecies:selectedSpecies, testPetName, cheatMode:!!options.cheatMode, journeyId:Date.now().toString(), archives:st.archives || [] }));
+      const previous = petTestState();
+      const archives = (previous.archives || []).slice();
+      if (previous.ended) {
+        const archived = Object.assign({}, previous, { petInfo:previous.petInfo || petTestInfoCache, archives:[] });
+        archives.unshift(archived);
+      }
+      if (!saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { userName, testEgg:selectedEgg, testSpecies:selectedSpecies, testPetName, cheatMode:!!options.cheatMode, journeyId:Date.now().toString() + '_' + Math.random().toString(36).slice(2, 6), archives:archives.slice(0, 10) }))) return;
       saveJSON(SCRIPT_ID + '_petLastRoute', 'test');
       saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
       petTestInfoCache = null;
@@ -5677,25 +5675,34 @@ export async function initWanbanXiaowu() {
     return d.length >= 3 ? d[0] + '.' + d[1] + '.' + d[2] : String(dateKey || '');
   }
   function petMiniConfirm(title, message, onConfirm, onCancel) {
+    const target = petStorageTarget();
     const doc = getHostDocument();
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.innerHTML = '<div class="wb-modal wb-mini-modal wb-pet-modal"><div class="wb-pet-modal-head"><div class="wb-pet-modal-title">' + esc(title) + '</div></div><div class="wb-api-status">' + esc(message) + '</div><div class="wb-actions" style="margin-top:12px;"><button class="wb-btn primary" id="wb-pet-mini-ok" style="flex:1;">是</button><button class="wb-btn" id="wb-pet-mini-cancel" style="flex:1;">返回</button></div></div>';
     appendModalMask(mask);
-    qs('#wb-pet-mini-ok', mask).onclick = () => { mask.remove(); if (onConfirm) onConfirm(); };
+    qs('#wb-pet-mini-ok', mask).onclick = () => {
+      if (!petTargetIsCurrent(target)) { mask.remove(); toast('当前宠物已切换，请重新操作'); return; }
+      try { if (onConfirm) onConfirm(); mask.remove(); }
+      catch (error) { toast(error.message); }
+    };
     qs('#wb-pet-mini-cancel', mask).onclick = () => { mask.remove(); if (onCancel) onCancel(); };
+    return mask;
   }
   function openPetHatchPrompt(info) {
     const state = petTestState();
-    if (state.stage !== 'egg' || Number(state.growth || 0) < petStageCap('egg') || state.hatchingDone || state.hatchingOpen) return;
+    if (qs('.wb-modal-mask')) return;
+    if (state.stage !== 'egg' || Number(state.growth || 0) < petStageCap('egg') || state.hatchingDone || state.activeStory?.id || state.suspendedStory?.id || qs('#wb-pet-hatch-mask')) return;
+    const target = petStorageTarget();
     const next = Object.assign({}, state, { hatchingOpen:true });
     savePetTestState(next);
-    petMiniConfirm('破壳啦', '蛋壳里传来了很轻的敲击声。点击确定，迎接当前的动物。', () => {
+    const mask = petMiniConfirm('破壳啦', '蛋壳里传来了很轻的敲击声。点击确定，迎接当前的动物。', () => {
       const doc = getHostDocument();
       const flash = doc.createElement('div');
       flash.className = 'wb-pet-hatch-flash';
       doc.body.appendChild(flash);
       setTimeout(() => {
+        if (!petTargetIsCurrent(target)) { flash.remove(); return; }
         const latest = petTestState();
         const eggStoryIds = ['M02','M03','M04'];
         const hatched = Object.assign({}, latest, {
@@ -5710,9 +5717,11 @@ export async function initWanbanXiaowu() {
         setTimeout(() => flash.remove(), 420);
       }, 260);
     }, () => {
+      if (!petTargetIsCurrent(target)) return;
       const latest = petTestState();
       savePetTestState(Object.assign({}, latest, { hatchingOpen:false }));
     });
+    mask.id = 'wb-pet-hatch-mask';
   }
   function petLogPageHTML(log, state, info) {
     if (!log) return '';
@@ -5783,13 +5792,13 @@ export async function initWanbanXiaowu() {
     cfg.userName = form.user_name || caretaker.userName || '{{user}}';
     if (!cfg.apiUrl || !cfg.apiModel) throw new Error('请先在设置中配置API和模型');
     const shenIsCaretaker = petCaretakerIsShen(caretaker);
-    const [world, infoPrompt, rolePrompt, shenFriend, shenSpecial] = await Promise.all([
+    const [world, infoPrompt, rolePrompt, shenSpecial] = await Promise.all([
       petAssetText('world.txt', ''),
       petAssetText('info.txt', ''),
       petAssetText(shenIsCaretaker ? 'info_role_shenqibai.txt' : 'info_role_friend.txt', ''),
-      shenIsCaretaker ? Promise.resolve('') : petAssetText('shenqibai_friend.txt', ''),
       shenIsCaretaker ? petAssetText('shenqibai_special.txt', '') : Promise.resolve('')
     ]);
+    if (!world.trim() || !infoPrompt.trim() || !rolePrompt.trim()) throw new Error('宠物生成提示词读取失败，请重试');
     const charWorld = shenIsCaretaker
       ? '本次使用灵息宠物世界与沈栖白专用角色输入，禁止注入当前酒馆角色的世界观。'
       : (selectedWorldText(cfg) || cfg.worldText || '无');
@@ -5838,16 +5847,24 @@ export async function initWanbanXiaowu() {
       '【本次唯一角色身份输入】\n' + rolePrompt,
       '【当前{{char}}世界观全部信息】\n' + charWorld,
       '【当前{{char}}角色卡】\n' + charDescription,
-      shenFriend ? '【沈栖白朋友 NPC 角色卡】\n' + shenFriend : '',
       '【当前{{user}}设定】\n' + currentUserDescription(cfg),
       '【当前语言/风格要求】\n' + (cfg.specialLanguageEnabled ? (cfg.specialLanguage || '已开启') : '无'),
       '【界面输入内容】\n' + input,
       '【宠物立绘外观硬性规则】\n' + petSpeciesColorRuleText(form.wish_species || 'random') + '\n\n必须遵守：外观由已有像素立绘唯一决定，不属于本轮随机创作范围。普通成长线与普通路线使用固定普通外观，灵息路线使用固定灵息外观。禁止新增或修改任何毛色、羽色、眼色、斑纹、体型、饰品或身体部件；灵息能力的差异通过规则、触发、作用对象、代价和身体外短暂效果呈现。',
-      '【info生成规范】\n' + infoPrompt
+      '【info生成规范】\n' + infoPrompt,
+      '【最终身份核对】\n[C]只对应' + cfg.charName + '，[U]只对应' + cfg.userName + '。' + (shenIsCaretaker ? '' : '不引入其他饲养员、沈栖白或沈店长。'),
+      form.retry_feedback ? '【上次失败原因】\n' + form.retry_feedback + '\n请重新生成一套完整内容并修正该问题，不续写上次残稿。' : ''
     ].filter(Boolean).join('\n\n');
+    const system = '你是宠物剧情素材生成器。一次性输出完整的<pet_info> YAML，包含15个主线、全部分支、6个支线和全部语录。遵守当前角色身份，不输出解释或占位内容。';
+    const maxTokens = Math.max(4096, Math.min(65536, Number(form.max_tokens) || 32768));
     const raw = onDelta
-      ? await callApiTextStream(cfg, prompt, '你是灵息宠物系统素材生成器。输出前先在内部完成差异化指纹、能力规则和历史避重检查；只输出合法的<pet_info> YAML，不要解释。', 16000, onDelta)
-      : await callApiText(cfg, prompt, '你是灵息宠物系统素材生成器。输出前先在内部完成差异化指纹、能力规则和历史避重检查；只输出合法的<pet_info> YAML，不要解释。', 16000);
+      ? await callApiTextStream(cfg, prompt, system, maxTokens, onDelta)
+      : await callApiText(cfg, prompt, system, maxTokens);
+    if (!shenIsCaretaker && /沈栖白|沈店长|栖光宠物店/.test(raw)) {
+      const error = new Error('输出混入了其他饲养员，请按当前角色重新生成');
+      error.raw = raw;
+      throw error;
+    }
     const parsed = parsePetInfoText(raw);
     if ((parsed.parseWarnings || []).length || !parsed.pet_card?.pet_name || parsed.main_story.length < 15 || parsed.side_story.length < 6) {
       const err = new Error('info解析失败：' + ((parsed.parseWarnings || []).join('；') || '字段数量不足'));
@@ -5873,10 +5890,9 @@ export async function initWanbanXiaowu() {
     const petCardText = petCardPromptText(info, state).replace(/收养人：[^\n]*/, '收养人：' + playerName + ' & ' + cfg.charName);
     const petName = petDisplayName(info, state);
     const storyText = petTodayStoryText(state, info, today);
-    const [roleDescription, logRolePrompt, shenFriend] = await Promise.all([
+    const [roleDescription, logRolePrompt] = await Promise.all([
       shenIsCaretaker ? petAssetText('shenqibai_special.txt', '') : Promise.resolve(currentCharDescription(cfg)),
-      petAssetText(shenIsCaretaker ? 'log_role_shenqibai.txt' : 'log_role_friend.txt', ''),
-      shenIsCaretaker ? Promise.resolve('') : petAssetText('shenqibai_friend.txt', '')
+      petAssetText(shenIsCaretaker ? 'log_role_shenqibai.txt' : 'log_role_friend.txt', '')
     ]);
     if (shenIsCaretaker) {
       if (!roleDescription.trim()) throw new Error('沈栖白专用角色卡读取失败');
@@ -5903,13 +5919,13 @@ export async function initWanbanXiaowu() {
       '宠物名片：\n' + petCardText,
       '当前世界观：\n' + (shenIsCaretaker ? '灵息宠物世界；当前角色是沈栖白，不使用酒馆中其他角色的世界观。' : (selectedWorldText(cfg) || '无')),
       '当前{{char}}角色卡：\n' + (roleDescription || (shenIsCaretaker ? '沈栖白专用角色卡读取失败；不得改用当前酒馆角色卡。' : currentCharDescription(cfg))),
-      shenFriend ? '沈栖白朋友 NPC 角色卡：\n' + shenFriend : '',
       '大总结：\n' + (shenIsCaretaker ? '无；沈栖白特别陪伴路线不读取当前酒馆聊天总结。' : (selectedSummaryText(cfg) || '无')),
       '今天全部互动：\n' + petDailyInteractionText(state, today),
       '今天全部剧情内容：\n' + storyText,
       '用户补充做了什么：\n' + (note || '无')
     ].filter(Boolean).join('\n\n');
     const raw = await callApiText(cfg, prompt, '你是宠物陪伴游戏的日志写作助手。必须只输出可解析JSON。', 4096);
+    assertPetCaretakerContent(raw, cfg);
     const data = normalizePetLogData(raw, today);
     return data.body ? data : fallback;
   }
@@ -6012,16 +6028,16 @@ export async function initWanbanXiaowu() {
     syncPopupModeClass();
     injectPetArcadeStyle();
     if (settings().petDesktopEnabled) {
-      savePetTestState(applyPetVisitAndDecay(petTestState()));
       setSettings({ petDesktopEnabled:false, petDesktopState:'normal', petForm:petCurrentForm() });
       syncFloatingBall();
     }
     const body = qs('#wb-body');
     body.className = 'wb-body wb-intimacy-mode wb-pet-mode';
-    body.innerHTML = '<div class="wb-panel" style="display:grid;place-items:center;min-height:240px;">读取特别陪伴剧情...</div>';
+    body.innerHTML = '<div class="wb-panel" style="display:grid;place-items:center;min-height:240px;">读取宠物档案...</div>';
     const target = petStorageTarget();
     loadPetTestInfo().then(info => {
       if (!petTargetIsCurrent(target) || !body.classList.contains('wb-pet-mode')) return;
+      assertPetInfo(info);
       let state = petNormalizeLocation(applyPetVisitAndDecay(petTestState()));
       state = updatePetPendingStories(state, info);
       savePetTestState(state);
@@ -6029,26 +6045,31 @@ export async function initWanbanXiaowu() {
       renderPetHouseLoaded(info, state);
       setTimeout(() => {
         if (!petTargetIsCurrent(target) || !body.classList.contains('wb-pet-mode')) return;
-        if (petTestState().stage === 'egg' && Number(petTestState().growth || 0) >= petStageCap('egg')) openPetHatchPrompt(info);
+        const latest = petTestState();
+        if (latest.suspendedStory?.id) return;
+        if (latest.stage === 'adult' && latest.route === 'common' && latest.completedMain.includes('M11')) openPetRouteChoice(info);
+        else if (latest.stage === 'egg' && Number(latest.growth || 0) >= petStageCap('egg')) openPetHatchPrompt(info);
         else openNextPetStoryPrompt(info);
       }, 80);
     }).catch(e => {
       if (!petTargetIsCurrent(target) || !body.classList.contains('wb-pet-mode')) return;
       console.error('[玩伴小屋] render pet house failed:', e);
-      const fallback = parsePetInfoText('');
-      fallback.parseWarnings.push('宠物界面加载失败，已进入本地预览：' + (e && e.message ? e.message : e));
-      try {
-        const state = petNormalizeLocation(applyPetVisitAndDecay(petTestState()));
-        renderPetHouseLoaded(fallback, state);
-      } catch (inner) {
-        console.error('[玩伴小屋] fallback render failed:', inner);
-        const body = qs('#wb-body');
-        if (body) body.innerHTML = '<div class="wb-panel" style="display:grid;gap:10px;place-items:center;min-height:240px;"><b>宠物界面读取失败</b><div class="wb-muted">' + esc(inner && inner.message ? inner.message : inner) + '</div><button class="wb-btn" id="wb-pet-retry">重试</button></div>';
-        const retry = qs('#wb-pet-retry'); if (retry) retry.onclick = renderPetHouse;
-      }
+      petTestInfoCache = null;
+      petTestInfoLoading = null;
+      clearPetTimers();
+      body.innerHTML = '<div class="wb-panel" style="display:grid;gap:10px;place-items:center;min-height:240px;"><b>宠物档案读取失败</b><div class="wb-muted">' + esc(e && e.message ? e.message : e) + '</div><div class="wb-actions"><button class="wb-btn" id="wb-pet-retry">重试读取</button><button class="wb-btn" id="wb-pet-error-rebuild">重新生成或导入</button><button class="wb-btn" id="wb-pet-error-caretakers">选择饲养员</button><button class="wb-btn" id="wb-pet-error-back">返回</button></div></div>';
+      qs('#wb-pet-retry', body).onclick = renderPetHouse;
+      qs('#wb-pet-error-rebuild', body).onclick = () => {
+        const caretaker = petFullActiveCaretaker();
+        if (caretaker) openPetAdoptionForm(caretaker);
+        else openPetCaretakerSelect(null, { forceFull:true, stay:true });
+      };
+      qs('#wb-pet-error-caretakers', body).onclick = () => openPetCaretakerSelect(null, { forceFull:true, stay:true });
+      qs('#wb-pet-error-back', body).onclick = renderIntimacy;
     });
   }
   function renderPetHouseLoaded(info, state, options = {}) {
+    assertPetInfo(info);
     if (petStoryTypeTimer) { clearInterval(petStoryTypeTimer); petStoryTypeTimer = 0; }
     const body = qs('#wb-body');
     const previousSprite = qs('#wb-pet-poke .wb-pet-fox', body);
@@ -6088,6 +6109,34 @@ export async function initWanbanXiaowu() {
       + '<div class="wb-pet-dialogue" id="wb-pet-dialogue">' + petDialogueHTML(info, state, charLine) + '</div>'
       + '</div>';
     const room = qs('#wb-pet-room', body);
+    if (pendingPetStates.size) {
+      const notice = body.ownerDocument.createElement('div');
+      notice.className = 'wb-api-status';
+      notice.innerHTML = '<div>宠物进度尚未写入本地，暂存在当前页面。请重试保存或导出备份，刷新或关闭网页会丢失未保存内容。</div><div class="wb-actions"><button class="wb-btn" id="wb-pet-save-retry">重试保存</button><button class="wb-btn" id="wb-pet-save-backup">导出备份</button></div>';
+      qs('.wb-pet-status-card', room).appendChild(notice);
+      qs('#wb-pet-save-retry', room).onclick = () => { flushPetStateSaves(); renderPetHouse(); };
+      qs('#wb-pet-save-backup', room).onclick = exportAllData;
+    }
+    if (isEnded && !storyMode) {
+      const actions = body.ownerDocument.createElement('div');
+      actions.className = 'wb-actions';
+      actions.innerHTML = '<button class="wb-btn" id="wb-pet-records">查看旅程记录</button><button class="wb-btn" id="wb-pet-card">宠物名片</button>';
+      qs('.wb-pet-status-card', room).appendChild(actions);
+    }
+    if (state.suspendedStory?.id && !storyMode) {
+      const resume = body.ownerDocument.createElement('button');
+      resume.className = 'wb-btn primary';
+      resume.id = 'wb-pet-story-resume';
+      resume.textContent = '继续未读完的剧情';
+      resume.onclick = () => {
+        const next = petTestState();
+        next.activeStory = next.suspendedStory;
+        next.suspendedStory = null;
+        savePetTestState(next);
+        renderPetHouseLoaded(info, next);
+      };
+      qs('.wb-pet-status-card', room).appendChild(resume);
+    }
     const currentSprite = qs('#wb-pet-poke .wb-pet-fox', room);
     if (currentSprite) {
       currentSprite.dataset.petAnimationKey = JSON.stringify([petStorageTarget(), renderState.stage]);
@@ -6142,7 +6191,7 @@ export async function initWanbanXiaowu() {
     };
     if (feed) feed.onclick = () => runAction('feed', 'eat');
     if (pat) pat.onclick = () => runAction('pet', 'happy');
-    const poke = qs('#wb-pet-poke', room); if (poke && !isEgg && !storyMode) poke.onclick = () => runAction('poke', 'normal');
+    const poke = qs('#wb-pet-poke', room); if (poke && !storyMode) poke.onclick = () => runAction('poke', 'normal');
     qsa('[data-loc]', room).forEach(btn => btn.onclick = () => {
       if (btn.dataset.locked === '1' || btn.classList.contains('locked')) { toast('当前未解锁，继续养宠物解锁场景吧！'); return; }
       const next = Object.assign({}, petTestState(), { location:btn.dataset.loc });
@@ -6194,7 +6243,7 @@ export async function initWanbanXiaowu() {
       const fullCaretaker = petFullActiveCaretaker();
       if (petRuntimeMode === 'test' || petCaretakerIsShen(fullCaretaker)) {
         if (fullCaretaker) petFullRemoveActivePet(fullCaretaker.id);
-        else saveJSON(STORAGE_PET_TEST, defaultPetTestState());
+        else if (!saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { archives:petTestState().archives || [] }))) return;
         petTestInfoCache = null;
         petTestInfoLoading = null;
         openPetSpecialCompanionChoice({ forceNew:true });
@@ -6234,7 +6283,7 @@ export async function initWanbanXiaowu() {
         syncFloatingBall();
         currentTab = 'intimacy';
         currentGame = null;
-        buildPopup();
+        buildPopup({ tab:'intimacy' });
       });
     };
     const storyExit = qs('#wb-pet-story-exit', room);
@@ -6244,15 +6293,21 @@ export async function initWanbanXiaowu() {
       petMiniConfirm('退出剧情？', '退出后会保存当前剧情并回到小屋，是否确定？', () => {
         const latest = petTestState();
         if (active.replay) { latest.activeStory = null; savePetTestState(latest); toast('剧情回放已结束'); renderPetHouse(); }
-        else if (active.id) completePetStory(info, active.id, false);
+        else if (active.id) {
+          latest.suspendedStory = latest.activeStory;
+          latest.activeStory = null;
+          savePetTestState(latest);
+          renderPetHouse();
+        }
       });
     };
     bindPetStoryInlineControls(info, room);
   }
 
-  async function ensurePetSpecialCaretaker() {
+  async function ensurePetSpecialCaretaker(isCurrent = () => true) {
     const card = await petAssetText('shenqibai_special.txt', '');
     if (!card.trim()) throw new Error('沈栖白角色设定读取失败');
+    if (!isCurrent()) throw new Error('已离开特别陪伴选择页');
     const existing = petFullData().caretakers.find(petCaretakerIsShen);
     const role = existing?.roleContextVersion === 2 ? isolatedRole(existing) : isolatedRole({}, PET_SPECIAL_CHAR_NAME);
     return petFullEnsureCaretaker(Object.assign(role, {
@@ -6325,7 +6380,7 @@ export async function initWanbanXiaowu() {
       const tip = qs('#wb-pet-special-tip', mask);
       if (btn) { btn.disabled = true; btn.innerHTML = '<b>自由生成</b><span>正在读取沈栖白设定...</span>'; }
       try {
-        const caretaker = await ensurePetSpecialCaretaker();
+        const caretaker = await ensurePetSpecialCaretaker(() => mask.isConnected);
         mask.remove();
         openPetAdoptionForm(caretaker);
       } catch (e) {
@@ -6339,22 +6394,6 @@ export async function initWanbanXiaowu() {
     injectPetArcadeStyle();
     const existingMask = qs('#wb-pet-caretaker-mask', getHostDocument());
     if (existingMask) existingMask.remove();
-    const fullMode = !!(options && options.forceFull) || petFullIsActive() || !info;
-    if (fullMode) petRuntimeMode = 'full';
-    if (!fullMode) {
-      const state = petTestState();
-      const saved = Array.isArray(state.caretakers) ? state.caretakers : [];
-      const doc = getHostDocument();
-      const mask = doc.createElement('div');
-      mask.className = modalMaskClass();
-      mask.id = 'wb-pet-caretaker-mask';
-      const rows = [{ name:petCharName(), pet:petDisplayName(info, state), test:true }].concat(saved);
-      mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-pet-modal-head"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-close">' + petUiIcon('back') + '</button><div class="wb-pet-modal-title">选择饲养员</div><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretaker-add">' + petUiIcon('plus') + '</button></div><div class="wb-pet-scroll"><div class="wb-pet-card-list">' + rows.map((r, i) => '<div class="wb-pet-caretaker-card" data-i="' + i + '"><div class="wb-pet-avatar">' + esc((r.name || '?').slice(0, 1)) + '</div><div><b>' + esc(r.name || '未命名') + '</b>' + (r.test ? ' <span class="wb-pill">特别陪伴</span>' : '') + '<div class="wb-muted">当前动物：' + esc(r.pet || '暂无') + '</div></div>' + (r.test ? '<span class="wb-muted">可进入</span>' : '<button class="wb-btn wb-pet-caretaker-del" data-i="' + i + '">删除</button>') + '</div>').join('') + '</div></div></div>';
-      appendModalMask(mask);
-      qs('#wb-pet-caretaker-close', mask).onclick = () => mask.remove();
-      qs('#wb-pet-caretaker-add', mask).onclick = () => toast('请从灵息小窝入口添加角色');
-      return;
-    }
     const data = petFullData();
     const doc = getHostDocument();
     const mask = doc.createElement('div');
@@ -6424,7 +6463,9 @@ export async function initWanbanXiaowu() {
       const opt = opts[Number(btn.dataset.i)];
       if (!opt) return;
       petMiniConfirm('确认饲养员', '是否选择和' + opt.name + '一起养宠物？', () => {
-        const c = petFullEnsureCaretaker(opt);
+        let c;
+        try { c = petFullEnsureCaretaker(opt); }
+        catch (error) { toast(error.message); return; }
         mask.remove();
         if (parentMask) parentMask.remove();
         const latest = petFullCaretakerById(c.id) || c;
@@ -6484,7 +6525,8 @@ export async function initWanbanXiaowu() {
       female_name:'',
       narrative_person:'second',
       api_preset_index:'',
-      attempts:3
+      attempts:3,
+      max_tokens:32768
     };
     const draw = () => {
       const wishOpen = !!draft.wish_mode;
@@ -6501,6 +6543,7 @@ export async function initWanbanXiaowu() {
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>剧情人称</span><select class="wb-select" id="wb-pet-narrative-person"><option value="first">第一人称（我）</option><option value="second">第二人称（你）</option><option value="third">第三人称（TA）</option></select></label><div style="flex:1;"></div></div>'
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>模型选择</span><select class="wb-select" id="wb-pet-adopt-model">' + apiOptions + '</select></label><label class="wb-field" style="flex:1;"><span>模型生成次数</span><input class="wb-input" id="wb-pet-adopt-attempts" type="number" min="1" max="5" value="' + esc(String(draft.attempts || 3)) + '"></label></div>'
         + '<div class="wb-actions wb-pet-adopt-wide"><button class="wb-btn primary" id="wb-pet-adopt-generate" style="flex:1;">确定，生成宠物文案</button></div>'
+        + '<details class="wb-pet-adopt-wide"><summary>输出设置 / 导入已有剧情</summary><label class="wb-field"><span>单次最大输出 Token（按模型支持范围设置）</span><input class="wb-input" id="wb-pet-max-tokens" type="number" min="4096" max="65536" value="' + draft.max_tokens + '"></label><div class="wb-api-status">每次请求一次性生成完整剧情。输出被截断时会保留原文，不进入小屋。</div><label class="wb-field"><span>已有宠物剧情文本</span><textarea class="wb-textarea" id="wb-pet-import-text" placeholder="粘贴完整的 pet_info YAML，可用于恢复之前生成的内容"></textarea></label><input type="file" id="wb-pet-import-file" accept=".txt,.yaml,.yml"><button class="wb-btn" id="wb-pet-import-info">解析并导入</button></details>'
         + '<div id="wb-pet-adopt-status" class="wb-pet-adopt-wide"></div>'
         + '</div></div></div>';
       appendModalMask(mask);
@@ -6512,10 +6555,6 @@ export async function initWanbanXiaowu() {
     };
     const collect = () => {
       const userName = (qs('#wb-pet-adopt-user', mask)?.value || '').trim() || '你';
-      caretaker.userName = userName;
-      const data = petFullData();
-      const savedCaretaker = data.caretakers.find(c => c.id === caretaker.id);
-      if (savedCaretaker) { savedCaretaker.userName = userName; savePetFullData(data); }
       draft = {
         user_name:userName,
         selected_egg:draft.selected_egg,
@@ -6528,11 +6567,13 @@ export async function initWanbanXiaowu() {
         female_name:(qs('#wb-pet-name-female', mask)?.value || '').trim(),
         narrative_person:qs('#wb-pet-narrative-person', mask)?.value || 'second',
         api_preset_index:qs('#wb-pet-adopt-model', mask)?.value || '',
-        attempts:Math.max(1, Math.min(5, parseInt(qs('#wb-pet-adopt-attempts', mask)?.value, 10) || 1))
+        attempts:Math.max(1, Math.min(5, parseInt(qs('#wb-pet-adopt-attempts', mask)?.value, 10) || 1)),
+        max_tokens:Math.max(4096, Math.min(65536, parseInt(qs('#wb-pet-max-tokens', mask)?.value, 10) || 32768))
       };
       return draft;
     };
     const generate = async () => {
+      generated = null;
       const form = collect();
       if (form.wish_mode && form.wish_sex === 'male' && !form.male_name) { toast('请填写男孩姓名'); return; }
       if (form.wish_mode && form.wish_sex === 'female' && !form.female_name) { toast('请填写女孩姓名'); return; }
@@ -6542,28 +6583,33 @@ export async function initWanbanXiaowu() {
       let streamRaw = '';
       if (status) status.innerHTML = '<div class="wb-api-status">生成中，正在接收模型输出...</div><pre class="wb-pet-info-stream" id="wb-pet-info-stream"></pre>';
       if (btn) { btn.disabled = true; btn.textContent = '生成中...'; }
+      const close = qs('#wb-pet-adopt-close', mask); if (close) close.disabled = true;
       let lastErr = null;
       for (let i = 0; i < form.attempts; i++) {
+        if (!mask.isConnected) return;
         try {
           if (i > 0) {
             streamRaw = '';
             if (status) status.innerHTML = '<div class="wb-api-status">第' + (i + 1) + '次重新生成中，正在接收模型输出...</div><pre class="wb-pet-info-stream" id="wb-pet-info-stream"></pre>';
           }
-          generated = await generatePetFullInfo(caretaker, form, delta => {
+          generated = await generatePetFullInfo(caretaker, Object.assign({}, form, { retry_feedback:lastErr?.message || '' }), delta => {
             streamRaw += delta;
             const box = qs('#wb-pet-info-stream', mask);
             if (box) { box.textContent = streamRaw; box.scrollTop = box.scrollHeight; }
           });
+          if (!mask.isConnected) return;
           break;
         }
         catch(e) { lastErr = e; if (status) status.innerHTML = '<div class="wb-api-status">第' + (i + 1) + '次失败：' + esc(e.message || e) + '</div>' + (streamRaw ? '<pre class="wb-pet-info-stream">' + esc(streamRaw) + '</pre>' : ''); }
       }
+      if (close) close.disabled = false;
       if (!generated && lastErr) { if (btn) { btn.disabled = false; btn.textContent = '确定，生成宠物文案'; } return; }
       if (status) status.innerHTML = '<div class="wb-api-status">生成完成，已解析出蛋形态名片。</div>';
       if (btn) { btn.disabled = false; btn.textContent = '确定，生成宠物文案'; }
       openPetAdoptionSuccessModal(form);
     };
     const enterGeneratedHouse = (form) => {
+        if (!generated) throw new Error('请先生成或导入有效的宠物档案');
         form = form || collect();
         const state = Object.assign(defaultPetTestState(), { userName:form.user_name, adoptionCycle:cycle, firstSnapshot:null, cheatMode:petCaretakerIsShen(caretaker) && !!options?.cheatMode });
         petFullAddPet(caretaker.id, generated.raw, state, { egg:generated.parsed.pet_card?.egg || draft.selected_egg });
@@ -6579,7 +6625,10 @@ export async function initWanbanXiaowu() {
       success.id = 'wb-pet-adoption-success-mask';
       success.innerHTML = '<div class="wb-modal wb-mini-modal wb-pet-modal wb-pet-adopt-success-modal"><div class="wb-pet-modal-head"><div class="wb-pet-modal-title">生成并解析成功</div></div><div class="wb-pet-scroll">' + petAdoptionEggCardHTML(generated.parsed, form, cycle) + '<details class="wb-pet-info-raw"><summary>查看全部输出</summary><pre class="wb-pet-info-stream">' + esc(generated.raw || '') + '</pre></details></div><div class="wb-actions"><button class="wb-btn primary" id="wb-pet-enter-house" style="flex:1;">进入灵息小屋</button><button class="wb-btn" id="wb-pet-adopt-regen" style="flex:1;">重新生成</button></div></div>';
       appendModalMask(success);
-      qs('#wb-pet-enter-house', success).onclick = () => { success.remove(); enterGeneratedHouse(form); };
+      qs('#wb-pet-enter-house', success).onclick = () => {
+        try { enterGeneratedHouse(form); success.remove(); }
+        catch (error) { toast(error.message + '；生成内容仍保留在此页，可重试保存。'); }
+      };
       qs('#wb-pet-adopt-regen', success).onclick = () => { success.remove(); generated = null; generate(); };
     };
     const bind = () => {
@@ -6596,6 +6645,24 @@ export async function initWanbanXiaowu() {
         if (fields) fields.style.display = draft.wish_mode ? '' : 'none';
       };
       const gen = qs('#wb-pet-adopt-generate', mask); if (gen) gen.onclick = generate;
+      const importText = qs('#wb-pet-import-text', mask);
+      qs('#wb-pet-import-file', mask).onchange = async event => {
+        const file = event.target.files?.[0];
+        if (file) importText.value = await file.text();
+      };
+      qs('#wb-pet-import-info', mask).onclick = () => {
+        if (qs('#wb-pet-adopt-generate', mask).disabled) return;
+        const raw = importText.value;
+        try {
+          const parsed = assertPetInfo(parsePetInfoText(raw));
+          assertPetCaretakerContent(raw, caretaker);
+          generated = { raw, parsed };
+          openPetAdoptionSuccessModal(collect());
+        } catch (error) {
+          generated = null;
+          qs('#wb-pet-adopt-status', mask).textContent = error.message;
+        }
+      };
     };
     draw();
   }
@@ -6621,7 +6688,7 @@ export async function initWanbanXiaowu() {
       '<div class="wb-pet-stage-tip"><div class="wb-pet-stage-tip-title">小提示：当前阶段——' + esc(stageName) + '</div><div class="wb-pet-stage-tip-box">' + stageTip + '</div></div>',
       '<p><strong>欢迎来到灵息小窝。</strong>这里是一套长期养宠模块：你和当前角色会共同领养、照顾、记录一只灵息宠物。它会从蛋开始成长，触发主线与支线剧情，最后走向普通宠物或灵息宠物的结局。</p>',
       '<h3>## 1. 从哪里开始？</h3>',
-      '<ul><li><strong>灵息小窝入口：</strong>点击亲密互动里的“灵息小窝”。如果已经有正在养的宠物，会直接进入该宠物页面；想换人养宠，请点小屋标题旁边的下拉按钮。</li><li><strong>特别陪伴：</strong>选择沈栖白后可以进入' + mark('固定剧情', 'green') + '或' + mark('自由生成', 'blue') + '。固定剧情可选名字、蛋外观与动物故事，其余角色和剧情设定固定；自由生成会注入沈栖白完整角色设定。</li><li><strong>添加角色：</strong>右上角“+”可以从' + mark('当前世界观', 'blue') + '角色里选择饲养员。添加后，每个角色都有' + mark('独立宠物', 'green') + '、日志、剧情和日期记录，沈栖白会以友好管理员 NPC 身份出现。</li><li><strong>领养登记表：</strong>没有宠物的自由生成会进入登记表。基础项包括 user 名、蛋、宠物名字、人称、' + mark('API 预设', 'blue') + '和' + mark('生成次数', 'green') + '；展开' + mark('详细许愿', 'pink') + '后可以指定' + mark('品种/性别/灵息能力') + '，选择“随机”则交给 AI 决定。</li></ul>',
+      '<ul><li><strong>灵息小窝入口：</strong>点击亲密互动里的“灵息小窝”。如果已经有正在养的宠物，会直接进入该宠物页面；想换人养宠，请点小屋标题旁边的下拉按钮。</li><li><strong>特别陪伴：</strong>选择沈栖白后可以进入' + mark('固定剧情', 'green') + '或' + mark('自由生成', 'blue') + '。固定剧情可选名字、蛋外观与动物故事，其余角色和剧情设定固定；自由生成会注入沈栖白完整角色设定。</li><li><strong>添加角色：</strong>右上角“+”可以从' + mark('当前世界观', 'blue') + '角色里选择饲养员。添加后，每个角色都有' + mark('独立宠物', 'green') + '、日志、剧情和日期记录；普通角色使用自己的设定，沈栖白只在特别陪伴路线出现。</li><li><strong>领养登记表：</strong>没有宠物的自由生成会进入登记表。基础项包括 user 名、蛋、宠物名字、人称、' + mark('API 预设', 'blue') + '和' + mark('生成次数', 'green') + '；展开' + mark('详细许愿', 'pink') + '后可以指定' + mark('品种/性别/灵息能力') + '，选择“随机”则交给 AI 决定。</li></ul>',
       '<h3>## 2. 宠物有哪些阶段？</h3>',
       '<ul><li><strong>蛋形态：</strong>刚领养时只有成长值。此时右侧按钮较少，主要通过抚摸、戳戳、写日志、查看记录来陪伴它。蛋形态戳戳/抚摸的对话可能只是“......”，这是正常的。</li><li><strong>幼年期：</strong>破壳后会出现真正的动物。开始有饱食度和开心值，可以喂食、抚摸、遛弯，宠物会说话、做动作，也会逐步解锁场景。</li><li><strong>成年期：</strong>宠物更稳定，也会触发更关键的主线。成年后需要继续提高成长值，推动它走向最终选择。</li><li><strong>灵息 / 普通路线：</strong>后期剧情会让宠物选择接受灵息力量，或回归更普通的动物生活。不同路线会影响后续剧情和名片信息。</li><li><strong>旅程结束：</strong>最终剧情完成后，小屋会空出来，右侧交互按钮消失，上方会出现“领养新的宠物”。点击后可以为同一个角色开启下一轮养宠。</li></ul>',
       '<h3>## 3. 主页面怎么看？</h3>',
@@ -6645,6 +6712,8 @@ export async function initWanbanXiaowu() {
 
   function openNextPetStoryPrompt(info) {
     const state = petTestState();
+    if (qs('.wb-modal-mask') || !qs('#wb-pet-room')) return;
+    if (state.suspendedStory?.id || state.ended) return;
     if (state.activeStory && state.activeStory.id) return;
     const id = petNextPendingStoryId(info, state);
     if (!id) return;
@@ -6755,10 +6824,11 @@ export async function initWanbanXiaowu() {
       return;
     }
     if (id === 'M14') state.endingReady = true;
+    if (id === 'M15' && petRuntimeMode === 'test') state.petInfo = info;
     if (experienced) state.lastCharLine = '这段剧情已经记录下来了。';
     state = updatePetPendingStories(state, info);
     savePetTestState(state);
-    toast('剧情已保存');
+    toast(pendingPetStates.size ? '剧情暂存在当前页面，请重试保存' : '剧情已保存');
     if (id === 'M15') {
       const fullCaretaker = petFullActiveCaretaker();
       if (fullCaretaker) {
@@ -6770,14 +6840,6 @@ export async function initWanbanXiaowu() {
         return;
       }
       showConfirm('开始下一个宠物？', petDisplayName(info, state) + '的结局已经保存。是否开始下一段特别陪伴？旧宠物记录会归档保留。', () => {
-        const ended = petTestState();
-        const fresh = defaultPetTestState();
-        fresh.testEgg = ended.testEgg;
-        fresh.testSpecies = ended.testSpecies;
-        fresh.testPetName = ended.testPetName;
-        fresh.userName = ended.userName || '';
-        fresh.archives = [ended].concat(ended.archives || []).slice(0, 10);
-        savePetTestState(fresh);
         openPetSpecialCompanionChoice({ forceNew:true });
       }, renderPetHouse);
       return;
@@ -6810,6 +6872,7 @@ export async function initWanbanXiaowu() {
   }
   function openPetRouteChoice(info) {
     const doc = getHostDocument();
+    if (qs('#wb-pet-route-choice', doc)) return;
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-pet-route-choice';
@@ -6837,7 +6900,9 @@ export async function initWanbanXiaowu() {
     const fullMode = !!(fullCtx && fullCtx.pets.length);
     const makeItems = () => {
       if (fullMode) return fullCtx.pets;
-      const archived = (baseState.archives || []).slice().reverse().map((st, i) => ({ pet:null, petIndex:i + 1, info, state:Object.assign(defaultPetTestState(), st || {}) }));
+      const archived = (baseState.archives || []).slice().reverse().map((st, i) => ({ pet:null, petIndex:i + 1,
+        info:st.petInfo || { pet_card:{ pet_name:st.testPetName, species:st.testSpecies, egg:st.testEgg } },
+        state:Object.assign(defaultPetTestState(), st || {}) }));
       return archived.concat([{ pet:null, petIndex:archived.length + 1, info, state:baseState }]);
     };
     const doc = getHostDocument();
@@ -7067,17 +7132,34 @@ export async function initWanbanXiaowu() {
         if (replay) replay.onclick = e => {
           e.stopPropagation();
           petMiniConfirm('回放剧情？', '是否回放当前剧情？', () => {
-            if (fullMode && row.ctx.pet) petFullSetActivePet(fullCtx.caretaker.id, row.ctx.pet.id);
-            petTestInfoCache = row.ctx.info;
-            const next = Object.assign(defaultPetTestState(), row.ctx.state, { activeStory:{ id:item.id, prompt:false, index:0, page:0, done:false, replay:true } });
-            savePetTestState(next);
-            mask.remove();
-            renderPetHouseLoaded(row.ctx.info, next);
+            openPetRecordReplay(item, row.ctx.info, row.ctx.state);
           });
         };
       });
     };
     drawHome();
+  }
+
+  function openPetRecordReplay(item, info, state) {
+    const doc = getHostDocument();
+    const mask = doc.createElement('div');
+    mask.className = modalMaskClass();
+    mask.id = 'wb-pet-record-replay';
+    const lines = parsePetStoryLines(item.story || '');
+    let index = 0;
+    const draw = () => {
+      mask.innerHTML = '<div class="wb-modal wb-pet-modal"><div class="wb-modal-title">' + esc(petRenderText(item.title || item.id, info, state))
+        + '</div><div class="wb-pet-scroll">' + (lines[index] ? petRpgLineHTML(lines[index], info, state) : '这条旧记录没有保存正文。')
+        + '</div><div class="wb-actions"><button class="wb-btn" id="wb-pet-replay-prev">上一段</button><button class="wb-btn primary" id="wb-pet-replay-next">'
+        + (index + 1 < lines.length ? '下一段' : '结束回放') + '</button><button class="wb-btn" id="wb-pet-replay-close">返回记录</button></div></div>';
+      const prev = qs('#wb-pet-replay-prev', mask);
+      prev.disabled = index === 0;
+      prev.onclick = () => { index--; draw(); };
+      qs('#wb-pet-replay-next', mask).onclick = () => { if (index + 1 >= lines.length) mask.remove(); else { index++; draw(); } };
+      qs('#wb-pet-replay-close', mask).onclick = () => mask.remove();
+    };
+    draw();
+    appendModalMask(mask);
   }
 
   function parsePetGeneratedLog(text, today) {
@@ -7118,6 +7200,8 @@ export async function initWanbanXiaowu() {
     appendModalMask(mask);
     const generate = async () => {
       const note = (qs('#wb-pet-log-note', mask)?.value || '').trim();
+      generated = null;
+      qs('#wb-pet-log-save', mask).disabled = true;
       const active = doc.activeElement;
       if (active && typeof active.blur === 'function') active.blur();
       const btn = qs('#wb-pet-log-generate', mask);
@@ -7135,6 +7219,7 @@ export async function initWanbanXiaowu() {
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = generated ? '重新生成' : '生成'; }
         if (regen) regen.disabled = false;
+        qs('#wb-pet-log-save', mask).disabled = !generated;
       }
     };
     qs('#wb-pet-log-generate', mask).onclick = generate;
@@ -7151,6 +7236,7 @@ export async function initWanbanXiaowu() {
     qs('#wb-pet-log-save', mask).onclick = () => {
       if (!generated) { toast('请先生成日志'); return; }
       const saveNow = () => {
+        try {
         updatePetTargetState(target, next => {
         next.logs = Object.assign({}, next.logs || {}, { [today]:Object.assign({}, generated, { savedAt:Date.now(), date:today, pet_name:petDisplayName(info, next, generated?.pet_name || '宠物'), pet_stage:petDisplayStage(next), snapshot:petSnapshotData(next) }) });
         return next;
@@ -7158,6 +7244,7 @@ export async function initWanbanXiaowu() {
         mask.remove();
         toast('日志已保存');
         if (petTargetIsCurrent(target)) renderPetHouse();
+        } catch (error) { toast(error.message + '；日志仍保留在当前窗口，可重试保存。'); }
       };
       if (existing) petMiniConfirm('覆盖当天日志？', '当前保存会覆盖当天日志，是否确定？', saveNow);
       else saveNow();
@@ -7527,6 +7614,8 @@ export async function initWanbanXiaowu() {
       STORAGE_ROLE_CONTEXTS,
       STORAGE_PET_FULL,
       STORAGE_PET_TEST,
+      SCRIPT_ID + '_petLastRoute',
+      SCRIPT_ID + '_petLastSpecialRoute',
       STORAGE_SUMMARIES,
       STORAGE_SUMMARY_REQ,
       STORAGE_PROGRESS,
@@ -7556,6 +7645,7 @@ export async function initWanbanXiaowu() {
       return Object.assign({}, DEFAULT_SETTINGS, clean, currentApi || {});
     }
     if (key === STORAGE_ROLE_CONTEXTS) return Object.fromEntries(Object.entries(safeObject(value)).map(([name, role]) => [name, isolatedRole(safeObject(role), name)]));
+    if (key === SCRIPT_ID + '_petLastRoute' || key === SCRIPT_ID + '_petLastSpecialRoute') return value === 'test' ? 'test' : 'full';
     if (key === STORAGE_PET_FULL || key === STORAGE_PET_TEST) return safeObject(value);
     if (key === STORAGE_WORLD_PRESETS || key === STORAGE_SUMMARIES) return safeArray(value).filter(x => x && typeof x === 'object');
     if (key === STORAGE_SETTINGS || key === STORAGE_SCORES || key === STORAGE_LINES || key === STORAGE_ROLE_LINES || key === STORAGE_THEATERS || key === STORAGE_LINE_PRESET_SELECTION || key === STORAGE_PROGRESS || key === STORAGE_RECORDS) return safeObject(value);
@@ -7580,7 +7670,7 @@ export async function initWanbanXiaowu() {
     try {
       Object.keys(plan).forEach(key => {
         if (key === STORAGE_SUMMARY_REQ) localStorage.setItem(key, String(plan[key] || ''));
-        else localStorage.setItem(key, JSON.stringify(plan[key]));
+        else writeStoredJSON(localStorage, key, plan[key]);
       });
     } catch(e) {
       Object.keys(originals).forEach(key => {
@@ -7592,15 +7682,44 @@ export async function initWanbanXiaowu() {
       const quota = e && (e.name === 'QuotaExceededError' || e.code === 22 || /quota/i.test(e.message || ''));
       throw new Error(quota ? '手机端本地存储空间不足，已放弃导入并保留原数据。' : ('写入失败，已放弃导入并保留原数据：' + (e && e.message ? e.message : e)));
     }
+    if (Object.hasOwn(plan, STORAGE_RECORDS)) pendingRecords = null;
+    if (Object.hasOwn(plan, STORAGE_PET_FULL)) petFullActiveCaretakerId = '';
+    if (Object.hasOwn(plan, SCRIPT_ID + '_petLastRoute')) petRuntimeMode = plan[SCRIPT_ID + '_petLastRoute'];
+    for (const [key, entry] of pendingPetStates) {
+      if (Object.hasOwn(plan, entry.target.mode === 'test' ? STORAGE_PET_TEST : STORAGE_PET_FULL)) pendingPetStates.delete(key);
+    }
+    if (Object.hasOwn(plan, STORAGE_PROGRESS)) {
+      Object.values(progressSaveTimers).forEach(clearTimeout);
+      progressSaveTimers = {};
+      progressSaveCache = {};
+      progressDeleteCache.clear();
+    }
+    petTestInfoCache = null;
+    petTestInfoLoading = null;
   }
   function exportAllData() {
     flushSettingsProgress();
+    if (gameStarted) { try { activeGameController?.save?.(); } catch (_) {} }
+    flushAllProgressSaves();
     const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:EXTENSION_VERSION, exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
+      else if (key === STORAGE_RECORDS) data.items[key] = records();
+      else if (key === STORAGE_PROGRESS) {
+        data.items[key] = Object.assign({}, progress(), progressSaveCache);
+        progressDeleteCache.forEach(game => { delete data.items[key][game]; });
+      }
       else data.items[key] = loadJSON(key, null);
     });
+    for (const { target, state } of pendingPetStates.values()) {
+      if (target.mode === 'test') data.items[STORAGE_PET_TEST] = state;
+      else {
+        const caretaker = data.items[STORAGE_PET_FULL]?.caretakers?.find(c => c.id === target.caretakerId);
+        const pet = caretaker?.pets?.find(p => p.id === target.petId);
+        if (pet) pet.state = state;
+      }
+    }
     const text = JSON.stringify(data, null, 2);
     const blob = new Blob([text], { type:'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -8114,11 +8233,16 @@ export async function initWanbanXiaowu() {
         const json = await res.json();
         const txt = json.choices?.[0]?.message?.content || json.choices?.[0]?.text || json.output_text || '';
         emit(txt);
+        if (json.error || json.choices?.[0]?.finish_reason === 'length') {
+          const error = new Error(json.error?.message || '模型输出达到上限，本次内容被截断，请重试');
+          error.raw = txt;
+          throw error;
+        }
         return stripJsonFence(txt);
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
-      let buf = '', out = '';
+      let buf = '', out = '', finishReason = '', streamError = '';
       const consume = chunk => {
         buf += chunk;
         const parts = buf.split(/\r?\n\r?\n/);
@@ -8131,6 +8255,8 @@ export async function initWanbanXiaowu() {
             if (!data || data === '[DONE]') return;
             try {
               const obj = JSON.parse(data);
+              finishReason = obj.choices?.[0]?.finish_reason || finishReason;
+              if (obj.error) streamError = obj.error.message || String(obj.error);
               const delta = obj.choices?.[0]?.delta?.content || obj.choices?.[0]?.text || obj.delta || obj.output_text || '';
               if (delta) { out += delta; emit(delta); }
             } catch (_) {}
@@ -8143,12 +8269,20 @@ export async function initWanbanXiaowu() {
         consume(decoder.decode(value, { stream:true }));
       }
       consume(decoder.decode());
+      if (/^data:/m.test(buf)) consume('\n\n');
       if (!out && buf.trim()) {
         try {
           const obj = JSON.parse(buf.trim());
+          finishReason = obj.choices?.[0]?.finish_reason || finishReason;
+          if (obj.error) streamError = obj.error.message || String(obj.error);
           out = obj.choices?.[0]?.message?.content || obj.choices?.[0]?.text || obj.output_text || '';
           emit(out);
         } catch (_) {}
+      }
+      if (streamError || finishReason === 'length' || finishReason === 'content_filter') {
+        const error = new Error(streamError || (finishReason === 'length' ? '模型输出达到上限，本次内容被截断，请重试' : '模型中止了本次输出，请调整输入后重试'));
+        error.raw = out;
+        throw error;
       }
       if (!out) throw new Error('API流式响应为空');
       return stripJsonFence(out);
@@ -8874,6 +9008,7 @@ export async function initWanbanXiaowu() {
     function save() {
       if (!dead) saveProgress('jump', { score, platforms, player, seen, details });
     }
+    save = registerLegacyGameSave('jump', save);
     function pointerDown(e) {
       if (dead || gamePaused || flight || transition || charging) return;
       e.preventDefault();
@@ -9537,8 +9672,9 @@ export async function initWanbanXiaowu() {
     const genBtn = qs('#wb-generate-lines'); if (genBtn) genBtn.onclick = () => openSingleGenerateChoice(id);
     updateLineGenerationStatusUI();
     if (!needsFirstMoverChoice(id) && !['linklink','blackjack'].includes(id) && DEFAULT_LINES[id] && DEFAULT_LINES[id].start) speak(id, 'start');
-    if (id === 'linklink' || id === 'blackjack') setTimeout(() => { const saved = gameProgress(id); if (currentGame === id && !gameStarted && !(saved && hasPlayableProgress(id, saved))) startCurrentGame(id); }, 30);
-    setTimeout(() => { const saved = gameProgress(id); if (currentGame === id && saved && hasPlayableProgress(id, saved) && !gameStarted) showProgressChoice(id, saved); }, 60);
+    const startCover = qs('#wb-start-cover-btn');
+    if (id === 'linklink' || id === 'blackjack') setTimeout(() => { const saved = gameProgress(id); if (!qs('.wb-modal-mask') && startCover?.isConnected && startCover.style.display !== 'none' && currentGame === id && !gameStarted && !(saved && hasPlayableProgress(id, saved))) startCurrentGame(id); }, 30);
+    setTimeout(() => { const saved = gameProgress(id); if (!qs('.wb-modal-mask') && startCover?.isConnected && startCover.style.display !== 'none' && currentGame === id && saved && hasPlayableProgress(id, saved) && !gameStarted) showProgressChoice(id, saved); }, 60);
   }
 
   function startCurrentGame(id, savedState, options) {
@@ -9562,7 +9698,7 @@ export async function initWanbanXiaowu() {
     if (!resumeState) clearProgress(id);
     currentRoundRoleContext = resumeState?.roleContext
       ? isolatedRole(resumeState.roleContext) : isolatedRole(rolePromptConfig(activeGameRoleName(id)));
-    currentRoundProgressRecordId = String(resumeState?.progressRecordId || '');
+    currentRoundProgressRecordId = String(resumeState?.progressRecordId || ('rec_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
     setCurrentLinePreset(id, currentRoundRoleContext.charName);
     gameStarted = true;
     renderLinePresetSelect(id);
@@ -10008,6 +10144,13 @@ function showGameRecords(game, page) {
 	    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">' + esc(title || '游戏结束') + '</div><div style="margin-bottom:14px;line-height:1.8;"><div>游戏：' + esc(g.name) + '</div><div>' + esc(displayCharTextForGame(scoreText || '本局分数：0' + g.unit, game)) + '</div><div>' + esc(high) + '</div><div>陪伴者：' + esc(displayCharNameForGame(game)) + '</div></div><div class="wb-actions"><button class="wb-btn primary" id="wb-next-round">开启下一把</button>' + logAction + '<button class="wb-btn" id="wb-over-close">留在本局</button></div></div>';
     appendModalMask(mask);
     const allowDrawTheater = !(outcome === 'draw' && ['gomoku','oldmaid','ludo'].includes(game));
+    const saveStatus = doc.createElement('div');
+    saveStatus.className = 'wb-api-status';
+    saveStatus.innerHTML = '<div id="wb-record-save-status" role="status"></div><div class="wb-actions"><button class="wb-btn" id="wb-record-save-retry">重试保存记录</button><button class="wb-btn" id="wb-record-save-backup">导出备份</button></div>';
+    qs('.wb-modal', mask).appendChild(saveStatus);
+    qs('#wb-record-save-retry', mask).onclick = () => { if (flushRecordsSave()) toast('游戏记录已保存'); };
+    qs('#wb-record-save-backup', mask).onclick = exportAllData;
+    refreshRecordSaveStatus();
     const shouldShowTheater = !!(settings().companion && settings().theaterEnabled && allowDrawTheater && (special || Math.random() < 0.6));
     if (!shouldShowTheater) {
       const reason = settings().companion && settings().theaterEnabled
@@ -10423,6 +10566,7 @@ function showGameRecords(game, page) {
     function scoreClass(v){ if(v.bust) return 'bust'; if(v.total===21) return 'gold'; if(v.total>=18) return 'good'; return ''; }
     function cardHTML(c, hidden){ if(hidden) return '<div class="wb-bj-card back"></div>'; const red=c.s==='♥'||c.s==='♦'; return '<div class="wb-bj-card '+(red?'red':'')+'"><div class="corner"><span>'+c.r+'</span><span>'+c.s+'</span></div><div class="pip">'+c.s+'</div></div>'; }
     function save(force){ if(!over) saveProgress('blackjack', Object.assign({}, st, { peek:false, lastDraw:null }), force ? { immediate:true } : undefined); }
+    save = registerLegacyGameSave('blackjack', save);
     function draw(){ const target=st.target; const root=qs('.wb-bj',box); if(root) root.classList.toggle('show-points',!!st.showPoints); const toggle=qs('#bj-point-toggle',box); if(toggle){ toggle.textContent=st.showPoints?'隐藏点数':'显示点数'; toggle.classList.toggle('active',!!st.showPoints); } qs('#bj-level').textContent='第'+st.level+'关'; qs('#bj-target').textContent='目标 '+target; qs('#bj-total').textContent='总分 '+String(st.total).replace(/\B(?=(\d{3})+(?!\d))/g,','); qs('#bj-personality').textContent=st.level>=8?'认真起来了':(st.level>=3?st.personality:''); qs('#bj-char-score').textContent=st.charScore+' / '+target; qs('#bj-user-score').textContent=st.userScore+' / '+target; qs('#bj-char-fill').style.width=Math.min(100,st.charScore/target*100)+'%'; qs('#bj-user-fill').style.width=Math.min(100,st.userScore/target*100)+'%'; qs('#bj-user-streak').textContent=st.userStreak>=2?'🔥 ×'+st.userStreak:''; qs('#bj-char-streak').textContent=st.charStreak>=2?'🔥 ×'+st.charStreak:''; const reveal=st.phase==='char'||st.phase==='settle'||st.peek||st.charDone; qs('#bj-char-hand').innerHTML=st.char.map((c,i)=>cardHTML(c,i===1&&!reveal)).join(''); qs('#bj-user-hand').innerHTML=st.user.map(c=>cardHTML(c,false)).join(''); const uv=handValue(st.user), cv=handValue(st.char); const up=qs('#bj-user-points'), cp=qs('#bj-char-points'); up.textContent=uv.bust?'爆牌 '+uv.total:(uv.total===21?'21!':uv.total); up.className='wb-bj-points '+scoreClass(uv); cp.textContent=reveal?(cv.bust?'爆牌 '+cv.total:(cv.total===21?'21!':charName+' · '+cv.total)):(st.char[0]?'可见：'+handValue([st.char[0]]).total:'?'); cp.className='wb-bj-points '+(reveal?scoreClass(cv):''); const playerOn=st.phase==='player'&&!busy&&!over; qs('#bj-hit').disabled=!playerOn; qs('#bj-stand').disabled=!playerOn; [['hint',2],['peek',1],['undo',1],['protect',st.level>=3?1:0]].forEach(([k])=>{ const btn=qs('[data-tool="'+k+'"]',box); if(btn) btn.disabled=busy||over||(st.tools?.[k]||0)<=0||(k!=='undo'&&st.phase!=='player')||(k==='undo'&&!st.lastDraw)||(k==='protect'&&st.protectReady); const badge=qs('#bj-'+k+'-left'); if(badge) badge.textContent=st.tools?.[k]||0; }); const p=qs('[data-tool="protect"]',box); if(p) p.classList.toggle('ready',!!st.protectReady); if(!busy) save(); }
     function setStatus(t){ const el=qs('#bj-status'); if(el) el.textContent=t; }
     function toastMid(t){ const el=getHostDocument().createElement('div'); el.className='wb-bj-float'; el.textContent=t; qs('.wb-bj-table',box).appendChild(el); setTimeout(()=>el.remove(),1350); }
@@ -10523,6 +10667,7 @@ function showGameRecords(game, page) {
     function updateBest(){ const key=SCRIPT_ID + '_linklinkBest_v1', old=safeObject(loadJSON(key,{})); saveJSON(key,{ score:Math.max(Number(old.score||0),st.totalScore||0), level:Math.max(Number(old.level||0),st.level||1), maxCombo:Math.max(Number(old.maxCombo||0),st.maxCombo||0) }); }
     function newState(){ return { level:1, totalScore:0, levelScore:0, combo:0, maxCombo:0, lastSuccessAt:0, tools:{hint:2,shuffle:1,freeze:1,magic:0}, board:[], details:detailsBase(), used:{hint:0,shuffle:0,freeze:0,magic:0}, pairsCleared:0, mode:'none', startedAt:Date.now(), timeLeft:90, reviveLeft:5 }; }
     function save(force){ if(!over && st && pendingRemovals===0 && !busy) saveProgress('linklink', Object.assign({}, st, { selected:null }), force ? { immediate:true } : undefined); }
+    save = registerLegacyGameSave('linklink', save);
     const comboTimeBonusFor = combo => (combo >= 3 && combo % 3 === 0 ? 2 : 0);
     function stonePositions(rows, cols, n){
       if(!n) return new Set();
@@ -10667,6 +10812,7 @@ function showGameRecords(game, page) {
     speak('turkey','start'); draw(); save(); setTimeout(draw,50);
     qsa('.wb-turkey-tool',box).forEach(b=>b.onclick=()=>chooseTool(b.dataset.tool));
     function save(){ if(!over) saveProgress('turkey', Object.assign({}, st, { selectedTool:'' })); }
+    save = registerLegacyGameSave('turkey', save);
     function grid(ignore){ const g=Array.from({length:H},()=>Array(W).fill(null)); st.blocks.forEach(b=>{ if(b.id===ignore) return; for(let c=b.col;c<b.col+b.len;c++) if(b.row>=0&&b.row<H&&c>=0&&c<W) g[b.row][c]=b; }); return g; }
     function highestRowFromBlocks(bs){ return bs.length?Math.min(...bs.map(b=>b.row)):H; }
     function highest(){ return highestRowFromBlocks(st.blocks); }
@@ -10762,6 +10908,7 @@ function showGameRecords(game, page) {
     getHostDocument().addEventListener('keydown', spiderKeydown);
     function spiderKeydown(e){ if(currentGame==='spider' && e.key === 'Escape') clearSelection(); }
     function save(){ if(!over) saveProgress('spider', Object.assign({}, st, { selected:null })); }
+    save = registerLegacyGameSave('spider', save);
     function snapshot(){ return JSON.parse(JSON.stringify(Object.assign({}, st, { selected:null }))); }
     function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length > 80) undoStack.shift(); }
     function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ mode:choice.id, hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)); }
@@ -11142,6 +11289,7 @@ function showGameRecords(game, page) {
     }
     function blocked() { return pieces.filter(p => p && !p.used).some(p => !pieceFits(p)); }
     function save() { saveProgress('game1010', { grid, pieces, score, regen, hammers, details, seen }); }
+    save = registerLegacyGameSave('game1010', save);
     function addScore(add) {
       if (!add) return;
       score += add; details.score = score; setScore('game1010', score);
@@ -11413,6 +11561,7 @@ function showGameRecords(game, page) {
       }
     }
     function save() { saveProgress('paopao', { bubbles, falling, score, shots, pushes, shotsSincePush, bombs, current, next, armedBomb, seen, details }); }
+    save = registerLegacyGameSave('paopao', save);
     function updateScore(add) {
       if (!add) return;
       score += add; setScore('paopao', score);
@@ -11663,6 +11812,7 @@ function showGameRecords(game, page) {
     function validFood(p){ return p && p.x >= 2 && p.x < n - 2 && p.y >= 2 && p.y < n - 2 && !snake.some(s=>s.x===p.x&&s.y===p.y); }
     function randFood(){ const spots=[]; for(let y=2;y<n-2;y++) for(let x=2;x<n-2;x++) if(!snake.some(s=>s.x===x&&s.y===y)) spots.push({x,y}); return spots.length ? spots[Math.floor(Math.random()*spots.length)] : {x:10,y:10}; }
 	    function save(){ if (!dead) saveProgress('snake', { snake, dir, next, food, score, turnCount, lastTurnSpeakAt, controlsHidden: controlMode !== 'keys', controlMode, details:snakeStats }); }
+    save = registerLegacyGameSave('snake', save);
     function setSnakeDir(name){
       const m={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}}[name];
       if(!m || (m.x === -dir.x && m.y === -dir.y) || (m.x === next.x && m.y === next.y)) return;
@@ -11762,6 +11912,7 @@ function showGameRecords(game, page) {
     const modeBtn = qs('#wb-2048-mode', box);
     if(modeBtn) modeBtn.onclick = () => { controlMode = nextControlMode(controlMode, ['swipe','tap']); draw(); save(); };
     function save(){ saveProgress('game2048', Object.assign({ board, score, seen, details, undoLeft, clearLeft, undoStack, controlMode }, choiceSavePatch('game2048', choice))); }
+    save = registerLegacyGameSave('game2048', save);
     function add(){ const empt=board.map((v,i)=>v?null:i).filter(v=>v!==null); if(empt.length) board[empt[Math.floor(Math.random()*empt.length)]] = Math.random()<.9?2:4; }
     function rows(dir){ const r=[]; for(let y=0;y<N;y++) r.push(Array.from({length:N},(_,x)=>y*N+x)); if(dir==='right') r.forEach(a=>a.reverse()); if(dir==='up'||dir==='down'){ r.length=0; for(let x=0;x<N;x++) r.push(Array.from({length:N},(_,y)=>y*N+x)); if(dir==='down') r.forEach(a=>a.reverse()); } return r; }
     function move(dir){ if (gamePaused) return; clearMode=false; const old=board.join(','), before=snapshot(), merged=[]; rows(dir).forEach(idx=>{ let vals=idx.map(i=>board[i]).filter(Boolean); for(let i=0;i<vals.length-1;i++) if(vals[i]===vals[i+1]){ vals[i]*=2; score+=vals[i]; merged.push(vals[i]); details.mergeCounts[vals[i]] = (details.mergeCounts[vals[i]] || 0) + 1; vals.splice(i+1,1); } while(vals.length<N) vals.push(0); idx.forEach((p,i)=>board[p]=vals[i]); }); if(board.join(',')!==old){ undoStack.push(before); if(undoStack.length > 3) undoStack.shift(); if(!seen.move){ seen.move=1; speak('game2048','move'); } const hit=merged.filter(v=>[64,128,256,512,1024,2048,4096,8192,16384,32768,65536].includes(v)).sort((a,b)=>b-a)[0]; if(hit > 2048) speak('game2048','tile_big'); else if(hit && DEFAULT_LINES.game2048['tile_'+hit]) speak('game2048','tile_'+hit); add(); const filled=board.filter(Boolean).length, crowded = Math.max(0, TOTAL - (N === 6 ? 5 : 1)); if(details.wasCrowded && filled<=Math.max(11, TOTAL - N - 1)){ details.crisisResolves++; details.wasCrowded=false; } if(filled>=crowded) details.wasCrowded=true; if(!seen.stuck && filled>=Math.max(13, TOTAL - N)){ seen.stuck=1; speak('game2048','stuck'); } if(!seen.gameover && !board.includes(0)){ seen.gameover=1; speak('game2048','gameover'); } draw(); save(); } if(!board.includes(0) && !canMove()) { if(!seen.gameover){ seen.gameover=1; speak('game2048','gameover'); save(); } details.finalCounts = board.reduce((m,v)=>{ if(v) m[v]=(m[v]||0)+1; return m; }, {}); const finalScore = scoreWithChoice('game2048', score, choice); showGameOver('game2048', '游戏结束', '本局分数：' + finalScore + '分（' + choice.title + '）', null, { maxTile: Math.max(...board), rawScore:score, difficulty:choice.title, details }); } }
@@ -11786,6 +11937,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('tictactoe', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ saveProgress('tictactoe', { b, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }); }
+    save = registerLegacyGameSave('tictactoe', save);
     function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); speak('tictactoe','char_next'); return true; } return false; }
     function ai(skipLine){ const i = bestTic(b,'O') ?? bestTic(b,'X') ?? [4,0,2,6,8,1,3,5,7].find(i=>!b[i]); if(i!=null){ const block = bestTic(b,'X')===i; if(block) details.charBlocks[2]++; let spoke = !!skipLine; if(!spoke && block && Math.random()<.5){ spoke = true; speak('tictactoe','ai_block'); } b[i]='O'; details.rounds=b.filter(Boolean).length; if(!spoke) maybeCharNext(); } }
     function done(){ const w=winner3(b); if(w||b.every(Boolean)){ over=true; const rounds=b.filter(Boolean).length, meta={ lastMoveWin:rounds>=8, details:Object.assign(details,{rounds}) }; if(w==='X'){ { const curScore = scores().tictactoe; setScore('tictactoe', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('tictactoe','user_win'); showGameOver('tictactoe', '你赢了', '本局分数：1胜，回合数：'+rounds, 'user_win', meta); } else if(w==='O') { speak('tictactoe','user_lose'); showGameOver('tictactoe', '游戏结束', '本局分数：0胜（失败），回合数：'+rounds, 'ta_win', meta); } else { speak('tictactoe','draw'); showGameOver('tictactoe', '平局', '本局分数：0胜（平局），回合数：'+rounds, 'draw', meta); } return true; } return false; }
@@ -11812,6 +11964,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('gomoku', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; lastCharMove=Number.isInteger(s.lastCharMove) ? s.lastCharMove : -1; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ saveProgress('gomoku', Object.assign({ b, lastCharMove, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }, choiceSavePatch('gomoku', choiceForState('gomoku', state)))); }
+    save = registerLegacyGameSave('gomoku', save);
     function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('gomoku','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function done(m){ const rounds=b.filter(Boolean).length; details.rounds=rounds; details.gomokuMode='normal'; const meta={gomokuMode:'normal', details}; if(winG(b,n,m)){ over=true; if(m==='B'){ { const curScore = scores().gomoku; setScore('gomoku', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('gomoku','user_win'); showGameOver('gomoku', '你赢了', '回合数：' + rounds, 'user_win', meta); } else { speak('gomoku','user_lose'); showGameOver('gomoku', '游戏结束', '回合数：' + rounds + '（失败）', 'ta_win', meta); } return true; } if(b.every(Boolean)){ over=true; speak('gomoku','draw'); showGameOver('gomoku', '平局', '回合数：' + rounds + '（平局）', 'draw', meta); return true; } return false; }
 	    function draw(){ const turnEl=qs('#wb-gomoku-turn', box); if(turnEl) turnEl.textContent='你'; const roleEl=qs('#wb-gomoku-stock', box); if(roleEl) roleEl.innerHTML='你 黑<br>' + esc(displayCharNameForGame('gomoku') || 'TA') + ' 白'; qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (i===lastCharMove && b[i]==='W' ? ' char-last' : ''); }); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over); }
@@ -11846,6 +11999,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||actionBusy||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('gomoku', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; turn=s.turn; stock=s.stock; captured=s.captured; rounds=s.rounds; pendingEat=s.pendingEat; lastCharMove=Number.isInteger(s.lastCharMove) ? s.lastCharMove : -1; details=s.details; }); highlightLine=[]; highlightEat=-1; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ if(!over) saveProgress('gomoku', Object.assign({ b, turn, stock, captured, rounds, pendingEat, lastCharMove, details, cheatLeft, cheatAttempted, undoStack }, choiceSavePatch('gomoku', choice))); }
+    save = registerLegacyGameSave('gomoku', save);
     function sideMark(side){ return side === 'user' ? 'B' : 'W'; }
     function other(side){ return side === 'user' ? 'ta' : 'user'; }
     function sideName(side){ return side === 'user' ? '你' : displayCharNameForGame('gomoku'); }
@@ -12027,6 +12181,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||busy||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('territory', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ h=s.h; v=s.v; owner=s.owner; turn=s.turn; userScore=s.userScore; taScore=s.taScore; noSafeSpoken=s.noSafeSpoken; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; chain=s.chain||0; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ if(!over) saveProgress('territory', { h, v, owner, turn, userScore, taScore, noSafeSpoken, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }); }
+    save = registerLegacyGameSave('territory', save);
     function shouldCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function sideCount(x,y){ return (h[y][x]?1:0) + (h[y+1][x]?1:0) + (v[y][x]?1:0) + (v[y][x+1]?1:0); }
     function cellsFor(kind,r,c){ const arr=[]; if(kind==='h'){ if(r>0) arr.push([c,r-1]); if(r<N) arr.push([c,r]); } else { if(c>0) arr.push([c-1,r]); if(c<N) arr.push([c,r]); } return arr; }
@@ -12071,6 +12226,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||busy||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('oldmaid', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ userHand=s.userHand; taHand=s.taHand; turn=s.turn; phase=s.phase; pending=s.pending; log.length=0; (s.log||[]).forEach(x=>log.push(x)); userTurns=s.userTurns; taTurns=s.taTurns; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ if(!over) saveProgress('oldmaid', { userHand, taHand, turn, phase, pending, log, userTurns, taTurns, details, cheatLeft, cheatAttempted, undoStack }); }
+    save = registerLegacyGameSave('oldmaid', save);
     markJoker();
     function addLog(text){ log.unshift(text); if(log.length>6) log.pop(); }
     function drawCard(from, to, i){ const card = from.splice(i, 1)[0]; to.push(card); return card; }
@@ -12105,6 +12261,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||busy||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('reversi', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ board=s.board; turn=s.turn; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; seen=s.seen; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ if(!over) saveProgress('reversi',{board,turn,taMoves,nextCharLineAt,seen,details,cheatLeft,cheatAttempted,undoStack}); }
+    save = registerLegacyGameSave('reversi', save);
     function count(side){ return board.filter(x=>x===side).length; }
     function shouldCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function place(side,i,skipLine){
@@ -12190,6 +12347,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||busy||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('bombnumber', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ low=s.low; high=s.high; turn=s.turn; log=s.log; luckyShrink=s.luckyShrink; userDoomed=s.userDoomed; charDoomed=s.charDoomed; turnCount=s.turnCount; details=s.details; }); chosen=null; exploding=0; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ if(!over) saveProgress('bombnumber',{bomb,low,high,turn,log,luckyShrink,userDoomed,charDoomed,turnCount,details,cheatLeft,cheatAttempted,undoStack}); }
+    save = registerLegacyGameSave('bombnumber', save);
     function pick(side,n){ if(over||busy||n<low||n>high) return; if(side==='user'){ pushUndo(); markFirstMoverUserAction(); } const before=choices().length; busy=true; turnCount++; chosen={side,n}; log.unshift((side==='user'?'你':role)+'选择了 '+n); draw(); setTimeout(()=>resolvePick(side,n,before),680); }
     function resolvePick(side,n,before){
       if(over) return;
@@ -12236,6 +12394,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||dropping||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('connect4d', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ grid=s.grid; turn=s.turn; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); aimCol=-1; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ if(!over) saveProgress('connect4d',{grid,turn,taMoves,nextCharLineAt,details,cheatLeft,cheatAttempted,undoStack}); }
+    save = registerLegacyGameSave('connect4d', save);
     function shouldCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function winner(side){ for(let y=0;y<S;y++) for(let x=0;x<S;x++) if(grid[id(x,y)]===side){ for(const d of dirs){ let ok=true; for(let k=1;k<4;k++){ const nx=x+d[0]*k,ny=y+d[1]*k; if(!inside(nx,ny)||grid[id(nx,ny)]!==side){ ok=false; break; } } if(ok) return true; } } return false; }
     function place(side,x,aimPct,skipLine){ const y=landingRow(x); if(y<0||over||gamePaused||dropping) return; if(side==='user'){ pushUndo(); markFirstMoverUserAction(); } const br=blockRank(grid,S,id(x,y),side==='user'?'ta':'user',4); if(br>=2){ const bucket=side==='user'?details.userBlocks:details.charBlocks; bucket[br]=(bucket[br]||0)+1; } aimCol=-1; dropping={x,y,side,t:0,aimX:aimPct}; const charNext = side === 'ta' ? shouldCharNext() : false; animateDrop(()=>{ grid[id(x,y)]=side; dropping=null; const rounds=grid.filter(Boolean).length; details.rounds=rounds; if(winner(side)){ over=true; clearProgress('connect4d'); const res=side==='user'?'user_win':'ta_win'; if(res==='user_win'){ const cur=scores().connect4d; setScore('connect4d',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('connect4d','user_win'); } else { addTaWin('connect4d'); speak('connect4d','user_lose'); } showGameOver('connect4d',res==='user_win'?'你赢了':'游戏结束','本局：'+(res==='user_win'?'你连成四子':role+'连成四子')+'，回合数：'+rounds,res,{details}); return; } if(!legal().length){ over=true; clearProgress('connect4d'); speak('connect4d','draw'); showGameOver('connect4d','平局','棋盘填满，回合数：'+rounds,'draw',{details}); return; } if(side==='ta' && charNext && !skipLine) speak('connect4d','char_next'); turn=side==='user'?'ta':'user'; draw(); save(); if(turn==='ta') setTimeout(ai,700); }); }
@@ -12479,6 +12638,7 @@ function showGameRecords(game, page) {
 	      if(turn === 'blue') setTimeout(ai, 650);
 	    }
 	    function save(){ if(!over) saveProgress('draughts', Object.assign({ red, blue, turn, selected, masterActive, masterPath, details, cheatLeft, cheatAttempted, undoStack, aiRecentMoves }, choiceSavePatch('draughts', choice))); }
+    save = registerLegacyGameSave('draughts', save);
     function selectRed(idx){
       if(gamePaused||over||busy||turn!=='red') return;
       if(masterActive){
@@ -12769,14 +12929,24 @@ function showGameRecords(game, page) {
     let cards = Array.isArray(state?.cards) && state.cards.length === 16 && /^memory-\d+$/.test(String(state.cards[0]?.v || '')) ? state.cards : shuffleArray(icons.concat(icons).map((v,i)=>({ v, id:i, open:false, done:false })));
     let open = Array.isArray(state?.open) ? state.open : [], moves = state?.moves || 0, matched = state?.matched || 0, combo = state?.combo || 0, busy = false, over = false, seen = state?.seen || {};
     let details = state?.details || { flipCounts:{}, firstTryPairs:0, threePlusTryPairs:0, maxFlipsForOneCard:0 };
+    if (open.length >= 2) {
+      cards.forEach(card => { if (!card.done) card.open = false; });
+      open = [];
+    }
     box.innerHTML = '<div class="wb-guess-panel wb-memory-panel"><div class="wb-guess-row"><span class="wb-pill" id="wb-memory-moves">步数：0</span><span class="wb-pill" id="wb-memory-pairs">配对：0/8</span></div><div class="wb-memory" id="wb-memory-board"></div></div>';
     draw(); save();
     function score(){ return Math.max(0, 1200 - moves * 25 + matched * 80); }
-    function save(){ if(!over) saveProgress('memory', { cards, open, moves, matched, combo, seen, details }); }
+    function save(){
+      if (!over) saveProgress('memory', {
+        cards:busy ? cards.map(card => card.done ? card : Object.assign({}, card, { open:false })) : cards,
+        open:busy ? [] : open, moves, matched, combo, seen, details
+      });
+    }
+    save = registerLegacyGameSave('memory', save);
     function memoryCardFace(c){ return '<img class="wb-memory-img" src="' + esc(GAME_ICON_BASE + c.v + '.jpg') + '" alt="">'; }
     function memoryCardHTML(c,i){ return '<button class="wb-memory-card' + (c.open?' open':'') + (c.done?' done':'') + '" data-i="'+i+'"><span class="wb-memory-inner"><span class="wb-memory-face wb-memory-back"></span><span class="wb-memory-face wb-memory-front">' + memoryCardFace(c) + '</span></span></button>'; }
     function draw(){ const board = qs('#wb-memory-board'); if (!board) return; qs('#wb-memory-moves').textContent = '步数：' + moves; qs('#wb-memory-pairs').textContent = '配对：' + matched + '/8'; setScore('memory', score()); board.innerHTML = cards.map(memoryCardHTML).join(''); qsa('.wb-memory-card', board).forEach(btn => btn.onclick = () => flip(+btn.dataset.i)); }
-    function flip(i){ if(gamePaused||busy||over||cards[i].done||cards[i].open||open.length>=2) return; if(moves===0&&open.length===0) speak('memory','first_flip'); details.flipCounts[i] = (details.flipCounts[i] || 0) + 1; details.maxFlipsForOneCard = Math.max(details.maxFlipsForOneCard || 0, details.flipCounts[i]); cards[i].open = true; open.push(i); draw(); if(open.length===2){ moves++; const a=cards[open[0]], b=cards[open[1]]; if(a.v===b.v){ const pairFlips = Math.max(details.flipCounts[open[0]] || 0, details.flipCounts[open[1]] || 0); if(pairFlips <= 1) details.firstTryPairs++; if(pairFlips >= 3) details.threePlusTryPairs++; a.done=b.done=true; matched++; combo++; open=[]; speak('memory', combo>=2?'combo':'match'); if(matched===4) speak('memory','half'); if(matched===7&&!seen.gameover){ seen.gameover=1; speak('memory','gameover'); } if(matched===8){ over=true; clearProgress('memory'); setScore('memory', score()); saveMemoryBestMoves(moves); if(!seen.gameover) speak('memory','gameover'); showGameOver('memory','配对完成','本局分数：'+score()+'分', null, { details }); return; } draw(); save(); } else { combo=0; speak('memory','miss'); busy=true; setTimeout(()=>{ cards[open[0]].open=false; cards[open[1]].open=false; open=[]; busy=false; draw(); save(); }, 650); } } else save(); }
+    function flip(i){ if(gamePaused||busy||over||cards[i].done||cards[i].open||open.length>=2) return; if(moves===0&&open.length===0) speak('memory','first_flip'); details.flipCounts[i] = (details.flipCounts[i] || 0) + 1; details.maxFlipsForOneCard = Math.max(details.maxFlipsForOneCard || 0, details.flipCounts[i]); cards[i].open = true; open.push(i); draw(); if(open.length===2){ moves++; const a=cards[open[0]], b=cards[open[1]]; if(a.v===b.v){ const pairFlips = Math.max(details.flipCounts[open[0]] || 0, details.flipCounts[open[1]] || 0); if(pairFlips <= 1) details.firstTryPairs++; if(pairFlips >= 3) details.threePlusTryPairs++; a.done=b.done=true; matched++; combo++; open=[]; speak('memory', combo>=2?'combo':'match'); if(matched===4) speak('memory','half'); if(matched===7&&!seen.gameover){ seen.gameover=1; speak('memory','gameover'); } if(matched===8){ over=true; clearProgress('memory'); setScore('memory', score()); saveMemoryBestMoves(moves); if(!seen.gameover) speak('memory','gameover'); showGameOver('memory','配对完成','本局分数：'+score()+'分', null, { details }); return; } draw(); save(); } else { combo=0; speak('memory','miss'); busy=true; setTimeout(()=>{ if (!save.isActive()) return; cards[open[0]].open=false; cards[open[1]].open=false; open=[]; busy=false; draw(); save(); }, 650); } } else save(); }
   }
 
   function startPlank(state) {
@@ -12796,6 +12966,7 @@ function showGameRecords(game, page) {
     function rand(a,b){ return Math.floor(a + Math.random() * (b - a)); }
     function loadPlankHero(src){ const img = new Image(); img.onload = draw; img.src = src; return img; }
     function save(){ if(!over) saveProgress('plank', { score, bridge: phase === 'ready' || charging ? bridge : 0, gap, rightW, nextGap, nextW, seen, perfectStreak, bestPerfectStreak, details }); }
+    save = registerLegacyGameSave('plank', save);
     function startCharge(){ if(gamePaused||over||charging||phase!=='ready') return; charging=true; bridge=0; }
     function endCharge(){ if(!charging||gamePaused||over) return; charging=false; if(!seen.gameover && (bridge < gap || bridge > gap + rightW)){ seen.gameover=1; speak('plank','gameover'); } phase='falling'; angle=0; }
     function nextPillar(){ score++; setScore('plank', score); if(score===10) speak('plank','score_10'); if(score===20) speak('plank','score_20'); if(score===30) speak('plank','score_30'); if(score===40) speak('plank','score_40'); if(score>=50&&score%10===0) speak('plank','score_50_plus'); if(Math.abs(bridge-gap-rightW/2)<10){ details.perfects++; perfectStreak++; bestPerfectStreak=Math.max(bestPerfectStreak, perfectStreak); speak('plank','perfect'); if(perfectStreak>=3 && !seen.perfectStreak){ seen.perfectStreak=1; speak('plank','perfect_streak'); } } else perfectStreak=0; gap=nextGap; rightW=nextW; nextGap=rand(80,190); nextW=rand(55,95); bridge=0; angle=0; walk=0; drop=0; scroll=0; phase='ready'; save(); }
@@ -13166,6 +13337,7 @@ function showGameRecords(game, page) {
     box.innerHTML = '<div class="wb-uyangle-panel ' + (choice.compact ? 'wb-uyangle-hard' : '') + '"><div class="wb-uyangle-top"><span class="wb-pill" id="wb-uyangle-left"></span><span class="wb-pill" id="wb-uyangle-status"></span></div><div class="wb-uyangle-progress"><div class="wb-uyangle-progress-fill" id="wb-uyangle-progress-fill"></div><span id="wb-uyangle-progress-text"></span></div><div class="wb-uyangle-board" id="wb-uyangle-board"></div><div class="wb-uyangle-hold" id="wb-uyangle-hold"></div><div class="wb-uyangle-tray-wrap"><div class="wb-uyangle-tray" id="wb-uyangle-tray"></div></div><div class="wb-actions wb-uyangle-actions"><button type="button" class="wb-btn" id="wb-uyangle-moveout">移出 <span class="wb-sudoku-badge" id="wb-uyangle-move-badge">3</span></button><button type="button" class="wb-btn primary" id="wb-uyangle-shuffle">打乱 <span class="wb-sudoku-badge" id="wb-uyangle-shuffle-badge">0</span></button></div></div>';
     setScore('uyangle', 0); draw(); save();
     function save(){ if(!over) saveProgress('uyangle', Object.assign({ tiles, tray, hold, shuffles, moveouts, consecutiveShuffles, seen, details }, choiceSavePatch('uyangle', choice))); }
+    save = registerLegacyGameSave('uyangle', save);
     function activeTiles(){ return tiles.filter(t => !t.gone); }
     function leftCount(){ return activeTiles().length; }
     function layerOffset(layer){
@@ -13466,6 +13638,7 @@ function showGameRecords(game, page) {
       if(over) return;
       saveProgress('popstar', Object.assign({ board, level, score, movesLeft, shuffleLeft, singleLeft, toolMode, seen, targetMetThisLevel, nextId, reviveLeft, details }, choiceSavePatch('popstar', choice)));
     }
+    save = registerLegacyGameSave('popstar', save);
     function makeCell(color){ return { id:'ps' + (nextId++), color }; }
     function makeBoard(){
       const out = Array.from({ length:N }, () => Array.from({ length:N }, () => makeCell(COLORS[Math.floor(Math.random() * COLORS.length)].id)));
@@ -13856,6 +14029,7 @@ function showGameRecords(game, page) {
     draw(); save();
 
     function save(){ if(!over) saveProgress('minesweeper', Object.assign({ cells, mode, started, clickCount, lastDecisionAt, seen, details }, choiceSavePatch('minesweeper', choice))); }
+    save = registerLegacyGameSave('minesweeper', save);
     function countFlags(){ return cells.filter(c => c.mark === 1).length; }
     function openedSafe(){ return cells.filter(c => c.open && !c.mine).length; }
     function correctFlags(){ return cells.filter(c => c.mark === 1 && c.mine).length; }
@@ -14043,6 +14217,7 @@ function showGameRecords(game, page) {
     function save() {
       if (!over) saveProgress('shuerte', Object.assign({ nums, next, score, combo, maxCombo, started, startAt, elapsedBefore:elapsedMs(), lastCorrectAt, feedback, tools, details }, choiceSavePatch('shuerte', choice)));
     }
+    save = registerLegacyGameSave('shuerte', save);
     function tick() {
       const el = qs('#wb-shuerte-time', box);
       if (el) el.textContent = '用时：' + shuerteTimeText(elapsedMs());
@@ -14379,6 +14554,7 @@ function showGameRecords(game, page) {
     }
     drawUI(); draw(); save();
     function save(){ if(!over) saveProgress('screw', Object.assign({ panels, boxQueue, boxes, boxIndex, maxBoxes, addBoxUses, tray, seen, details }, choiceSavePatch('screw', choice))); }
+    save = registerLegacyGameSave('screw', save);
     function rotatePoint(x,y,a){ const ca=Math.cos(a||0), sa=Math.sin(a||0); return { x:x*ca-y*sa, y:x*sa+y*ca }; }
     function localToWorld(p, lx, ly){ const r=rotatePoint(lx, ly, p.a || 0); return { x:p.x + r.x, y:p.y + r.y }; }
     function worldToLocal(p, x, y){ return rotatePoint(x - p.x, y - p.y, -(p.a || 0)); }
@@ -14788,6 +14964,7 @@ function showGameRecords(game, page) {
     box.innerHTML = '<div class="wb-sudoku-panel"><div class="wb-sudoku-top"><span class="wb-pill" id="wb-sudoku-clues"></span><span class="wb-pill" id="wb-sudoku-hints"></span></div><div id="wb-sudoku-board"></div><div class="wb-actions wb-sudoku-tools"><button type="button" class="wb-btn" id="wb-sudoku-erase">擦除</button><button type="button" class="wb-btn primary" id="wb-sudoku-hint">提示 <span class="wb-sudoku-badge" id="wb-sudoku-hint-badge">0</span></button></div><div class="wb-sudoku-nums">' + Array.from({length:9},(_,i)=>'<button type="button" class="wb-btn" data-n="'+(i+1)+'">'+(i+1)+'</button>').join('') + '</div></div>';
     draw(); save(true);
     function save(force){ if(!over) saveProgress('sudoku', Object.assign({ puzzle, solution, grid, selected, hints, seen, details }, choiceSavePatch('sudoku', choice)), force ? { immediate:true } : undefined); }
+    save = registerLegacyGameSave('sudoku', save);
     function row(i){ return Math.floor(i/9); } function col(i){ return i%9; }
     function completeLine(kind, n){ for(let i=0;i<9;i++){ const idx=kind==='r'?n*9+i:i*9+n; if(grid[idx]!==solution[idx]) return false; } return true; }
     function solutionErrors(){ return grid.reduce((sum, v, i) => sum + (v && v !== solution[i] ? 1 : 0), 0); }
@@ -14887,6 +15064,7 @@ function showGameRecords(game, page) {
     function randNext(){ return Math.floor(Math.random()*3); }
     function clientX(e){ const r=c.getBoundingClientRect(); return Math.max(18, Math.min(W-18, (e.clientX-r.left) * W / r.width)); }
     function save(force){ if(over) return; const now=Date.now(); if(!force && now - lastSaveAt < PROGRESS_SAVE_DELAY) return; lastSaveAt = now; saveProgress('watermelon', { balls: balls.map(b=>({x:b.x,y:b.y,vx:b.vx,vy:b.vy,l:b.l,a:b.a||0,av:b.av||0})), next, score, seen, details }, force ? { immediate:true } : undefined); }
+    save = registerLegacyGameSave('watermelon', save);
     function drop(x){ if(gamePaused||over||dropping) return; aiming=false; aimX=null; const f=fruits[next]; balls.push({x, y:f.r+6, vx:0, vy:0, l:next, a:0, av:0}); next=randNext(); dropping=true; setTimeout(()=>dropping=false,180); if(x < f.r + 12 || x > W - f.r - 12) speak('watermelon','drop_edge'); save(true); }
     function step(){ if(gamePaused||over) return; balls.forEach(b=>{ const f=fruits[b.l]; b.vy+=0.45; b.x+=b.vx; b.y+=b.vy; b.a=(b.a||0)+(b.av||0); b.av=(b.av||0)*0.985; if(b.x<f.r){ b.x=f.r; b.vx=Math.abs(b.vx)*0.58; b.av += b.vx / f.r * 0.08; } if(b.x>W-f.r){ b.x=W-f.r; b.vx=-Math.abs(b.vx)*0.58; b.av += b.vx / f.r * 0.08; } if(b.y>H-f.r){ b.y=H-f.r; b.vy*=-0.38; b.av += b.vx / f.r * 0.16; b.vx*=0.985; b.av*=0.94; if(Math.abs(b.vy)<.45) b.vy=0; } });
       for(let k=0;k<4;k++) collide();
@@ -15231,6 +15409,7 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||diceRolling||busy||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('ludo', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ red=s.red; blue=s.blue; turn=s.turn; dice=s.dice; rolled=s.rolled; redSixStreak=s.redSixStreak; blueSixStreak=s.blueSixStreak; turnCount=s.turnCount; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ if(!over) saveProgress('ludo', { red, blue, turn, dice, rolled, redSixStreak, blueSixStreak, turnCount, details, cheatLeft, cheatAttempted, undoStack }); }
+    save = registerLegacyGameSave('ludo', save);
     function roll(){ return 1 + Math.floor(Math.random()*6); }
     function diceDotsHTML(v){
       const dots = { 1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] }[v] || [];
@@ -15359,6 +15538,7 @@ function showGameRecords(game, page) {
     qs('#wb-num-submit').onclick = submit; qs('#wb-num-guess').onkeydown = e => { if(e.key==='Enter') submit(); };
     qsa('#wb-num-keypad .wb-btn', box).forEach(btn => btn.onclick = () => { const input=qs('#wb-num-guess'); if(!input) return; if(btn.dataset.num){ if(input.value.length<4 && !input.value.includes(btn.dataset.num)) input.value += btn.dataset.num; if(!mobileInput) input.focus(); return; } if(btn.dataset.act==='back') input.value=input.value.slice(0,-1); if(btn.dataset.act==='clear') input.value=''; if(!mobileInput) input.focus(); });
     function save(){ if(!over) saveProgress('guessnumber', { answer, tries, history }); }
+    save = registerLegacyGameSave('guessnumber', save);
     function hintText(guess, nums, pos){ return '数字对 ' + nums + ' 个，位置对 ' + pos + ' 个。'; }
     function submit(){ if(gamePaused||over) return; const input=qs('#wb-num-guess'); const g=(input.value||'').trim(); if(!/^\d{4}$/.test(g) || new Set(g).size!==4){ toast('请输入四位不重复数字'); return; } tries++; let pos=0, nums=0; for(let i=0;i<4;i++){ if(g[i]===answer[i]) pos++; if(answer.includes(g[i])) nums++; } const text=hintText(g, nums, pos); history.unshift({ guess:g, nums, pos, text }); input.value=''; if(pos===4){ over=true; const cur=scores().guessnumber; setScore('guessnumber', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('guessnumber','user_win'); draw(); showGameOver('guessnumber','你猜中了','猜数次数：'+tries+'次', 'user_win', { tries, details:{ guesses:history.slice().reverse().map(x=>({ guess:x.guess, nums:x.nums, pos:x.pos })) } }); return; } if(tries>=6) speak('guessnumber','many_tries'); else speak('guessnumber', pos>=3||nums>=4?'very_close':(pos>=2||nums>=3?'close':(nums===0?'miss':'guess'))); draw(); save(); }
     function draw(){ const h=qs('#wb-num-history'); h.innerHTML = history.length ? history.map(x=>'<div class="wb-guess-item"><b>'+esc(x.guess)+'</b>　'+esc(hintText(x.guess, x.nums, x.pos))+'</div>').join('') : '<div class="wb-muted">还没有猜测记录。</div>'; }
@@ -15403,6 +15583,7 @@ function showGameRecords(game, page) {
 	    if (!state?.roundWord) speakText(round.interactions.start);
 	    qs('#wb-word-submit').onclick=submit; qs('#wb-word-next').onclick=nextClue; qs('#wb-word-reveal').onclick=reveal; qs('#wb-word-input').onkeydown=e=>{ if(e.key==='Enter') submit(); };
 	    function save(){ if(!over) saveProgress('wordguess',{ rounds, roundWord:round.word, clueIndex, guesses, userWins, taWins, completed, revealed, firstClueWin, finalLineSpoken, details }); }
+    save = registerLegacyGameSave('wordguess', save);
 	    function visibleClues(){ return round.clues.slice(0, Math.max(1, Math.min(5, clueIndex+1))); }
 		    function nextClue(){ if(gamePaused||over) return; if(clueIndex < Math.min(5, round.clues.length)-1){ clueIndex++; const inter=round.interactions||{}; const nextLines=Array.isArray(inter.clue)?inter.clue:[]; speakText(nextLines[clueIndex-1] || inter[clueIndex>=3?'clue_late':'clue']); draw(); save(); } else toast('这题已经是最后一条描述了'); }
 	    function finishQuestion(userWon, label){
@@ -15485,6 +15666,7 @@ function showGameRecords(game, page) {
       busy = false; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); if(turn === 'ta') setTimeout(ai, 0);
     }
     function save(){ if(!over) saveProgress('chinesechess', { board, turn, selected:-1, halfmove, taMoves, nextCharLineAt, details, lastMoves, capturedByUser, capturedByTa, cheatLeft, cheatAttempted, undoStack }); }
+    save = registerLegacyGameSave('chinesechess', save);
     function kingsFace(b){ const r=b.findIndex(p=>p==='rK'), k=b.findIndex(p=>p==='bK'); if(r<0||k<0||x(r)!==x(k)) return false; const a=x(r); for(let yy=Math.min(y(r),y(k))+1; yy<Math.max(y(r),y(k)); yy++) if(b[idx(a,yy)]) return false; return true; }
     function add(out,b,from,to){ if(to < 0 || to >= 90) return; const p=b[from], t=b[to]; if(!t || sideOf(t)!==sideOf(p)) out.push({ from, to, capture:t || '' }); }
     function rawMoves(b, side){
@@ -15663,6 +15845,7 @@ function showGameRecords(game, page) {
       if(turn === 'ta') setTimeout(ai, 650);
     }
     function save(){ if(!over) saveProgress('westernchess', { board, turn, selected:-1, moved, history, halfmove, taMoves, nextCharLineAt, details, lastMoves, capturedByUser, capturedByTa, cheatLeft, cheatAttempted, undoStack }); }
+    save = registerLegacyGameSave('westernchess', save);
     function castleKeyForSquare(sq){ return sq === 60 ? 'wK' : sq === 56 ? 'wRa' : sq === 63 ? 'wRh' : sq === 4 ? 'bK' : sq === 0 ? 'bRa' : sq === 7 ? 'bRh' : ''; }
     function applyMoveTo(b, m){
       const p = b[m.from], cap = b[m.to];
@@ -15875,6 +16058,7 @@ function showGameRecords(game, page) {
     function cloneShape(s){ return s.map(r=>r.slice()); }
     function newPiece(){ const s=cloneShape(shapes[Math.floor(Math.random()*shapes.length)]); return {s,x:3,y:0}; }
 	    function save(){ if(!over) saveProgress('tetris', { board, piece, nextPiece, score, seen:tetrisSeen, totalLines, actionLineAt, controlsHidden: controlMode !== 'keys', controlMode, details }); }
+    save = registerLegacyGameSave('tetris', save);
     function markTetris(k){ if(!tetrisSeen[k]){ tetrisSeen[k]=1; speak('tetris',k); } }
     function markTimedTetrisAction(k){ const now=Date.now(); if(now >= (actionLineAt[k] || 0)){ speak('tetris', k); actionLineAt[k]=now + 60000; } }
     getHostDocument().onkeydown=e=>{ if(over || gamePaused) return; let changed=false, handledByTick=false; if(e.key==='ArrowLeft'||e.key==='a') changed=move(-1,0); if(e.key==='ArrowRight'||e.key==='d') changed=move(1,0); if(e.key==='ArrowDown'||e.key==='s') { markTimedTetrisAction('soft_drop'); tick(); changed=true; handledByTick=true; } if(e.key==='ArrowUp'||e.key==='w') { markTimedTetrisAction('rotate'); rot(); changed=true; } if(changed && !handledByTick){ draw(); save(); } };
