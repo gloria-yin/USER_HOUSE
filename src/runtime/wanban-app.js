@@ -1063,7 +1063,7 @@ export async function initWanbanXiaowu() {
     return Math.max(first, (Math.floor(Math.max(0, Number(durationMs || 0)) / step) + 1) * step);
   }
   function petApplyTimedGameGrowth() {
-    if (!petFullIsActive() && (petRuntimeMode === 'full' || !petTrialHasSavedPet())) return;
+    if (!petHasCurrentPet()) return;
     let state = applyPetVisitAndDecay(petTestState());
     if (state.ended) return;
     const today = todayKey();
@@ -2686,7 +2686,7 @@ export async function initWanbanXiaowu() {
     return String(id) + ':' + raw.length + ':' + (hash >>> 0).toString(36);
   }
   function recordPetWalkRpGeneration(messageId, msg, text) {
-    if (!settings().petDesktopEnabled || !String(text || '').trim()) return;
+    if (!petHasCurrentPet() || !settings().petDesktopEnabled || !String(text || '').trim()) return;
     let state = petTestState();
     if (state.stage === 'egg' || state.ended) return;
     const key = hostMessageStableKey(messageId, msg, text);
@@ -2979,9 +2979,11 @@ export async function initWanbanXiaowu() {
     if (petRuntimeMode === 'test' && !caretaker) return null;
     const c = caretaker || petFullActiveCaretaker(data);
     if (!c) return null;
-    return (c.pets || []).find(p => p.id === c.activePetId) || (c.pets || [])[0] || null;
+    if (Object.hasOwn(c, 'activePetId')) return (c.pets || []).find(p => p.id === c.activePetId) || null;
+    return (c.pets || []).at(-1) || null;
   }
   function petFullIsActive() { return !!petFullActivePet(); }
+  function petHasCurrentPet() { return petRuntimeMode === 'test' ? petTrialHasSavedPet() : petFullIsActive(); }
   function withPetFullActive(caretakerId) {
     const data = petFullData();
     if (!data.caretakers.some(c => c.id === caretakerId)) throw new Error('饲养员档案不存在，请重新选择角色');
@@ -2995,6 +2997,16 @@ export async function initWanbanXiaowu() {
     qsa('#wb-pet-hatch-mask, #wb-pet-route-choice, #wb-pet-story-prompt').forEach(mask => mask.remove());
     saveJSON(SCRIPT_ID + '_petLastRoute', 'full');
     if (petCaretakerIsShen(data.caretakers.find(c => c.id === caretakerId))) saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'full');
+    petTestInfoCache = null;
+    petTestInfoLoading = null;
+  }
+  function withPetTrialActive() {
+    saveJSON(SCRIPT_ID + '_petLastRoute', 'test');
+    saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
+    petRuntimeMode = 'test';
+    petFullActiveCaretakerId = '';
+    clearPetTimers();
+    qsa('#wb-pet-hatch-mask, #wb-pet-route-choice, #wb-pet-story-prompt').forEach(mask => mask.remove());
     petTestInfoCache = null;
     petTestInfoLoading = null;
   }
@@ -3012,10 +3024,13 @@ export async function initWanbanXiaowu() {
     return true;
   }
   function petStorageTarget() {
+    if (petRuntimeMode === 'test') return petTrialStorageTarget();
     const caretaker = petFullActiveCaretaker();
     const pet = petFullActivePet(null, caretaker);
-    const journeyId = petRuntimeMode === 'test' ? loadJSON(STORAGE_PET_TEST, {}).journeyId || '' : '';
-    return { mode:petRuntimeMode, caretakerId:caretaker?.id || '', petId:pet?.id || '', journeyId };
+    return { mode:petRuntimeMode, caretakerId:caretaker?.id || '', petId:pet?.id || '', journeyId:'' };
+  }
+  function petTrialStorageTarget() {
+    return { mode:'test', caretakerId:'', petId:'', journeyId:loadJSON(STORAGE_PET_TEST, {}).journeyId || '' };
   }
   function petTargetIsCurrent(target) {
     return JSON.stringify(target) === JSON.stringify(petStorageTarget());
@@ -3347,7 +3362,9 @@ export async function initWanbanXiaowu() {
     const data = petFullData();
     const c = (data.caretakers || []).find(x => x.id === caretakerId);
     if (!c) return false;
-    c.activePetId = petId || c.activePetId || '';
+    const pet = petId ? (c.pets || []).find(p => p.id === petId) : petFullActivePet(data, c);
+    if (!pet) return false;
+    c.activePetId = pet.id;
     data.activeCaretakerId = c.id;
     savePetFullData(data);
     withPetFullActive(c.id);
@@ -3377,9 +3394,7 @@ export async function initWanbanXiaowu() {
       fields.forEach(k => { if (opt[k] !== undefined) c[k] = opt[k]; });
     }
     c.builtinPetCaretaker = builtin;
-    data.activeCaretakerId = c.id;
     savePetFullData(data);
-    withPetFullActive(c.id);
     return c;
   }
   function petFullAddPet(caretakerId, infoText, state, meta) {
@@ -3387,7 +3402,6 @@ export async function initWanbanXiaowu() {
     const data = petFullData();
     const c = data.caretakers.find(x => x.id === caretakerId);
     if (!c) throw new Error('饲养员档案尚未保存，请重新添加该角色');
-    assertPetCaretakerContent(infoText, c);
     const id = 'pet_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
     const pet = Object.assign({ id, infoText, state:Object.assign(defaultPetTestState(), state || {}), createdAt:Date.now() }, meta || {});
     c.pets = c.pets || [];
@@ -3402,10 +3416,10 @@ export async function initWanbanXiaowu() {
     const data = petFullData();
     const c = data.caretakers.find(x => x.id === caretakerId);
     if (!c) return false;
-    const id = c.activePetId || ((c.pets || [])[0] && (c.pets || [])[0].id);
+    const id = petFullActivePet(data, c)?.id;
     if (!id) return false;
     c.pets = (c.pets || []).filter(p => p.id !== id);
-    c.activePetId = ((c.pets || [])[c.pets.length - 1] || {}).id || '';
+    c.activePetId = '';
     data.activeCaretakerId = c.id;
     savePetFullData(data);
     withPetFullActive(c.id);
@@ -3415,15 +3429,9 @@ export async function initWanbanXiaowu() {
   }
 
   function parsePetInfoText(text) { return parsePetInfo(text, yaml.parse); }
-  function assertPetCaretakerContent(text, caretaker) {
-    if (!petCaretakerIsShen(caretaker) && /沈栖白|沈店长|栖光宠物店|\[沈\]/.test(String(text || ''))) {
-      throw new Error('内容混入了沈栖白专属角色，请为当前饲养员重新生成或修正后导入');
-    }
-  }
   async function loadPetTestInfo() {
     const activeFullPet = petFullActivePet();
     if (activeFullPet && activeFullPet.infoText) {
-      assertPetCaretakerContent(activeFullPet.infoText, petFullActiveCaretaker());
       petTestInfoCache = assertPetInfo(parsePetInfoText(activeFullPet.infoText));
       return petTestInfoCache;
     }
@@ -3488,6 +3496,10 @@ export async function initWanbanXiaowu() {
     if (activeFullPet) return Object.assign(defaultPetTestState(), safeObject(activeFullPet.state || {}));
     if (petRuntimeMode === 'full') return defaultPetTestState();
     return Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
+  }
+  function petTrialState() {
+    const pending = pendingPetStates.get(JSON.stringify(petTrialStorageTarget()));
+    return Object.assign(defaultPetTestState(), pending ? JSON.parse(JSON.stringify(pending.state)) : safeObject(loadJSON(STORAGE_PET_TEST, {})));
   }
   function petTrialHasSavedPet() {
     const raw = safeObject(loadJSON(STORAGE_PET_TEST, {}));
@@ -3594,6 +3606,7 @@ export async function initWanbanXiaowu() {
   }
   function applyPetVisitAndDecaySaved() {
     const before = petTestState();
+    if (!petHasCurrentPet()) return before;
     const beforeKey = petStatePersistKey(before);
     const next = applyPetVisitAndDecay(before);
     if (petStatePersistKey(next) !== beforeKey) {
@@ -3613,8 +3626,7 @@ export async function initWanbanXiaowu() {
   }
   function petQuote(info, who, stage, action, fallback) {
     const quotes = info && info.quotes && info.quotes[who] && info.quotes[who][stage] && info.quotes[who][stage][action];
-    const matching = Array.isArray(quotes) ? quotes.filter(line => petCharName() === PET_SPECIAL_CHAR_NAME || !/沈栖白|沈店长|栖光宠物店/.test(line)) : [];
-    if (matching.length) return matching[Math.floor(Math.random() * matching.length)];
+    if (Array.isArray(quotes) && quotes.length) return quotes[Math.floor(Math.random() * quotes.length)];
     if (stage === 'ordinary') return petQuote(info, who, 'adult', action, fallback);
     return fallback || '';
   }
@@ -3884,7 +3896,7 @@ export async function initWanbanXiaowu() {
     return state;
   }
   function petApplyGameReward(gameMeta, result, durationMs, recordBroken) {
-    if (!petFullIsActive() && (petRuntimeMode === 'full' || !petTrialHasSavedPet())) return;
+    if (!petHasCurrentPet()) return;
     let state = applyPetVisitAndDecay(petTestState());
     if (state.ended) return;
     const mode = gameMeta && gameMeta.mode;
@@ -3921,6 +3933,7 @@ export async function initWanbanXiaowu() {
     savePetTestState(updatePetPendingStories(state, petTestInfoCache || { side_story:[] }));
   }
   function petApplyDesktopBallReward(amount, recordBroken) {
+    if (!petHasCurrentPet()) return petTestState();
     let state = applyPetVisitAndDecay(petTestState());
     if (state.ended) return state;
     const today = todayKey();
@@ -4114,6 +4127,7 @@ export async function initWanbanXiaowu() {
     if (nextState !== 'sleep' && opts.resetIdle !== false) resetPetIdleTimer(root);
   }
   function petInteract(root, state) {
+    if (!petHasCurrentPet()) return;
     const pet = petApplyInteraction(state === 'eat' ? 'feed' : (state === 'happy' ? 'pet' : 'poke'));
     savePetTestState(updatePetPendingStories(pet, petTestInfoCache));
     const auto = petAutoAction(pet);
@@ -4193,7 +4207,6 @@ export async function initWanbanXiaowu() {
       kind === 'comment' ? '任务：评论最近几层楼的故事剧情，像读者一样说出你的感受。' : '用户对你说：' + (userText || '')
     ].filter(Boolean).join('\n\n');
     const reply = (await callApiText(cfg, prompt, '你是可爱的桌面宠物，只输出宠物回复正文。', 900)).trim();
-    assertPetCaretakerContent(reply, cfg);
     return reply;
   }
   function updatePetDesktopPanels(el) {
@@ -4527,7 +4540,7 @@ export async function initWanbanXiaowu() {
     const doc = getHostDocument();
     const cfg = settings();
     let el = qs('#' + PET_FLOAT_ID, doc);
-    if (!cfg.petDesktopEnabled) {
+    if (!cfg.petDesktopEnabled || !petHasCurrentPet()) {
       if (el) el.remove();
       clearPetTimers();
       return;
@@ -4760,30 +4773,15 @@ export async function initWanbanXiaowu() {
 
   function openPetFullEntry() {
     syncCurrentHostRoleContext();
-    petRuntimeMode = 'full';
+    if (petRuntimeMode === 'test' && petTrialHasSavedPet()) {
+      withPetTrialActive();
+      renderPetHouse();
+      return;
+    }
     const data = petFullData();
-    const hostName = hostRoleName().trim();
-    const currentRoleName = normalizePresetName(hostName);
-    const currentCaretaker = hostName ? data.caretakers.find(c => !petCaretakerIsShen(c)
-      && normalizePresetName(c.name || c.charName) === currentRoleName) : null;
-    if (currentCaretaker) {
-      withPetFullActive(currentCaretaker.id);
-      if (petFullActivePet(petFullData(), currentCaretaker)) renderPetHouse();
-      else openPetAdoptionForm(currentCaretaker);
-      return;
-    }
-    if (hostName) {
-      openPetCaretakerSelect(null, { forceFull:true });
-      return;
-    }
-    if (loadJSON(SCRIPT_ID + '_petLastRoute', '') === 'test' && petTrialHasSavedPet()) {
-      resumePetSpecialCompanion();
-      return;
-    }
     const activeCaretaker = petFullActiveCaretaker(data);
     const active = petFullActivePet(data, activeCaretaker);
     if (active && activeCaretaker) { withPetFullActive(activeCaretaker.id); renderPetHouse(); return; }
-    if (petTrialHasSavedPet()) { resumePetSpecialCompanion(); return; }
     openPetCaretakerSelect(null, { forceFull:true });
   }
 
@@ -4796,15 +4794,11 @@ export async function initWanbanXiaowu() {
       return;
     }
     injectPetArcadeStyle();
-    petRuntimeMode = 'test';
-    petFullActiveCaretakerId = '';
-    petTestInfoCache = null;
-    petTestInfoLoading = null;
     syncPopupModeClass();
     const body = qs('#wb-body');
     body.className = 'wb-body wb-intimacy-mode';
     clearPetTimers();
-    const st = petTestState();
+    const st = petTrialState();
     const eggs = PET_EGG_OPTIONS.map(item => [item.id, item.label]);
     const species = PET_SPECIES_OPTIONS.map(item => [item.id, item.label]);
     const egg = st.testEgg || 'green';
@@ -4832,17 +4826,14 @@ export async function initWanbanXiaowu() {
     qs('#wb-pet-test-enter', body).onclick = () => {
       const userName = (qs('#wb-pet-test-user', body)?.value || '').trim() || '你';
       const testPetName = (qs('#wb-pet-test-name', body)?.value || '').trim() || PET_DEFAULT_STORY_NAMES[selectedSpecies] || '宠物';
-      const previous = petTestState();
+      const previous = petTrialState();
       const archives = (previous.archives || []).slice();
       if (previous.ended) {
-        const archived = Object.assign({}, previous, { petInfo:previous.petInfo || petTestInfoCache, archives:[] });
+        const archived = Object.assign({}, previous, { petInfo:previous.petInfo || (petRuntimeMode === 'test' ? petTestInfoCache : null), archives:[] });
         archives.unshift(archived);
       }
       if (!saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { userName, testEgg:selectedEgg, testSpecies:selectedSpecies, testPetName, cheatMode:!!options.cheatMode, journeyId:Date.now().toString() + '_' + Math.random().toString(36).slice(2, 6), archives:archives.slice(0, 10) }))) return;
-      saveJSON(SCRIPT_ID + '_petLastRoute', 'test');
-      saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
-      petTestInfoCache = null;
-      petTestInfoLoading = null;
+      withPetTrialActive();
       renderPetHouse();
     };
     qs('#wb-pet-test-back', body).onclick = openPetFullEntry;
@@ -5895,11 +5886,6 @@ export async function initWanbanXiaowu() {
     const raw = onDelta
       ? await callApiTextStream(cfg, prompt, system, maxTokens, onDelta)
       : await callApiText(cfg, prompt, system, maxTokens);
-    if (!shenIsCaretaker && /沈栖白|沈店长|栖光宠物店/.test(raw)) {
-      const error = new Error('输出混入了其他饲养员，请按当前角色重新生成');
-      error.raw = raw;
-      throw error;
-    }
     const parsed = parsePetInfoText(raw);
     if ((parsed.parseWarnings || []).length || !parsed.pet_card?.pet_name || parsed.main_story.length < 15 || parsed.side_story.length < 6) {
       const err = new Error('info解析失败：' + ((parsed.parseWarnings || []).join('；') || '字段数量不足'));
@@ -5960,7 +5946,6 @@ export async function initWanbanXiaowu() {
       '用户补充做了什么：\n' + (note || '无')
     ].filter(Boolean).join('\n\n');
     const raw = await callApiText(cfg, prompt, '你是宠物陪伴游戏的日志写作助手。必须只输出可解析JSON。', 4096);
-    assertPetCaretakerContent(raw, cfg);
     const data = normalizePetLogData(raw, today);
     return data.body ? data : fallback;
   }
@@ -6366,12 +6351,7 @@ export async function initWanbanXiaowu() {
       return true;
     }
     if (!petTrialHasSavedPet()) return false;
-    petRuntimeMode = 'test';
-    petFullActiveCaretakerId = '';
-    petTestInfoCache = null;
-    petTestInfoLoading = null;
-    saveJSON(SCRIPT_ID + '_petLastRoute', 'test');
-    saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
+    withPetTrialActive();
     renderPetHouse();
     return true;
   }
@@ -6402,12 +6382,6 @@ export async function initWanbanXiaowu() {
     qs('#wb-pet-special-back', mask).onclick = () => { mask.remove(); openPetCaretakerSelect(null, { forceFull:true }); };
     qs('#wb-pet-special-local', mask).onclick = () => {
       mask.remove();
-      petRuntimeMode = 'test';
-      saveJSON(SCRIPT_ID + '_petLastRoute', 'test');
-      saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
-      petFullActiveCaretakerId = '';
-      petTestInfoCache = null;
-      petTestInfoLoading = null;
       openPetTestSelect();
     };
     qs('#wb-pet-special-generate', mask).onclick = async () => {
@@ -6459,8 +6433,8 @@ export async function initWanbanXiaowu() {
     if (trial) trial.onclick = () => {
       mask.remove();
       if (petTrialHasSavedPet()) {
-        saveJSON(SCRIPT_ID + '_petLastSpecialRoute', 'test');
-        resumePetSpecialCompanion();
+        withPetTrialActive();
+        renderPetHouse();
       } else openPetSpecialCompanionChoice({ forceNew:true });
     };
     qsa('.wb-pet-full-caretaker', mask).forEach(btn => {
@@ -6468,10 +6442,9 @@ export async function initWanbanXiaowu() {
       btn.onclick = () => {
       const c = petFullCaretakerById(btn.dataset.id);
       if (!c) return;
-      withPetFullActive(c.id);
       mask.remove();
       if (!petFullActivePet(petFullData(), c)) openPetAdoptionForm(c);
-      else renderPetHouse();
+      else { withPetFullActive(c.id); renderPetHouse(); }
       };
     });
   }
@@ -6504,7 +6477,7 @@ export async function initWanbanXiaowu() {
         mask.remove();
         if (parentMask) parentMask.remove();
         const latest = petFullCaretakerById(c.id) || c;
-        if (petFullActivePet(petFullData(), latest)) renderPetHouse();
+        if (petFullActivePet(petFullData(), latest)) { withPetFullActive(latest.id); renderPetHouse(); }
         else openPetAdoptionForm(latest);
       });
     });
@@ -6539,7 +6512,6 @@ export async function initWanbanXiaowu() {
       return;
     }
     injectPetArcadeStyle();
-    withPetFullActive(caretaker.id);
     const doc = getHostDocument();
     const old = qs('#wb-pet-adoption-mask', doc);
     if (old) old.remove();
@@ -6690,7 +6662,6 @@ export async function initWanbanXiaowu() {
         const raw = importText.value;
         try {
           const parsed = assertPetInfo(parsePetInfoText(raw));
-          assertPetCaretakerContent(raw, caretaker);
           generated = { raw, parsed };
           openPetAdoptionSuccessModal(collect());
         } catch (error) {
