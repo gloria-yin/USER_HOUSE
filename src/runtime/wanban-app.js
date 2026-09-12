@@ -2972,15 +2972,17 @@ export async function initWanbanXiaowu() {
     if (petRuntimeMode === 'test') return null;
     const all = data || petFullData();
     const id = petFullActiveCaretakerId || all.activeCaretakerId;
-    if (id) return all.caretakers.find(c => c.id === id) || null;
+    const selected = all.caretakers.find(c => c.id === id);
+    if (selected) return selected;
     return all.caretakers.find(c => c.pets?.length) || all.caretakers[0] || null;
   }
   function petFullActivePet(data, caretaker) {
     if (petRuntimeMode === 'test' && !caretaker) return null;
     const c = caretaker || petFullActiveCaretaker(data);
     if (!c) return null;
-    if (Object.hasOwn(c, 'activePetId')) return (c.pets || []).find(p => p.id === c.activePetId) || null;
-    return (c.pets || []).at(-1) || null;
+    const selected = (c.pets || []).find(p => p.id === c.activePetId);
+    // Old saves used the first pet when their selection ID was missing or stale.
+    return selected || (c.activePetCleared ? null : (c.pets || [])[0]) || null;
   }
   function petFullIsActive() { return !!petFullActivePet(); }
   function petHasCurrentPet() { return petRuntimeMode === 'test' ? petTrialHasSavedPet() : petFullIsActive(); }
@@ -3365,6 +3367,7 @@ export async function initWanbanXiaowu() {
     const pet = petId ? (c.pets || []).find(p => p.id === petId) : petFullActivePet(data, c);
     if (!pet) return false;
     c.activePetId = pet.id;
+    delete c.activePetCleared;
     data.activeCaretakerId = c.id;
     savePetFullData(data);
     withPetFullActive(c.id);
@@ -3398,7 +3401,7 @@ export async function initWanbanXiaowu() {
     return c;
   }
   function petFullAddPet(caretakerId, infoText, state, meta) {
-    assertPetInfo(parsePetInfoText(infoText));
+    assertPetInfo(parsePetInfoText(infoText), { strict:false });
     const data = petFullData();
     const c = data.caretakers.find(x => x.id === caretakerId);
     if (!c) throw new Error('饲养员档案尚未保存，请重新添加该角色');
@@ -3407,6 +3410,7 @@ export async function initWanbanXiaowu() {
     c.pets = c.pets || [];
     c.pets.push(pet);
     c.activePetId = id;
+    delete c.activePetCleared;
     data.activeCaretakerId = c.id;
     savePetFullData(data);
     withPetFullActive(c.id);
@@ -3420,6 +3424,7 @@ export async function initWanbanXiaowu() {
     if (!id) return false;
     c.pets = (c.pets || []).filter(p => p.id !== id);
     c.activePetId = '';
+    c.activePetCleared = true;
     data.activeCaretakerId = c.id;
     savePetFullData(data);
     withPetFullActive(c.id);
@@ -3428,11 +3433,11 @@ export async function initWanbanXiaowu() {
     return true;
   }
 
-  function parsePetInfoText(text) { return parsePetInfo(text, yaml.parse); }
+  function parsePetInfoText(text, options = { allowLegacy:true }) { return parsePetInfo(text, yaml.parse, options); }
   async function loadPetTestInfo() {
     const activeFullPet = petFullActivePet();
     if (activeFullPet && activeFullPet.infoText) {
-      petTestInfoCache = assertPetInfo(parsePetInfoText(activeFullPet.infoText));
+      petTestInfoCache = assertPetInfo(parsePetInfoText(activeFullPet.infoText), { strict:false });
       return petTestInfoCache;
     }
     if (petRuntimeMode === 'full') throw new Error('当前角色尚未生成宠物档案');
@@ -3633,8 +3638,8 @@ export async function initWanbanXiaowu() {
   function getPetMainStory(info, id, route) {
     const item = info && info.mainById && info.mainById[id];
     if (!item) return null;
-    if (item.variants) return item.variants[route || 'spirit'] || item.variants.spirit || item.variants.ordinary || null;
-    return item;
+    return [item.variants?.[route || 'spirit'], item, item.variants?.spirit, item.variants?.ordinary]
+      .find(story => story?.lines?.length) || null;
   }
   function markPetStoryComplete(state, id, story, route) {
     const next = Object.assign({}, state);
@@ -3704,10 +3709,10 @@ export async function initWanbanXiaowu() {
   function updatePetPendingStories(state, info) {
     const next = Object.assign({}, state);
     const existing = new Set(next.pendingStories || []);
-    petEligibleMainIds(next).forEach(id => existing.add(id));
+    petEligibleMainIds(next).forEach(id => { if (getPetMainStory(info, id, next.route)) existing.add(id); });
     (info?.side_story || []).forEach(side => {
       const id = side.id;
-      if (!id || (next.completedSide || []).includes(id)) return;
+      if (!id || !side.lines?.length || (next.completedSide || []).includes(id)) return;
       const trigger = side.trigger || {};
       if (!petSideStageAllowed(trigger.stage, next.stage)) return;
       if (trigger.context_type === 'location' && trigger.context_value !== next.location) return;
@@ -5531,7 +5536,7 @@ export async function initWanbanXiaowu() {
     return '<div class="wb-pet-rpg-line ' + petSpeakerClass(speaker) + '">' + (isNarrator ? '' : '<span class="wb-pet-rpg-speaker">' + esc(name) + '</span>') + '<span class="wb-pet-rpg-text">' + petInlineHTML(petRenderText(line.text || '', info, state)) + '</span></div>';
   }
   function petStoryForPending(info, state, id) {
-    if (/^S/.test(id)) return info.sideById[id] || null;
+    if (info?.sideById?.[id]?.lines?.length) return info.sideById[id];
     return getPetMainStory(info, id, state.route);
   }
   function petNextPendingStoryId(info, state) {
@@ -5886,7 +5891,7 @@ export async function initWanbanXiaowu() {
     const raw = onDelta
       ? await callApiTextStream(cfg, prompt, system, maxTokens, onDelta)
       : await callApiText(cfg, prompt, system, maxTokens);
-    const parsed = parsePetInfoText(raw);
+    const parsed = parsePetInfoText(raw, { allowLegacy:false });
     if ((parsed.parseWarnings || []).length || !parsed.pet_card?.pet_name || parsed.main_story.length < 15 || parsed.side_story.length < 6) {
       const err = new Error('info解析失败：' + ((parsed.parseWarnings || []).join('；') || '字段数量不足'));
       err.raw = raw;
@@ -6057,7 +6062,7 @@ export async function initWanbanXiaowu() {
     const target = petStorageTarget();
     loadPetTestInfo().then(info => {
       if (!petTargetIsCurrent(target) || !body.classList.contains('wb-pet-mode')) return;
-      assertPetInfo(info);
+      assertPetInfo(info, { strict:false });
       let state = petNormalizeLocation(applyPetVisitAndDecay(petTestState()));
       state = updatePetPendingStories(state, info);
       savePetTestState(state);
@@ -6077,7 +6082,7 @@ export async function initWanbanXiaowu() {
       petTestInfoCache = null;
       petTestInfoLoading = null;
       clearPetTimers();
-      body.innerHTML = '<div class="wb-panel" style="display:grid;gap:10px;place-items:center;min-height:240px;"><b>宠物档案读取失败</b><div class="wb-muted">' + esc(e && e.message ? e.message : e) + '</div><div class="wb-actions"><button class="wb-btn" id="wb-pet-retry">重试读取</button><button class="wb-btn" id="wb-pet-error-rebuild">重新生成或导入</button><button class="wb-btn" id="wb-pet-error-caretakers">选择饲养员</button><button class="wb-btn" id="wb-pet-error-back">返回</button></div></div>';
+      body.innerHTML = '<div class="wb-panel" style="display:grid;gap:10px;place-items:center;min-height:240px;"><b>宠物档案读取失败</b><div class="wb-muted">' + esc(e && e.message ? e.message : e) + '</div><div class="wb-actions"><button class="wb-btn" id="wb-pet-retry">重试读取</button><button class="wb-btn" id="wb-pet-error-rebuild">重新生成</button><button class="wb-btn" id="wb-pet-error-caretakers">选择饲养员</button><button class="wb-btn" id="wb-pet-error-back">返回</button></div></div>';
       qs('#wb-pet-retry', body).onclick = renderPetHouse;
       qs('#wb-pet-error-rebuild', body).onclick = () => {
         const caretaker = petFullActiveCaretaker();
@@ -6089,7 +6094,7 @@ export async function initWanbanXiaowu() {
     });
   }
   function renderPetHouseLoaded(info, state, options = {}) {
-    assertPetInfo(info);
+    assertPetInfo(info, { strict:false });
     if (petStoryTypeTimer) { clearInterval(petStoryTypeTimer); petStoryTypeTimer = 0; }
     const body = qs('#wb-body');
     const previousSprite = qs('#wb-pet-poke .wb-pet-fox', body);
@@ -6108,12 +6113,10 @@ export async function initWanbanXiaowu() {
     const charLine = state.lastCharLine || (petCharName() + '看着' + petName + '，又看了看你，像是已经把照顾计划在心里排好了。');
     const petLine = petRenderText(state.lastPetLine || '', info, state);
     const shenPortraitUrl = petShenPortraitUrl(activeLine, state);
-    const warnings = (info.parseWarnings || []).length ? '<div class="wb-api-status">' + esc(info.parseWarnings.join('；')) + '</div>' : '';
     const locName = petLocationName(state.location);
     const cheatActionHTML = petCheatEnabled(state) ? '<button class="wb-btn wb-pet-iconbtn wb-pet-cheat-btn" id="wb-pet-cheat" title="成长值 +5" aria-label="成长值 +5">' + petUiIcon('coin') + '</button>' : '';
     body.innerHTML = '<div class="wb-pet-room' + (storyMode ? ' story-mode' : '') + '" id="wb-pet-room">'
       + '<div class="wb-pet-topbar"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-back" title="返回" aria-label="返回">' + petUiIcon('back') + '</button><div class="wb-pet-titlebox">' + petCharAvatarHTML() + '<span class="wb-pet-house-name">' + esc(petCharName()) + '的小屋</span><button class="wb-btn wb-pet-iconbtn" id="wb-pet-caretakers" title="选择饲养员" aria-label="选择饲养员">' + petUiIcon('down') + '</button></div><div class="wb-pet-top-actions"><button class="wb-btn wb-pet-iconbtn" id="wb-pet-help" title="教程" aria-label="教程">' + petUiIcon('help') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-restart" title="重开" aria-label="重开">' + petUiIcon('restart') + '</button></div></div>'
-      + warnings
       + '<div class="wb-pet-status-card">' + (storyMode ? '<div class="wb-pet-story-status">剧情模式中</div>' : (isEnded ? '<button class="wb-btn primary wb-pet-new-adoption" id="wb-pet-new-adoption" type="button">领养新的宠物</button>' : '<div class="wb-pet-status-head"><span class="wb-pet-status-identity"><b class="wb-pet-status-name">' + esc(petName) + '</b><b class="wb-pet-status-stage">' + esc(petDisplayStage(renderState)) + '</b><button class="wb-btn wb-pet-card-btn" id="wb-pet-card" title="宠物名片" aria-label="宠物名片">' + petUiIcon('card') + '</button></span><span class="wb-pet-status-place"><i>' + esc(locName) + '</i><i>' + esc(petTimeOfDay() === 'day' ? '白天' : '夜晚') + '</i></span></div><div class="wb-pet-bars' + (isEgg ? ' egg' : '') + '">' + petBarHTML('成长值', petGrowthPercent(renderState), '#43c96f') + (isEgg ? '' : petBarHTML('饱食度', renderState.fullness, '#ff9f43') + petBarHTML('开心值', renderState.happiness, '#ff6f91')) + '</div>')) + '</div>'
       + '<div class="wb-pet-stage">'
       + '<div class="wb-pet-scene" id="wb-pet-scene" style="background-image:url(' + esc(petSceneUrl(state)) + ')">'
@@ -6550,7 +6553,7 @@ export async function initWanbanXiaowu() {
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>剧情人称</span><select class="wb-select" id="wb-pet-narrative-person"><option value="first">第一人称（我）</option><option value="second">第二人称（你）</option><option value="third">第三人称（TA）</option></select></label><div style="flex:1;"></div></div>'
         + '<div class="wb-preset-row wb-pet-adopt-wide"><label class="wb-field" style="flex:1;"><span>模型选择</span><select class="wb-select" id="wb-pet-adopt-model">' + apiOptions + '</select></label><label class="wb-field" style="flex:1;"><span>模型生成次数</span><input class="wb-input" id="wb-pet-adopt-attempts" type="number" min="1" max="5" value="' + esc(String(draft.attempts || 3)) + '"></label></div>'
         + '<div class="wb-actions wb-pet-adopt-wide"><button class="wb-btn primary" id="wb-pet-adopt-generate" style="flex:1;">确定，生成宠物文案</button></div>'
-        + '<details class="wb-pet-adopt-wide"><summary>输出设置 / 导入已有剧情</summary><label class="wb-field"><span>单次最大输出 Token（按模型支持范围设置）</span><input class="wb-input" id="wb-pet-max-tokens" type="number" min="4096" max="65536" value="' + draft.max_tokens + '"></label><div class="wb-api-status">每次请求一次性生成完整剧情。输出被截断时会保留原文，不进入小屋。</div><label class="wb-field"><span>已有宠物剧情文本</span><textarea class="wb-textarea" id="wb-pet-import-text" placeholder="粘贴完整的 pet_info YAML，可用于恢复之前生成的内容"></textarea></label><input type="file" id="wb-pet-import-file" accept=".txt,.yaml,.yml"><button class="wb-btn" id="wb-pet-import-info">解析并导入</button></details>'
+        + '<details class="wb-pet-adopt-wide"><summary>输出设置</summary><label class="wb-field"><span>单次最大输出 Token（按模型支持范围设置）</span><input class="wb-input" id="wb-pet-max-tokens" type="number" min="4096" max="65536" value="' + draft.max_tokens + '"></label><div class="wb-api-status">每次请求一次性生成完整剧情。输出被截断时会保留原文，不进入小屋。</div></details>'
         + '<div id="wb-pet-adopt-status" class="wb-pet-adopt-wide"></div>'
         + '</div></div></div>';
       appendModalMask(mask);
@@ -6616,7 +6619,7 @@ export async function initWanbanXiaowu() {
       openPetAdoptionSuccessModal(form);
     };
     const enterGeneratedHouse = (form) => {
-        if (!generated) throw new Error('请先生成或导入有效的宠物档案');
+        if (!generated) throw new Error('请先生成有效的宠物档案');
         form = form || collect();
         const state = Object.assign(defaultPetTestState(), { userName:form.user_name, adoptionCycle:cycle, firstSnapshot:null, cheatMode:petCaretakerIsShen(caretaker) && !!options?.cheatMode });
         petFullAddPet(caretaker.id, generated.raw, state, { egg:generated.parsed.pet_card?.egg || draft.selected_egg });
@@ -6652,23 +6655,6 @@ export async function initWanbanXiaowu() {
         if (fields) fields.style.display = draft.wish_mode ? '' : 'none';
       };
       const gen = qs('#wb-pet-adopt-generate', mask); if (gen) gen.onclick = generate;
-      const importText = qs('#wb-pet-import-text', mask);
-      qs('#wb-pet-import-file', mask).onchange = async event => {
-        const file = event.target.files?.[0];
-        if (file) importText.value = await file.text();
-      };
-      qs('#wb-pet-import-info', mask).onclick = () => {
-        if (qs('#wb-pet-adopt-generate', mask).disabled) return;
-        const raw = importText.value;
-        try {
-          const parsed = assertPetInfo(parsePetInfoText(raw));
-          generated = { raw, parsed };
-          openPetAdoptionSuccessModal(collect());
-        } catch (error) {
-          generated = null;
-          qs('#wb-pet-adopt-status', mask).textContent = error.message;
-        }
-      };
     };
     draw();
   }
@@ -6816,6 +6802,7 @@ export async function initWanbanXiaowu() {
   function completePetStory(info, id, experienced) {
     let state = petTestState();
     const story = petStoryForPending(info, state, id);
+    if (!story) { toast('这段剧情缺少正文，请补充原始档案后继续。'); return; }
     const isSideStory = /^S/.test(id);
     const alreadyCompleted = (state.completedSide || []).includes(id) || (state.completedMain || []).includes(id);
     state.pendingStories = (state.pendingStories || []).filter(x => x !== id);
@@ -7667,6 +7654,13 @@ export async function initWanbanXiaowu() {
       if (!Object.prototype.hasOwnProperty.call(items, key)) return;
       plan[key] = sanitizeImportValue(key, items[key], currentApi);
     });
+    // Older backups omitted the route key; restore it from their pet selection.
+    const routeKey = SCRIPT_ID + '_petLastRoute';
+    if (!Object.hasOwn(plan, routeKey)) {
+      const full = plan[STORAGE_PET_FULL];
+      if (safeArray(full?.caretakers).some(c => c?.id && safeArray(c.pets).some(p => p?.id))) plan[routeKey] = 'full';
+      else if (Object.keys(safeObject(plan[STORAGE_PET_TEST])).length) plan[routeKey] = 'test';
+    }
     if (!Object.keys(plan).length) throw new Error('没有找到可导入的玩伴小屋数据。');
     return plan;
   }
