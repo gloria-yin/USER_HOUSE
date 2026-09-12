@@ -535,6 +535,11 @@ export function createWaterSortGame(state, env) {
     env.finish('本局结算', '累计总分：' + score + '分，到达第' + level + '关，已完成' + details.levelsCleared + '关，总步数' + details.totalMoves + '步', { outcome:'score', score }, { score, level, details:finalDetails });
   }
 
+  function requestFinish() {
+    if (destroyed || busy || hintBusy || env.isPaused()) return;
+    env.confirm('结束并结算？', '确定要结束当前倒瓶子游戏并结算吗？取消后可以继续本局。', finishGame);
+  }
+
   function useUndo() {
     if (destroyed || busy || hintBusy || env.isPaused() || tools.undo <= 0 || !history.length) return;
     const previous = history.pop();
@@ -625,7 +630,7 @@ export function createWaterSortGame(state, env) {
   root.querySelector('[data-tool="hint"]').addEventListener('click', useHint);
   root.querySelector('[data-tool="extra"]').addEventListener('click', useExtraBottle);
   root.querySelector('[data-tool="reset"]').addEventListener('click', resetLevel);
-  root.querySelector('[data-tool="finish"]').addEventListener('click', finishGame);
+  root.querySelector('[data-tool="finish"]').addEventListener('click', requestFinish);
 
   function destroy() {
     if (destroyed) return;

@@ -1,4 +1,5 @@
 export const ROLE_DEFAULTS = {
+  roleKey:'', cardId:'', cardName:'', roleUpdatedAt:0,
   charName:'', avatarUrl:'', defaultAvatarUrl:'', characterAvatar:'',
   charDescriptionSnapshot:'', characterCardSnapshot:null,
   charDescMode:'auto', manualCharPersona:'', charPersona:'',

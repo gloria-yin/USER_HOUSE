@@ -17,7 +17,7 @@ export function cleanPetInfoText(text) {
 }
 
 export function parsePetStoryLines(raw) {
-  return String(raw || '').split(/\n|(?=\[(?:C|U|P|char|user|pet|旁白)\])/).map(line => {
+  return String(raw || '').split(/\n|(?=\[(?:C|U|P|char|user|pet|旁白|沈栖白|沈)\])/).map(line => {
     const match = line.trim().match(/^\[([^\]]+)\]\s*(.*)$/);
     return match ? { speaker:match[1], text:match[2] } : { speaker:'旁白', text:line.trim() };
   }).filter(line => line.text);

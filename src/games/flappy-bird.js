@@ -474,18 +474,21 @@ export function createFlappyBirdGame(savedState, env) {
     if (!lastFrameAt) lastFrameAt = timestamp;
     const elapsed = clampFlappyDelta((timestamp - lastFrameAt) / 1000);
     lastFrameAt = timestamp;
-    if (!env.isPaused()) {
-      visualClock += elapsed;
-      scorePulse = Math.max(0, scorePulse - elapsed);
-      if (phase === 'playing' && !over) {
-        accumulator = Math.min(.1, accumulator + elapsed);
-        while (accumulator >= 1 / 120) {
-          fixedStep(1 / 120);
-          accumulator -= 1 / 120;
-          if (over) break;
-        }
+    if (env.isPaused()) {
+      accumulator = 0;
+      animationFrame = over ? 0 : win.requestAnimationFrame(frame);
+      return;
+    }
+    visualClock += elapsed;
+    scorePulse = Math.max(0, scorePulse - elapsed);
+    if (phase === 'playing' && !over) {
+      accumulator = Math.min(.1, accumulator + elapsed);
+      while (accumulator >= 1 / 120) {
+        fixedStep(1 / 120);
+        accumulator -= 1 / 120;
+        if (over) break;
       }
-    } else accumulator = 0;
+    }
     draw();
     animationFrame = over ? 0 : win.requestAnimationFrame(frame);
   }

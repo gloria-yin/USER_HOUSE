@@ -755,6 +755,10 @@ export function createZumaGame(state, env) {
     if (destroyed || !env.isActive()) return;
     const delta = lastFrame ? clamp((now - lastFrame) / 1000, 0, .05) : 0;
     lastFrame = now;
+    if (env.isPaused()) {
+      raf = win.requestAnimationFrame(frame);
+      return;
+    }
     update(delta);
     if (destroyed) return;
     draw();
