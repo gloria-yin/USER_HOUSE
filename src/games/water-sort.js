@@ -1,8 +1,11 @@
 import { WATER_SORT_BANK } from './water-sort-bank.js';
-import { waterSortDifficulty, waterSortRandom, waterSortStructureKey } from './water-sort-puzzles.js';
+import { generateWaterSortCandidate, waterSortDifficulty, waterSortRandom, waterSortStructureKey } from './water-sort-puzzles.js';
 export { waterSortDifficulty } from './water-sort-puzzles.js';
 const CAPACITY = 4;
-const MAX_TOTAL_BOTTLES = 21;
+const MAX_EXTRA_BOTTLES_PER_LEVEL = 1;
+const MAX_TOTAL_BOTTLES = 20 + MAX_EXTRA_BOTTLES_PER_LEVEL;
+const MAX_LAYOUT_BOTTLES = 23; // Older saves can still contain three helper bottles.
+const bankStructureKeys = new WeakMap();
 export const WATER_COLORS = [
   '#d63848', '#2879c8', '#efbc22', '#18e8b8', '#384818', '#c828b8',
   '#f8b8d8', '#68b818', '#682858', '#1828a8', '#58d8f8', '#c8c898',
@@ -11,20 +14,25 @@ export const WATER_COLORS = [
 const WATER_COLOR_NAMES = ['红色','蓝色','金黄色','薄荷绿','深橄榄绿','洋红','浅粉色','草绿','梅子紫','靛蓝','天蓝','米黄色','棕色','墨青','橙色','淡紫色','玫粉色','亮宝蓝'];
 
 export function waterSortLayout(bottleCount, width = 360, height = 360) {
-  const count = Math.max(1, Math.min(MAX_TOTAL_BOTTLES, Math.floor(Number(bottleCount) || 1)));
+  const count = Math.max(1, Math.min(MAX_LAYOUT_BOTTLES, Math.floor(Number(bottleCount) || 1)));
   const safeWidth = Math.max(220, Number(width) || 360);
   const safeHeight = Math.max(220, Number(height) || 360);
   const comfortableColumns = safeWidth < 300 ? 4 : safeWidth < 400 ? 5 : safeWidth < 540 ? 6 : 7;
   const rows = Math.min(3, Math.max(1, Math.ceil(count / comfortableColumns)));
-  const columns = Math.min(7, Math.max(Math.min(count, 4), Math.ceil(count / rows)));
+  const columns = Math.min(8, Math.max(Math.min(count, 4), Math.ceil(count / rows)));
   const compact = safeWidth <= 560;
   const gapX = compact ? 3 : 10;
   const gapY = compact ? 8 : 16;
   const paddingX = compact ? 4 : 12;
   const paddingY = compact ? 12 : 22;
-  const cellWidth = Math.max(28, Math.min(64, Math.floor((safeWidth - paddingX * 2 - gapX * (columns - 1)) / columns)));
+  const cellWidth = Math.max(columns > 7 ? 20 : 28, Math.min(64, Math.floor((safeWidth - paddingX * 2 - gapX * (columns - 1)) / columns)));
   const rowHeight = Math.max(64, Math.min(120, Math.floor((safeHeight - paddingY * 2 - gapY * (rows - 1)) / rows)));
   return { columns, rows, cellWidth, rowHeight };
+}
+
+export function waterSortBottleRewardLimit(referenceMoves) {
+  const reference = Math.max(0, Math.floor(Number(referenceMoves) || 0));
+  return reference ? Math.ceil(reference * 1.1) : 0;
 }
 
 function topRun(bottle) {
@@ -73,11 +81,20 @@ export function verifyWaterSortSolution(bottles, solution, colorCount) {
 }
 
 export function createWaterSortLevel(level, random = Math.random, excluded = []) {
+  // Keep first entry and Worker fallbacks bounded on the UI thread.
+  const fresh = generateWaterSortCandidate(level, random, { attempts:48, maxNodes:800, maxTimeMs:12, excluded });
+  if (fresh && verifyWaterSortSolution(fresh.bottles, fresh.solution, fresh.colorCount)) return fresh;
   const config = waterSortDifficulty(level);
-  const pool = WATER_SORT_BANK[config.structureTier - 1][config.hardRound ? 1 : 0];
-  const available = pool.filter(item => !excluded.includes(waterSortStructureKey(item.bottles)));
-  const choices = available.length ? available : pool;
-  const item = choices[Math.floor(random() * choices.length)];
+  const pool = WATER_SORT_BANK[config.structureTier - 1].slice();
+  let item;
+  while (pool.length) {
+    const candidate = pool.splice(Math.floor(random() * pool.length), 1)[0];
+    item ||= candidate;
+    if (!excluded.length) break;
+    let key = bankStructureKeys.get(candidate);
+    if (key === undefined) { key = waterSortStructureKey(candidate.bottles); bankStructureKeys.set(candidate, key); }
+    if (!excluded.includes(key)) { item = candidate; break; }
+  }
   const order = item.bottles.map((_, index) => index);
   const colors = Array.from({ length:config.colorCount }, (_, index) => index);
   for (const values of [order, colors]) {
@@ -99,19 +116,21 @@ export function waterSortLegalMoves(bottles) {
       const source = bottles[from];
       const target = bottles[to];
       const run = topRun(source);
-      const sourceComplete = source.length === CAPACITY && run.count === CAPACITY;
-      if (!target.length && sourceComplete) continue;
       moves.push({ from, to, joins:!!target.length, exposes:source.length > run.count });
     }
   }
   return moves;
 }
 
-export function waterSortHint(bottles, savedSolution) {
-  const first = Array.isArray(savedSolution) ? savedSolution[0] : null;
-  const colors = new Set(bottles.flat()).size;
-  if (first && verifyWaterSortSolution(bottles, savedSolution, colors)) return { from:first.from, to:first.to, exact:true };
-  return null;
+export function waterSortHint(bottles) {
+  return waterSortLegalMoves(bottles);
+}
+
+function waterSortHintColor(index) {
+  const hue = Math.round((index * 137.508 + 8) % 360);
+  const saturation = [88, 78, 94][index % 3];
+  const lightness = [43, 54][Math.floor(index / 3) % 2];
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
 }
 
 function ensureStyles(doc) {
@@ -133,12 +152,15 @@ function ensureStyles(doc) {
     .wb-water-fill.surface{box-shadow:inset 0 2px rgba(255,255,255,.4)}
     .wb-water-bottle.selected{transform:translateY(-7px)}
     .wb-water-bottle.selected::after{border-color:#c18932;box-shadow:0 0 0 2px rgba(193,137,50,.15)}
-    .wb-water-bottle.hint-source::after{border-color:#168260;box-shadow:0 0 0 2px rgba(22,130,96,.2)}
-    .wb-water-bottle.hint-target::after{border-color:#367ec0;box-shadow:0 0 0 2px rgba(54,126,192,.2)}
+    .wb-water-bottle.hinted{animation:wbWaterHint 1.05s ease-in-out infinite;filter:drop-shadow(0 0 8px rgba(124,58,237,.72))}
+    .wb-water-bottle.hinted::after{border:2.5px solid #7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.24),0 0 17px 4px rgba(124,58,237,.4),inset 0 0 9px rgba(124,58,237,.15)}
+    .wb-water-hint-marks{position:absolute;z-index:7;top:-3px;left:0;right:0;display:flex;flex-wrap:wrap;justify-content:center;align-content:flex-start;gap:2px 3px;padding:0 1px;pointer-events:none}
+    .wb-water-hint-mark{width:10px;height:10px;box-sizing:border-box;border:1.5px solid #fff;border-radius:999px;background:var(--hint-color);box-shadow:0 1px 4px rgba(15,23,42,.62),0 0 6px var(--hint-color)}
     .wb-water-bottle.pour-source{transform:translateY(-8px) rotate(12deg)}
+    .wb-water-bottle.hinted.pour-source{animation:none}
     .wb-water-bottle.pour-target{animation:wbWaterReceive .23s ease}
     .wb-water-bottle.bad{animation:wbWaterBad .24s ease}
-    .wb-water-bottle.done::after{border-color:#4b9b7f}
+    .wb-water-bottle.done:not(.hinted)::after{border-color:#4b9b7f}
     .wb-water-stream{position:absolute;z-index:5;height:3px;border-radius:2px;transform-origin:left center;background:var(--water);pointer-events:none;animation:wbWaterFlow .23s ease both}
     .wb-water-tools{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
     .wb-water-tool{min-width:0;min-height:40px;padding:5px 3px!important;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:3px;font-size:11px}
@@ -149,8 +171,9 @@ function ensureStyles(doc) {
     @keyframes wbWaterReceive{50%{transform:translateY(2px)}}
     @keyframes wbWaterBad{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
     @keyframes wbWaterFlow{0%,100%{opacity:0}25%,80%{opacity:.8}}
+    @keyframes wbWaterHint{0%,100%{transform:translateY(-2px) scale(1)}50%{transform:translateY(-5px) scale(1.045)}}
     @media(max-width:560px){.wb-water-sort-shell{gap:5px}.wb-water-sort-stat b{font-size:11px}.wb-water-sort-board{gap:8px 3px;padding:12px 4px}.wb-water-tool{font-size:10px;min-height:38px}}
-    @media(prefers-reduced-motion:reduce){.wb-water-bottle{transition:none}.wb-water-stream{display:none}}
+    @media(prefers-reduced-motion:reduce){.wb-water-bottle{transition:none}.wb-water-stream{display:none}.wb-water-bottle.hinted{animation:none}}
   `;
   doc.head.appendChild(style);
 }
@@ -160,7 +183,7 @@ export function createWaterSortGame(state, env) {
   const win = env.window;
   const root = env.root;
   ensureStyles(doc);
-  root.innerHTML = '<div class="wb-water-sort-shell"><div class="wb-water-sort-top"><div class="wb-water-sort-stat"><span>关卡</span><b id="wb-water-level"></b></div><div class="wb-water-sort-stat"><span>总分</span><b id="wb-water-score"></b></div><div class="wb-water-sort-stat"><span>本关步数</span><b id="wb-water-moves"></b></div><div class="wb-water-sort-stat"><span>难度</span><b id="wb-water-difficulty"></b></div></div><div class="wb-water-sort-board" id="wb-water-board"><div class="wb-water-banner" id="wb-water-banner"></div></div><div class="wb-water-tools"><button type="button" class="wb-btn wb-water-tool" data-tool="undo"><i>↶</i>撤回 <b id="wb-water-undo"></b></button><button type="button" class="wb-btn wb-water-tool" data-tool="hint"><i>◎</i>提示 <b id="wb-water-hint"></b></button><button type="button" class="wb-btn wb-water-tool" data-tool="extra"><i>＋</i>空瓶 <b id="wb-water-extra"></b></button><button type="button" class="wb-btn wb-water-tool" data-tool="reset" title="重置本关"><i>↻</i>重置</button><button type="button" class="wb-btn wb-water-tool" data-tool="finish" title="结束并结算本局"><i>■</i>结算</button></div></div>';
+  root.innerHTML = '<div class="wb-water-sort-shell"><div class="wb-water-sort-top"><div class="wb-water-sort-stat"><span>关卡</span><b id="wb-water-level"></b></div><div class="wb-water-sort-stat"><span>总分</span><b id="wb-water-score"></b></div><div class="wb-water-sort-stat"><span>步数 / 奖励线</span><b id="wb-water-moves" title="奖励线为本关内置参考步数的110%；不超过奖励线通关即可奖励1个空瓶。"></b></div><div class="wb-water-sort-stat"><span>难度</span><b id="wb-water-difficulty"></b></div></div><div class="wb-water-sort-board" id="wb-water-board"><div class="wb-water-banner" id="wb-water-banner"></div></div><div class="wb-water-tools"><button type="button" class="wb-btn wb-water-tool" data-tool="undo"><i>↶</i>撤回</button><button type="button" class="wb-btn wb-water-tool" data-tool="hint"><i>◎</i>提示 <b id="wb-water-hint"></b></button><button type="button" class="wb-btn wb-water-tool" data-tool="extra"><i>＋</i>空瓶 <b id="wb-water-extra"></b></button><button type="button" class="wb-btn wb-water-tool" data-tool="reset" title="重置本关"><i>↻</i>重置</button><button type="button" class="wb-btn wb-water-tool" data-tool="finish" title="结束并结算本局"><i>■</i>结算</button></div></div>';
 
   const seed = Number.isInteger(state?.seed) ? state.seed : Math.floor(Math.random() * 4294967296);
   let level = Math.max(1, Math.floor(Number(state?.level) || 1));
@@ -170,7 +193,9 @@ export function createWaterSortGame(state, env) {
   let initialBottles = Array.isArray(state?.initialBottles) ? state.initialBottles.map(bottle => bottle.slice()) : bottles.map(bottle => bottle.slice());
   let solution = Array.isArray(state?.solution) ? state.solution.map(move => ({ from:Number(move.from), to:Number(move.to) })) : (generated?.solution || []);
   let initialSolution = Array.isArray(state?.initialSolution) ? state.initialSolution.map(move => ({ from:Number(move.from), to:Number(move.to) })) : solution.map(move => ({ from:move.from, to:move.to }));
-  let par = Math.max(1, Number(state?.par) || generated?.par || solution.length || 1);
+  let par = Number(state?.par) || generated?.par || 0;
+  if (!Number.isInteger(par) || par < 1) par = 0;
+  if (!par && (!state?.moves || Array.isArray(state?.initialBottles)) && verifyWaterSortSolution(initialBottles, initialSolution, new Set(initialBottles.flat()).size)) par = initialSolution.length;
   let colorCount = Math.max(1, Number(state?.colorCount) || generated?.colorCount || (Math.max(-1, ...bottles.flat()) + 1));
   let baseEmptyCount = Math.max(0, Number(state?.baseEmptyCount ?? generated?.emptyCount ?? (state?.bottles ? 2 : waterSortDifficulty(level).emptyCount)) || 0);
   let baseBottleCount = Math.max(1, Number(state?.baseBottleCount) || generated?.bottles.length || colorCount + baseEmptyCount);
@@ -179,29 +204,37 @@ export function createWaterSortGame(state, env) {
   let selected = -1;
   let busy = false;
   let pendingPour = null;
-  let history = Array.isArray(state?.history) ? state.history.slice(-40).map(item => ({
-    bottles:Array.isArray(item?.bottles) ? item.bottles.map(bottle => bottle.slice()) : [],
+  let history = Array.isArray(state?.history) ? state.history.map(item => ({
+    ...(Array.isArray(item?.bottles) ? { bottles:item.bottles.map(bottle => bottle.slice()) } : {
+      from:Number(item?.from), to:Number(item?.to),
+      source:Array.isArray(item?.source) ? item.source.slice() : [],
+      target:Array.isArray(item?.target) ? item.target.slice() : [],
+    }),
     solution:Array.isArray(item?.solution) ? item.solution.map(move => ({ from:Number(move.from), to:Number(move.to) })) : [],
     moves:Math.max(0, Number(item?.moves) || 0),
     totalMoves:Math.max(0, Number(item?.totalMoves ?? item?.details?.totalMoves) || 0),
     efficientStreak:Math.max(0, Number(item?.efficientStreak ?? item?.details?.efficientStreak) || 0),
-  })).filter(item => item.bottles.length === bottles.length) : [];
-  const limits = { undo:10, hint:5, extra:5 };
-  const oldLimits = { undo:5, hint:3, extra:1 };
+  })).filter(item => item.bottles ? item.bottles.length === bottles.length
+    : Number.isInteger(item.from) && Number.isInteger(item.to) && item.from !== item.to
+      && !!bottles[item.from] && !!bottles[item.to] && item.source.length > 0) : [];
+  const limits = { hint:3, extra:5 };
   let tools = Object.fromEntries(Object.entries(limits).map(([key, limit]) => {
     const saved = Number(state?.tools?.[key]);
-    const amount = Number.isFinite(saved) ? saved + (state?.version >= 2 ? 0 : limit - oldLimits[key]) : limit;
+    const amount = Number.isFinite(saved) ? saved : limit;
     return [key, Math.min(limit, Math.max(0, Math.floor(amount)))];
   }));
   let details = Object.assign({ totalMoves:0, levelsCleared:0, perfectLevels:0, hintsUsed:0, undosUsed:0, extraUsed:0, resets:0, sameColorPours:0, maxEfficientStreak:0, efficientStreak:0, maxColors:colorCount, oneEmptyLevels:0 }, state?.details || {});
   let levelStats = Object.assign({ hints:0, undos:0, extra:0, resets:0 }, state?.levelStats || {});
-  levelStats.extra = Math.max(Number(levelStats.extra) || 0, bottles.length > baseBottleCount ? 1 : 0);
+  levelStats.extra = Math.max(Number(levelStats.extra) || 0, bottles.length - baseBottleCount);
   let levelComplete = !!state?.levelComplete;
   let prepared = null;
-  let hintBusy = false;
   let requestSerial = 0;
   const workers = new Set();
-  let hintPair = null;
+  const savedHints = Array.isArray(state?.hintMoves) ? state.hintMoves : (state?.hintPair ? [state.hintPair] : []);
+  let hintMoves = savedHints
+    .filter(move => Number.isInteger(move?.from) && Number.isInteger(move?.to) && canPourWater(bottles, move.from, move.to))
+    .map(move => ({ from:move.from, to:move.to }))
+    .filter((move, index, list) => list.findIndex(item => item.from === move.from && item.to === move.to) === index);
   let destroyed = false;
   const timers = new Set();
   let boardObserver = null;
@@ -240,8 +273,8 @@ export function createWaterSortGame(state, env) {
 
   function rememberPuzzle() {
     const original = initialBottles.slice();
-    // The purchased helper bottle is not a newly generated puzzle structure.
-    if (levelStats.extra >= 1 && original.length > baseBottleCount && !original[original.length - 1].length) original.pop();
+    // Purchased helper bottles do not change the generated puzzle structure.
+    for (let remaining = levelStats.extra; remaining > 0 && original.length > baseBottleCount && !original[original.length - 1].length; remaining--) original.pop();
     const signature = waterSortStructureKey(original);
     if (!seenStructures.includes(signature)) seenStructures.push(signature);
     seenStructures = seenStructures.slice(-240);
@@ -262,7 +295,7 @@ export function createWaterSortGame(state, env) {
 
   function stateData() {
     return {
-      version:2, seed, seenStructures:seenStructures.slice(), levelComplete,
+      version:5, seed, seenStructures:seenStructures.slice(), levelComplete,
       level,
       bottles:bottles.map(bottle => bottle.slice()),
       initialBottles:initialBottles.map(bottle => bottle.slice()),
@@ -277,8 +310,11 @@ export function createWaterSortGame(state, env) {
       tools:Object.assign({}, tools),
       details:Object.assign({}, details),
       levelStats:Object.assign({}, levelStats),
+      hintMoves:hintMoves.map(move => ({ from:move.from, to:move.to })),
       history:history.map(item => ({
-        bottles:item.bottles.map(bottle => bottle.slice()),
+        ...(item.bottles ? { bottles:item.bottles.map(bottle => bottle.slice()) } : {
+          from:item.from, to:item.to, source:item.source.slice(), target:item.target.slice(),
+        }),
         solution:item.solution.map(move => ({ from:move.from, to:move.to })),
         moves:item.moves,
         totalMoves:item.totalMoves,
@@ -321,11 +357,12 @@ export function createWaterSortGame(state, env) {
     const bannerHTML = banner ? banner.outerHTML : '<div class="wb-water-banner" id="wb-water-banner"></div>';
     board.innerHTML = bannerHTML + bottles.map((bottle, index) => {
       const complete = bottle.length === CAPACITY && bottle.every(color => color === bottle[0]);
+      const bottleHints = hintMoves.flatMap((move, hintIndex) => move.from === index || move.to === index
+        ? [{ hintIndex, color:waterSortHintColor(hintIndex) }] : []);
       const classes = [
         'wb-water-bottle',
         index === selected ? 'selected' : '',
-        hintPair?.from === index ? 'hint-source' : '',
-        hintPair?.to === index ? 'hint-target' : '',
+        bottleHints.length ? 'hinted' : '',
         complete ? 'done' : '',
       ].filter(Boolean).join(' ');
       const groups = [];
@@ -336,7 +373,9 @@ export function createWaterSortGame(state, env) {
       });
       const layers = groups.map(({ color, layer, count }, group) => '<span class="wb-water-fill' + (group === groups.length - 1 ? ' surface' : '') + '" style="--layer:' + layer + ';--count:' + count + ';--water:' + WATER_COLORS[color % WATER_COLORS.length] + '"></span>').join('');
       const label = bottle.length ? '，从底到顶 ' + bottle.map(color => WATER_COLOR_NAMES[color % WATER_COLOR_NAMES.length]).join('、') : '，空瓶';
-      return '<button type="button" class="' + classes + '" data-bottle="' + index + '" aria-label="瓶子 ' + (index + 1) + label + '"><span class="wb-water-glass">' + layers + '</span></button>';
+      const hintMarks = bottleHints.length ? '<span class="wb-water-hint-marks" aria-hidden="true">' + bottleHints.map(hint => '<span class="wb-water-hint-mark" style="--hint-color:' + hint.color + '"></span>').join('') + '</span>' : '';
+      const hintLabel = bottleHints.length ? '，包含可走方案 ' + bottleHints.map(hint => hint.hintIndex + 1).join('、') : '';
+      return '<button type="button" class="' + classes + '" data-bottle="' + index + '" aria-label="瓶子 ' + (index + 1) + label + hintLabel + '">' + hintMarks + '<span class="wb-water-glass">' + layers + '</span></button>';
     }).join('');
     board.querySelectorAll('.wb-water-bottle').forEach(button => {
       button.addEventListener('click', () => selectBottle(Number(button.dataset.bottle)));
@@ -347,12 +386,12 @@ export function createWaterSortGame(state, env) {
   function updateUI() {
     const levelDifficulty = waterSortDifficulty(level);
     const cycle = levelDifficulty.endlessCycle;
+    const bottleRewardLimit = waterSortBottleRewardLimit(par);
     const fields = [
       ['#wb-water-level', level],
       ['#wb-water-score', score],
-      ['#wb-water-moves', moves],
-      ['#wb-water-difficulty', colorCount + '色 · ' + levelDifficulty.band + '档' + (cycle ? ' ∞' : '')],
-      ['#wb-water-undo', tools.undo],
+      ['#wb-water-moves', moves + ' / ' + (bottleRewardLimit || '--')],
+      ['#wb-water-difficulty', colorCount + '色 · ' + ['较易', '中等', '较难'][levelDifficulty.roundIndex] + (cycle ? ' ∞' : '')],
       ['#wb-water-hint', tools.hint],
       ['#wb-water-extra', tools.extra],
     ];
@@ -362,10 +401,10 @@ export function createWaterSortGame(state, env) {
     });
     root.querySelectorAll('.wb-water-tool').forEach(button => {
       const tool = button.dataset.tool;
-      const locked = destroyed || busy || hintBusy;
+      const locked = destroyed || busy;
       // The host pause overlay handles pause; do not leave stale disabled flags after resume.
-      if (tool === 'undo') button.disabled = locked || tools.undo <= 0 || !history.length;
-      else if (tool === 'extra') button.disabled = locked || tools.extra <= 0 || levelStats.extra >= 1 || bottles.length >= MAX_TOTAL_BOTTLES;
+      if (tool === 'undo') button.disabled = locked || !history.length;
+      else if (tool === 'extra') button.disabled = locked || tools.extra <= 0 || levelStats.extra >= MAX_EXTRA_BOTTLES_PER_LEVEL || bottles.length >= MAX_TOTAL_BOTTLES;
       else if (tool === 'hint') button.disabled = locked || tools.hint <= 0;
       else button.disabled = locked;
     });
@@ -378,20 +417,19 @@ export function createWaterSortGame(state, env) {
     later(() => button.classList.remove('bad'), 260);
   }
 
-  function pushHistory() {
+  function pushHistory(from, to) {
+    // Store only the two changed bottles so unlimited undo keeps saves compact.
     history.push({
-      bottles:bottles.map(bottle => bottle.slice()),
+      from, to, source:bottles[from].slice(), target:bottles[to].slice(),
       solution:solution.map(move => ({ from:move.from, to:move.to })),
       moves,
       totalMoves:details.totalMoves,
       efficientStreak:details.efficientStreak,
     });
-    if (history.length > 40) history.shift();
   }
 
   function selectBottle(index) {
-    if (destroyed || busy || hintBusy || env.isPaused() || !bottles[index]) return;
-    hintPair = null;
+    if (destroyed || busy || env.isPaused() || !bottles[index]) return;
     if (selected < 0) {
       if (!bottles[index].length) {
         flashBottle(index);
@@ -418,7 +456,7 @@ export function createWaterSortGame(state, env) {
 
   function performPour(from, to) {
     if (busy) return;
-    pushHistory();
+    pushHistory(from, to);
     busy = true;
     const sourceButton = q('.wb-water-bottle[data-bottle="' + from + '"]');
     const targetButton = q('.wb-water-bottle[data-bottle="' + to + '"]');
@@ -444,6 +482,7 @@ export function createWaterSortGame(state, env) {
         return;
       }
       bottles = result.bottles;
+      hintMoves = [];
       moves++;
       details.totalMoves++;
       const expected = solution[0];
@@ -477,7 +516,7 @@ export function createWaterSortGame(state, env) {
     details.levelsCleared++;
     details.maxColors = Math.max(details.maxColors || 0, colorCount);
     if (baseEmptyCount === 1) details.oneEmptyLevels++;
-    const efficiency = Math.max(0, par + 8 - moves) * 25;
+    const efficiency = Math.max(0, (par || 1) + 8 - moves) * 25;
     const noAssist = levelStats.hints + levelStats.undos + levelStats.extra + levelStats.resets === 0;
     const difficulty = waterSortDifficulty(level);
     const reward = 300 + colorCount * 90 + difficulty.minComplexity * 10 + Math.min(10, difficulty.endlessCycle) * 80 + efficiency + (noAssist ? 180 : 0);
@@ -487,10 +526,11 @@ export function createWaterSortGame(state, env) {
     } else env.speak('level_clear');
     score += reward;
     env.setScore(score);
-    showBanner('第 ' + level + ' 关完成 +' + reward, 850);
-    tools.undo = Math.min(10, (tools.undo || 0) + 1);
-    if (level % 2 === 0) tools.hint = Math.min(5, (tools.hint || 0) + 1);
-    if (level % 3 === 0) tools.extra = Math.min(5, (tools.extra || 0) + 1);
+    const bottleRewardLimit = waterSortBottleRewardLimit(par);
+    const toolRewards = [];
+    if (bottleRewardLimit > 0 && moves <= bottleRewardLimit && tools.extra < limits.extra) toolRewards.push('空瓶 +1');
+    if (bottleRewardLimit > 0 && moves <= bottleRewardLimit) tools.extra = Math.min(limits.extra, (tools.extra || 0) + 1);
+    showBanner('第 ' + level + ' 关完成 +' + reward + (toolRewards.length ? ' · ' + toolRewards.join(' · ') : ''), 850);
     levelComplete = true;
     env.save(stateData(), true);
     later(() => startLevel(level + 1), 950);
@@ -513,8 +553,9 @@ export function createWaterSortGame(state, env) {
     selected = -1;
     busy = false;
     history = [];
-    hintPair = null;
+    hintMoves = [];
     levelStats = { hints:0, undos:0, extra:0, resets:0 };
+    tools.hint = limits.hint;
     rememberPuzzle();
     env.speak('level_up');
     draw();
@@ -526,7 +567,7 @@ export function createWaterSortGame(state, env) {
   }
 
   function finishGame() {
-    if (destroyed || busy || hintBusy || env.isPaused()) return;
+    if (destroyed || busy || env.isPaused()) return;
     const finalDetails = Object.assign({}, details, { score, level, currentMoves:moves, colorCount, baseEmptyCount });
     destroy();
     env.clear();
@@ -536,74 +577,60 @@ export function createWaterSortGame(state, env) {
   }
 
   function requestFinish() {
-    if (destroyed || busy || hintBusy || env.isPaused()) return;
+    if (destroyed || busy || env.isPaused()) return;
     env.confirm('结束并结算？', '确定要结束当前倒瓶子游戏并结算吗？取消后可以继续本局。', finishGame);
   }
 
   function useUndo() {
-    if (destroyed || busy || hintBusy || env.isPaused() || tools.undo <= 0 || !history.length) return;
+    if (destroyed || busy || env.isPaused() || !history.length) return;
     const previous = history.pop();
-    bottles = previous.bottles;
+    if (previous.bottles) bottles = previous.bottles;
+    else {
+      bottles[previous.from] = previous.source;
+      bottles[previous.to] = previous.target;
+    }
     solution = previous.solution;
     moves = previous.moves;
     details.totalMoves = previous.totalMoves;
     details.efficientStreak = previous.efficientStreak;
-    tools.undo--;
     details.undosUsed++;
     levelStats.undos++;
     selected = -1;
-    hintPair = null;
+    hintMoves = [];
     env.speak('undo');
     draw();
     save();
   }
 
-  async function useHint() {
-    if (destroyed || busy || hintBusy || env.isPaused() || tools.hint <= 0) return;
-    let move = waterSortHint(bottles, solution);
-    if (!move) {
-      hintBusy = true;
-      const before = JSON.stringify(bottles);
-      const requestedLevel = level;
-      updateUI();
-      showBanner('正在验证通关路径…', 6000);
-      const result = await backgroundRequest('hint', { bottles });
-      hintBusy = false;
-      if (destroyed) return;
-      updateUI();
-      q('#wb-water-banner')?.classList.remove('show');
-      if (env.isPaused() || requestedLevel !== level || JSON.stringify(bottles) !== before) return;
-      if (result && verifyWaterSortSolution(bottles, result, colorCount)) {
-        solution = result;
-        move = waterSortHint(bottles, solution);
-      }
-    }
-    if (!move) {
-      env.toast('暂未找到经过验证的通关路径，不扣提示次数；可撤回、加空瓶或重置后再试。');
+  function useHint() {
+    if (destroyed || busy || env.isPaused() || tools.hint <= 0) return;
+    const availableMoves = waterSortHint(bottles);
+    if (!availableMoves.length) {
+      env.toast('当前没有可以倒水的方案，不扣提示次数；可撤回、加空瓶或重置后再试。');
       return;
     }
     tools.hint--;
     details.hintsUsed++;
     levelStats.hints++;
-    hintPair = move;
+    hintMoves = availableMoves
+      .filter((move, index, list) => list.findIndex(item => Math.min(item.from, item.to) === Math.min(move.from, move.to)
+        && Math.max(item.from, item.to) === Math.max(move.from, move.to)) === index)
+      .map(move => ({ from:move.from, to:move.to }));
     env.speak('hint');
     draw();
-    later(() => {
-      hintPair = null;
-      draw();
-    }, 1300);
     save();
   }
 
   function useExtraBottle() {
-    if (destroyed || busy || hintBusy || env.isPaused() || tools.extra <= 0 || levelStats.extra >= 1 || bottles.length >= MAX_TOTAL_BOTTLES) return;
+    if (destroyed || busy || env.isPaused() || tools.extra <= 0 || levelStats.extra >= MAX_EXTRA_BOTTLES_PER_LEVEL || bottles.length >= MAX_TOTAL_BOTTLES) return;
     tools.extra--;
     details.extraUsed++;
     levelStats.extra++;
     bottles.push([]);
     initialBottles.push([]);
-    history.forEach(item => item.bottles.push([]));
+    history.forEach(item => item.bottles?.push([]));
     selected = -1;
+    hintMoves = [];
     env.speak('extra');
     showBanner('增加一个空瓶', 650);
     draw();
@@ -611,13 +638,13 @@ export function createWaterSortGame(state, env) {
   }
 
   function resetLevel() {
-    if (destroyed || busy || hintBusy || env.isPaused()) return;
+    if (destroyed || busy || env.isPaused()) return;
     bottles = initialBottles.map(bottle => bottle.slice());
     solution = initialSolution.map(move => ({ from:move.from, to:move.to }));
     moves = 0;
     selected = -1;
     history = [];
-    hintPair = null;
+    hintMoves = [];
     details.resets++;
     levelStats.resets++;
     details.efficientStreak = 0;

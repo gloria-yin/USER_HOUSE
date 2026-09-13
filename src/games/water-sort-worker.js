@@ -1,22 +1,12 @@
-import { generateWaterSortCandidate, solveWaterSort, waterSortRandom, waterSortStructureKey } from './water-sort-puzzles.js';
+import { generateWaterSortCandidate, waterSortRandom } from './water-sort-puzzles.js';
 
 self.onmessage = ({ data }) => {
   const { id, kind } = data;
   try {
-    if (kind === 'hint') {
-      self.postMessage({ id, result:solveWaterSort(data.bottles, { maxNodes:60000 }).solution });
-    } else {
-      const random = waterSortRandom(data.seed);
-      let result = null;
-      for (let attempt = 0; attempt < 4; attempt++) {
-        const candidate = generateWaterSortCandidate(data.level, random, { attempts:12, maxNodes:12000 });
-        if (candidate && !data.excluded.includes(waterSortStructureKey(candidate.bottles))) {
-          result = candidate;
-          break;
-        }
-      }
-      self.postMessage({ id, result });
-    }
+    if (kind !== 'generate') throw new Error('Unsupported water-sort worker request');
+    const random = waterSortRandom(data.seed);
+    const result = generateWaterSortCandidate(data.level, random, { maxTimeMs:1200, excluded:data.excluded });
+    self.postMessage({ id, result });
   } catch {
     self.postMessage({ id, result:null });
   }
