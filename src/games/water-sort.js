@@ -570,7 +570,6 @@ export function createWaterSortGame(state, env) {
     if (destroyed || busy || env.isPaused()) return;
     const finalDetails = Object.assign({}, details, { score, level, currentMoves:moves, colorCount, baseEmptyCount });
     destroy();
-    env.clear();
     env.setScore(score);
     env.speak('settle');
     env.finish('本局结算', '累计总分：' + score + '分，到达第' + level + '关，已完成' + details.levelsCleared + '关，总步数' + details.totalMoves + '步', { outcome:'score', score }, { score, level, details:finalDetails });

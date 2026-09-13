@@ -448,7 +448,6 @@ export function createFlappyBirdGame(savedState, env) {
       crash:collisionReason(),
       difficultyStage:flappyDifficulty(state.score).stage,
     });
-    env.clear();
     env.setScore(state.score);
     speak('crash', true);
     env.finish('像素鸟 · 游戏结束', '本局得分：' + state.score + '分，穿过' + state.score + '组管道，拍翅' + (details.flaps || 0) + '次，极限擦边' + (details.closeCalls || 0) + '次', { outcome:'score', score:state.score }, { score:state.score, details:finalDetails });

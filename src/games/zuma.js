@@ -536,7 +536,6 @@ export function createZumaGame(state, env) {
     if (destroyed) return;
     const finalDetails = Object.assign({}, details, { score, remaining:chain.length });
     destroy();
-    env.clear();
     env.setScore(score);
     env.speak('gameover');
     env.finish('珠链进洞', '本局分数：' + score + '分，生成' + details.totalBallsGenerated + '颗，消除' + details.cleared + '颗，最高连锁×' + (details.maxCombo || 0), { outcome:'score', score }, { score, maxCombo:details.maxCombo || 0, details:finalDetails });
