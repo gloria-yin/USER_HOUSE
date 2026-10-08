@@ -419,8 +419,59 @@ try {
   assert.equal(restoredContent.theaterJSON, generatedContent.theaterJSON, 'generated theaters must survive close and cache release');
   assert.ok(restoredContent.lineText && !restoredContent.lineText.includes('未生成'), 'reopened settings must load generated lines from storage');
   assert.ok(restoredContent.theaterText && !restoredContent.theaterText.includes('未生成') && !restoredContent.theaterText.includes('失败：'), 'reopened settings must load generated theaters from storage');
+
+  await evaluate(`(()=>{
+    const companion=document.querySelector('#wb-companion-toggle');
+    const theme=document.querySelector('#wb-theme');
+    companion.checked=false;
+    theme.value='arcade';
+    theme.dispatchEvent(new Event('change',{bubbles:true}));
+    companion.dispatchEvent(new Event('change',{bubbles:true}));
+    document.querySelector('[data-tab=single]').click();
+  })()`);
+  for (let i = 0; i < 8 && !(await evaluate('!!document.querySelector("[data-game=numberklotski]")')); i++) {
+    await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
+    await sleep(260);
+  }
+  await evaluate('document.querySelector("[data-game=numberklotski]").click()');
+  await waitFor('!!document.querySelector("#wb-start-cover-btn")');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('!!document.querySelector("#wb-choice-mask [data-choice=\'6x6\']")');
+  await evaluate('document.querySelector("#wb-choice-mask [data-choice=\'6x6\']").click()');
+  await waitFor('document.querySelectorAll(".wb-number-klotski-tile").length===36');
+  const readKlotskiGeometry = () => evaluate(`(()=>{
+    const board=document.querySelector('#wb-number-klotski-board');
+    const stage=document.querySelector('.wb-number-klotski-stage');
+    const gamebox=document.querySelector('#wb-gamebox');
+    const root=document.querySelector('.wb-number-klotski');
+    const b=board.getBoundingClientRect(),s=stage.getBoundingClientRect(),g=gamebox.getBoundingClientRect(),r=root.getBoundingClientRect();
+    const cells=Array.from(board.children).map(cell=>cell.getBoundingClientRect());
+    const epsilon=1;
+    return {
+      board:{left:b.left,right:b.right,top:b.top,bottom:b.bottom,width:b.width,height:b.height},
+      stage:{left:s.left,right:s.right,top:s.top,bottom:s.bottom,width:s.width,height:s.height},
+      gamebox:{left:g.left,right:g.right,top:g.top,bottom:g.bottom,width:g.width,height:g.height},
+      root:{left:r.left,right:r.right,width:r.width,scrollWidth:root.scrollWidth},
+      inside:b.left>=s.left-epsilon&&b.right<=s.right+epsilon&&b.top>=s.top-epsilon&&b.bottom<=s.bottom+epsilon&&b.left>=g.left-epsilon&&b.right<=g.right+epsilon&&b.left>=-epsilon&&b.right<=innerWidth+epsilon,
+      allCellsInside:cells.every(cell=>cell.left>=b.left-epsilon&&cell.right<=b.right+epsilon&&cell.top>=b.top-epsilon&&cell.bottom<=b.bottom+epsilon),
+      square:Math.abs(b.width-b.height)<=epsilon,
+      viewportWidth:innerWidth,
+    };
+  })()`);
+  const klotski390 = await readKlotskiGeometry();
+  assert.equal(klotski390.inside, true, '6x6 number klotski board must fit its mobile stage at 390px: ' + JSON.stringify(klotski390));
+  assert.equal(klotski390.allCellsInside, true, 'all 6x6 number klotski cells must remain visible at 390px');
+  assert.equal(klotski390.square, true, 'number klotski board must remain square at 390px');
+  assert.ok(klotski390.root.scrollWidth <= klotski390.root.width + 1, 'number klotski root must not overflow horizontally at 390px');
+  await client.call('Emulation.setDeviceMetricsOverride', { width:320, height:568, deviceScaleFactor:2, mobile:true });
+  await sleep(180);
+  const klotski320 = await readKlotskiGeometry();
+  assert.equal(klotski320.inside, true, '6x6 number klotski board must fit its mobile stage at 320px: ' + JSON.stringify(klotski320));
+  assert.equal(klotski320.allCellsInside, true, 'all 6x6 number klotski cells must remain visible at 320px');
+  assert.equal(klotski320.square, true, 'number klotski board must remain square at 320px');
+  assert.ok(klotski320.root.scrollWidth <= klotski320.root.width + 1, 'number klotski root must not overflow horizontally at 320px');
   assert.deepEqual(await evaluate('window.__errors'), []);
-  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; Schulte handler ' + interaction.maxHandler.toFixed(1) + 'ms; settings switch ' + settingsSwitch.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); settings scroll work ' + settingsScroll.maxWork.toFixed(1) + 'ms; home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms.');
+  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; Schulte handler ' + interaction.maxHandler.toFixed(1) + 'ms; settings switch ' + settingsSwitch.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); settings scroll work ' + settingsScroll.maxWork.toFixed(1) + 'ms; home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
 } finally {
   client?.close();
   if (browser) {
