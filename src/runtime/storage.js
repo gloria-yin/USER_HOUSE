@@ -2,19 +2,31 @@ import LZString from '../vendor/lz-string.js';
 
 const FORMAT = 'wanban-lz-v1';
 const decodedTextCache = new Map();
-const MAX_CACHED_CHARACTERS = 4 * 1024 * 1024;
+const memoryConstrained = (() => {
+  try {
+    const memory = Number(globalThis.navigator?.deviceMemory || 0);
+    return (memory > 0 && memory <= 4) || !!globalThis.matchMedia?.('(max-width: 768px)')?.matches;
+  } catch (_) { return false; }
+})();
+const MAX_CACHED_ENTRIES = memoryConstrained ? 3 : 8;
+const MAX_CACHED_CHARACTERS = (memoryConstrained ? 1 : 4) * 1024 * 1024;
 let cachedCharacters = 0;
 
 function rememberDecodedText(raw, json) {
   const size = raw.length + json.length;
   if (size > MAX_CACHED_CHARACTERS || decodedTextCache.has(raw)) return;
-  while (decodedTextCache.size >= 8 || cachedCharacters + size > MAX_CACHED_CHARACTERS) {
+  while (decodedTextCache.size >= MAX_CACHED_ENTRIES || cachedCharacters + size > MAX_CACHED_CHARACTERS) {
     const oldest = decodedTextCache.keys().next().value;
     cachedCharacters -= oldest.length + decodedTextCache.get(oldest).length;
     decodedTextCache.delete(oldest);
   }
   decodedTextCache.set(raw, json);
   cachedCharacters += size;
+}
+
+export function clearStoredJSONCache() {
+  decodedTextCache.clear();
+  cachedCharacters = 0;
 }
 
 function cachedDecodedText(raw) {

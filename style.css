@@ -585,8 +585,9 @@
 .wb-cardgrid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; align-content:start; }
 .wb-game-card { background:var(--wb-panel); border:1px solid var(--wb-border); border-left:3px solid var(--wb-accent); border-radius:0; padding:14px; cursor:pointer; min-height:92px; display:flex; align-items:center; gap:12px; transition:.16s transform,.16s box-shadow,.16s border-color; }
 .wb-game-card:hover { transform:translateY(-2px); border-color:var(--wb-accent); box-shadow:0 12px 28px rgba(0,0,0,.16); }
-.wb-game-icon { flex:0 0 auto; width:60px; height:60px; display:grid; place-items:center; border-radius:0; background:var(--wb-soft); color:var(--wb-accent); border:1px solid var(--wb-border); font-weight:900; overflow:hidden; }
-.wb-game-icon img { width:100%; height:100%; object-fit:cover; display:block; }
+.wb-game-icon { position:relative; flex:0 0 auto; width:60px; height:60px; display:grid; place-items:center; border-radius:0; background:var(--wb-soft); color:var(--wb-accent); border:1px solid var(--wb-border); font-weight:900; overflow:hidden; }
+.wb-game-icon img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; opacity:0; }
+.wb-game-icon.has-image img { opacity:1; }
 .wb-game-icon.has-image { padding:0; background:var(--wb-soft); color:transparent; }
 .wb-game-icon.has-image span { display:none; }
 .wb-game-info { min-width:0; display:grid; gap:5px; align-content:center; }
@@ -3412,4 +3413,49 @@
 }
 #wanbanXiaowu-popup .wb-speech .wb-text-seg {
   margin:0!important;
+}
+
+/* Keep long game lists and animated boards cheap to composite on phones. */
+.wb-game-card {
+  content-visibility:auto;
+  contain:layout paint style;
+  contain-intrinsic-size:auto 104px;
+}
+.wb-game-list-sentinel { width:100%; height:1px; grid-column:1 / -1; pointer-events:none; }
+@media (max-width:768px) {
+  .wb-settings-grid > .wb-panel {
+    content-visibility:auto;
+    contain-intrinsic-size:auto 300px;
+  }
+  #wanbanXiaowu-shell.wb-shell-visible,
+  #wanbanXiaowu-popup::before,
+  .wb-modal-mask {
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+  }
+  #wanbanXiaowu-popup.wb-playing :is(.wb-game-main,.wb-toolbar,.wb-board-wrap,.wb-side-companion,.wb-companion,.wb-speech) {
+    box-shadow:none!important;
+  }
+  #wanbanXiaowu-popup,
+  .wb-modal { box-shadow:none!important; }
+  .wb-modal-mask,
+  .wb-modal,
+  .wb-body.wb-swipe-enter-left,
+  .wb-body.wb-swipe-enter-right { animation:none!important; }
+  .wb-body { overscroll-behavior:contain; }
+  :is(.wb-game-card,.wb-choice-card,.wb-tab,.wb-btn,.wb-iconbtn) {
+    -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+  :is(.wb-game-card,.wb-choice-card) {
+    transition:none!important;
+    box-shadow:none!important;
+  }
+  .wb-shuerte-board { box-shadow:none!important; }
+  .wb-shuerte-cell {
+    transition:none!important;
+    box-shadow:inset 0 -2px 0 rgba(89,103,67,.08)!important;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+  }
 }

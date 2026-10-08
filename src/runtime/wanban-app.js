@@ -3,24 +3,23 @@ import { user_avatar as tavernUserAvatar } from '../../../../../personas.js';
 import { yaml } from '../../../../../../lib.js';
 import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
-import { createZumaGame } from '../games/zuma.js';
-import { createWaterSortGame } from '../games/water-sort.js';
-import { createFlappyBirdGame } from '../games/flappy-bird.js';
 import { NUMBER_KLOTSKI_BEST_STORAGE_KEY, createNumberKlotskiGame, isNumberKlotskiSolved, isSolvableNumberKlotskiBoard } from '../games/number-klotski.js';
-import { spiderDealColumns } from '../games/spider-rules.js';
+import { canSpiderDeal, spiderAutoDealState, spiderDealColumns } from '../games/spider-rules.js?v=4.2.0-smooth2';
 import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js';
 import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
-import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage } from './storage.js';
+import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.2.0-smooth2';
 import { parsePetInfo, parsePetStoryLines, assertPetInfo } from './pet-info.js';
 import { petStoryMemoryText } from './pet-memory.js';
 import { parseGeneratedJson } from './generated-json.js';
-import { heartWorldFromRole } from '../heart-challenge/world.js?v=4.1.13-heart-logs';
-import { HEART_STORAGE_KEY, normalizeStore as normalizeHeartStore } from '../heart-challenge/engine.js?v=4.1.13-heart-logs';
-import { uploadGenerationLog } from '../heart-challenge/generation-log.js?v=4.1.13-heart-logs';
+
+const HEART_STORAGE_KEY = 'wanbanXiaowu_heartChallenge_v1';
 
 // Runtime migrated from 益智小游戏/玩伴小屋V1.0.1.json.
 // Keep this file behavior-compatible with the original script; split new code into src/* modules when extending.
 let runtimeStarted = false;
+let runtimeReady = false;
+let runtimeOpenHandler = null;
+let runtimeOpenRequested = false;
 let activePromptTemplates = PROMPT_TEMPLATES;
 
 function clonePromptTemplates() {
@@ -78,10 +77,16 @@ function promptTemplates() {
   return activePromptTemplates || PROMPT_TEMPLATES;
 }
 
-export async function initWanbanXiaowu() {
-  if (runtimeStarted) return;
+export async function initWanbanXiaowu(options = {}) {
+  if (options.open) runtimeOpenRequested = true;
+  if (runtimeStarted) {
+    if (runtimeReady && runtimeOpenRequested && runtimeOpenHandler) {
+      runtimeOpenRequested = false;
+      runtimeOpenHandler();
+    }
+    return;
+  }
   runtimeStarted = true;
-  await loadPromptTextTemplates();
 
   const SCRIPT_ID = 'wanbanXiaowu';
   const POPUP_ID = SCRIPT_ID + '-popup';
@@ -109,8 +114,6 @@ export async function initWanbanXiaowu() {
   const STORAGE_WORD_GUESS_BANK = SCRIPT_ID + '_wordGuessBank_v1';
   const STORAGE_WORD_GUESS_BANK_SOURCE = SCRIPT_ID + '_wordGuessBankSource_v1';
   const STORAGE_WORD_GUESS_BANK_FILTER = SCRIPT_ID + '_wordGuessBankFilter_v1';
-  try { compactLegacyStorage(localStorage, SCRIPT_ID + '_', [STORAGE_SUMMARY_REQ]); }
-  catch (error) { console.warn('[玩伴小屋] storage unavailable:', error); }
   const WORD_GUESS_DEFAULT_BANK_URL = new URL('./wanban-wordguess-bank.txt', import.meta.url).href;
   const EXTENSION_UPDATE_FALLBACKS = ['/USER_HOUSE', '/wanban-xiaowu'];
   let updateCheckStarted = false;
@@ -127,11 +130,35 @@ export async function initWanbanXiaowu() {
   ];
 
   let heartController = null;
+  let heartModules = null;
+  let heartModulePromise = null;
   let currentTab = 'single';
   let currentGame = null;
   let activeGameController = null;
+  let gameStartRequest = 0;
   let gameEntryTimer = null;
   let gameEntryObserver = null;
+  let gameListRenderToken = 0;
+  let gameIconObserver = null;
+  let gameListLoadObserver = null;
+  const modularGameFactoryLoaders = {
+    zuma:() => import('../games/zuma.js?v=4.2.0').then(module => module.createZumaGame),
+    watersort:() => import('../games/water-sort.js?v=4.2.0').then(module => module.createWaterSortGame),
+    flappybird:() => import('../games/flappy-bird.js?v=4.2.0').then(module => module.createFlappyBirdGame),
+  };
+  const modularGameFactoryPromises = new Map();
+  function loadModularGameFactory(id) {
+    const loader = modularGameFactoryLoaders[id];
+    if (!loader) return Promise.resolve(null);
+    if (!modularGameFactoryPromises.has(id)) {
+      const promise = loader().catch(error => {
+        modularGameFactoryPromises.delete(id);
+        throw error;
+      });
+      modularGameFactoryPromises.set(id, promise);
+    }
+    return modularGameFactoryPromises.get(id);
+  }
   let snakeTimer = null;
   let tetrisTimer = null;
   let jumpTimer = null;
@@ -158,19 +185,30 @@ export async function initWanbanXiaowu() {
   let currentRoundTheaterInfo = null;
   let progressSaveTimers = {};
   let progressSaveCache = {};
+  let progressSaveStartedAt = {};
   const progressDeleteCache = new Set();
   let pendingRecords = null;
   let recordsCache = null;
   let progressCache = null;
+  let scoresCache = null;
+  let linesCache = null;
+  let roleLinesCache = null;
+  let linePresetSelectionCache = null;
+  let apiPresetsCache = null;
+  let worldPresetsCache = null;
+  let summariesCache = null;
+  let roleContextsCache = null;
+  let cardRolesCache = null;
   const pendingPetStates = new Map();
   let defaultWordGuessBankCache = null;
-  let theaterCache = safeObject(loadJSON(STORAGE_THEATERS, {}));
+  let theaterCache = null;
   // Game render loops read settings frequently; avoid decoding localStorage on every call.
   let settingsCache = null;
   let canvasPaletteCache = null;
   let lastMenuOpenAt = 0;
   let floatingBallResizeBound = false;
   let petDesktopResizeBound = false;
+  let runtimeVisibilityBound = false;
   let petIdleTimer = null;
   let petSadTimer = null;
   let petAnimationTimer = null;
@@ -179,6 +217,7 @@ export async function initWanbanXiaowu() {
   let petStoryTapLockedUntil = 0;
   let petStoryTypeTimer = 0;
   const petStoryPageCache = new Map();
+  let petStoryPageCacheCharacters = 0;
   let petDesktopPokeLockedUntil = 0;
   const petOnlineSessionStartedAt = Date.now();
   let petAutoDailyLogRunning = {};
@@ -195,6 +234,9 @@ export async function initWanbanXiaowu() {
   let roleContextEventsBound = false;
   let roleContextRefreshTimer = 0;
   const roleAvatarCacheVersions = new Map();
+  let transientCacheCleanupId = null;
+  let transientCacheCleanupUsesIdle = false;
+  let transientCacheCleanupGeneration = 0;
 
   const GAME_ICON_BASE = new URL('../../assets/game-icons/', import.meta.url).href;
   const PET_ASSET_BASE = new URL('../../assets/pets/', import.meta.url).href;
@@ -366,7 +408,7 @@ export async function initWanbanXiaowu() {
     flappybird: '单人无尽像素飞行游戏。电脑按空格键，手机或鼠标点击画面，每次让小鸟向上拍翅；不操作时小鸟会在重力下下坠。完整穿过一组上下管道得1分，碰到管道、画面顶部或地面立即结束。前10分保持接近经典的入门速度，随后管道逐步加速、缝隙缓慢缩小、间距缓慢缩短，到达可玩上限后保持稳定无尽难度。没有道具和复活，每组管道只计分一次。',
     game1010: '10×10方块拼图。拖动底部3个候补方块放入棋盘，方块不可旋转；任意行或列填满会同时消除且不会下落。3个方块全部放完后刷新新一批。每局有3次重新生成和3次小锤子，死局且道具耗尽时结束。',
     turkey: '8列10行的竖屏无尽横向滑块消除游戏。拖动不同长度的横向方块左右移动，补满整行后消除并触发重力和连锁；每次有效移动后底部加入新行，方块被推到顶部外则游戏结束。道具包含云雷、星尘收集器和小锤粉碎机。',
-    spider: '经典蜘蛛纸牌的无尽模式。开局可选择简单或困难：简单模式全部使用黑桃同一花色，困难模式保持黑桃与红桃两种花色。卡牌可按点数递减叠放，但只有同花色严格递减的连续牌组能整体移动；同花色K到A完整序列会自动收起。只有存在底牌时才能发牌，每次最多向10列各发一张，最后不足10张时仍可按剩余数量发出；清空牌桌后会补入新牌继续无尽玩法。每次发牌后会按完成牌组数给出步数限制，倒计时归零会自动尝试发牌。存在空列时必须先填满才能发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
+    spider: '经典蜘蛛纸牌的无尽模式。开局可选择简单或困难：简单模式全部使用黑桃同一花色，困难模式保持黑桃与红桃两种花色。卡牌可按点数递减叠放，但只有同花色严格递减的连续牌组能整体移动；同花色K到A完整序列会自动收起。每次最多向10列各发一张。底牌少于10张时（包括0张），发牌按钮始终可用，不受空列限制；底牌为0时点击会补入新底牌并继续发牌。只有底牌为10张或以上且存在空列时，才必须先填满空列。清空牌桌后会补入新牌继续无尽玩法。每次发牌后会按完成牌组数给出步数限制，倒计时归零会自动尝试发牌。任意牌列超过30张且无法靠收牌降回安全高度时游戏结束。',
     linklink: '连连看有简单和困难两种模式。简单模式没有时间限制，只保留提示和洗牌，可以随意通关；困难模式有倒计时并保留冻结、消除等挑战道具。点击两个相同图案，若它们之间存在最多两次转弯的横竖连接路径即可消除；连接线可以从棋盘外侧一格绕行，但不能穿过图块或石块。连续成功配对每满3次会小幅加时，并显示连击提示。共12关，逐步加入下落、上移、左右靠拢、集中、分散和障碍物。每关清空棋盘并达成目标分后自动进入下一关。',
     blackjack: '双人21点挑战。每一小局使用一副完整52张牌重新洗牌，开局先猜红黑抽判定牌决定本局谁先行动，然后你和Char轮流决定要牌或停牌，尽量接近21点但不能爆牌。每关双方积分从0开始竞速，先达到目标分者赢下本关；玩家连胜8关即完整通关。失败时有5次免费复活机会。',
     westernchess: '标准8×8国际象棋。你执白棋先手，{{char}}执黑棋后手。点击自己的棋子会显示合法落点，再点合法格移动；棋盘以青绿色保留你的最近一步、金色保留{{char}}的最近一步，起点较浅、终点带边框。棋盘上方显示{{char}}吃掉的白棋，下方显示你吃掉的黑棋。王车易位和兵升变为后已实现，不做吃过路兵。将死获胜，逼和、50回合无吃子无兵动、三次重复的简化循环检测会判平。顶部只有反悔按钮，没有其他道具。',
@@ -538,6 +580,23 @@ export async function initWanbanXiaowu() {
   function isPlainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function safeObject(v) { return isPlainObject(v) ? v : {}; }
   function safeArray(v) { return Array.isArray(v) ? v : []; }
+  function memoryConstrainedDevice() {
+    try {
+      const win = getHostWindow();
+      const memory = Number(win.navigator?.deviceMemory || 0);
+      return (memory > 0 && memory <= 4) || (win.innerWidth || 1024) <= 768;
+    } catch (_) { return false; }
+  }
+  function setBoundedMapValue(map, key, value, maxEntries) {
+    if (map.has(key)) map.delete(key);
+    map.set(key, value);
+    while (map.size > maxEntries) map.delete(map.keys().next().value);
+    return value;
+  }
+  function getTheaterCache() {
+    if (!theaterCache) theaterCache = safeObject(loadJSON(STORAGE_THEATERS, {}));
+    return theaterCache;
+  }
   function settings() {
     if (!settingsCache) settingsCache = Object.assign({}, DEFAULT_SETTINGS, safeObject(loadJSON(STORAGE_SETTINGS, {})));
     return Object.assign({}, settingsCache);
@@ -694,7 +753,11 @@ export async function initWanbanXiaowu() {
   function scheduleInitialUpdateCheck() {
     if (updateCheckStarted) return;
     updateCheckStarted = true;
-    setTimeout(() => checkExtensionUpdate(false), 1800);
+    const run = () => {
+      if (gameStarted) { setTimeout(run, 15000); return; }
+      checkExtensionUpdate(false);
+    };
+    setTimeout(run, 12000);
   }
   function companionDockSide(cfg) {
     cfg = cfg || settings();
@@ -721,17 +784,46 @@ export async function initWanbanXiaowu() {
     currentGame = GAME_META[cfg.lastGame] ? cfg.lastGame : null;
   }
   function scores() {
-    const loaded = safeObject(loadJSON(STORAGE_SCORES, {}));
-    const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, shuerte: 0, uyangle: 0, screw: 0, popstar: 0, paopao: 0, zuma: 0, watersort: 0, flappybird: 0, game1010: 0, turkey: 0, spider: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 }, westernchess: { user: 0, ta: 0 }, chinesechess: { user: 0, ta: 0 } };
-    ['ludo','guessnumber','wordguess','tictactoe','gomoku','territory','oldmaid','reversi','bombnumber','connect4d','draughts','westernchess','chinesechess'].forEach(k => { if (typeof loaded[k] === 'number') loaded[k] = { user: loaded[k], ta: 0 }; });
-    return Object.assign(base, loaded);
+    if (!scoresCache) {
+      const loaded = safeObject(loadJSON(STORAGE_SCORES, {}));
+      const base = { tetris: 0, snake: 0, game2048: 0, watermelon: 0, memory: 0, jump: 0, plank: 0, sudoku: 0, minesweeper: 0, shuerte: 0, uyangle: 0, screw: 0, popstar: 0, paopao: 0, zuma: 0, watersort: 0, flappybird: 0, game1010: 0, turkey: 0, spider: 0, ludo: { user: 0, ta: 0 }, guessnumber: { user: 0, ta: 0 }, wordguess: { user: 0, ta: 0 }, tictactoe: { user: 0, ta: 0 }, gomoku: { user: 0, ta: 0 }, territory: { user: 0, ta: 0 }, oldmaid: { user: 0, ta: 0 }, reversi: { user: 0, ta: 0 }, bombnumber: { user: 0, ta: 0 }, connect4d: { user: 0, ta: 0 }, draughts: { user: 0, ta: 0 }, westernchess: { user: 0, ta: 0 }, chinesechess: { user: 0, ta: 0 } };
+      ['ludo','guessnumber','wordguess','tictactoe','gomoku','territory','oldmaid','reversi','bombnumber','connect4d','draughts','westernchess','chinesechess'].forEach(k => { if (typeof loaded[k] === 'number') loaded[k] = { user: loaded[k], ta: 0 }; });
+      scoresCache = Object.assign(base, loaded);
+    }
+    return Object.fromEntries(Object.entries(scoresCache).map(([key, value]) => [key, isPlainObject(value) ? Object.assign({}, value) : value]));
   }
-  function lines() { return Object.assign({}, DEFAULT_LINES, safeObject(loadJSON(STORAGE_LINES, {}))); }
-  function saveLines(v) { saveJSON(STORAGE_LINES, v); }
-  function roleLines() { return safeObject(loadJSON(STORAGE_ROLE_LINES, {})); }
-  function saveRoleLines(v) { return saveJSON(STORAGE_ROLE_LINES, v); }
-  function linePresetSelection() { return safeObject(loadJSON(STORAGE_LINE_PRESET_SELECTION, {})); }
-  function saveLinePresetSelection(v) { saveJSON(STORAGE_LINE_PRESET_SELECTION, v); }
+  function saveScores(value) {
+    if (!saveJSON(STORAGE_SCORES, value)) return false;
+    scoresCache = safeObject(value);
+    return true;
+  }
+  function lines() {
+    if (!linesCache) linesCache = safeObject(loadJSON(STORAGE_LINES, {}));
+    return Object.assign({}, DEFAULT_LINES, linesCache);
+  }
+  function saveLines(v) {
+    if (!saveJSON(STORAGE_LINES, v)) return false;
+    linesCache = safeObject(v);
+    return true;
+  }
+  function roleLines() {
+    if (!roleLinesCache) roleLinesCache = safeObject(loadJSON(STORAGE_ROLE_LINES, {}));
+    return roleLinesCache;
+  }
+  function saveRoleLines(v) {
+    if (!saveJSON(STORAGE_ROLE_LINES, v)) return false;
+    roleLinesCache = safeObject(v);
+    return true;
+  }
+  function linePresetSelection() {
+    if (!linePresetSelectionCache) linePresetSelectionCache = safeObject(loadJSON(STORAGE_LINE_PRESET_SELECTION, {}));
+    return linePresetSelectionCache;
+  }
+  function saveLinePresetSelection(v) {
+    if (!saveJSON(STORAGE_LINE_PRESET_SELECTION, v)) return false;
+    linePresetSelectionCache = safeObject(v);
+    return true;
+  }
   function normalizePresetName(name) { return String(name || '默认语录').trim() || '默认语录'; }
   function roleLineScopeForName(game, name) { return String(name || companionRoleKey()).trim() + '::' + game; }
   function roleLineScope(game) { return roleLineScopeForName(game, companionRoleKey()); }
@@ -756,8 +848,8 @@ export async function initWanbanXiaowu() {
     lastStorageWriteError = '语录写入后读回校验失败';
     return false;
   }
-  function saveTheaterCache() { return saveJSON(STORAGE_THEATERS, theaterCache || {}); }
-  function roleNamesForLineStorage() { const names = [companionRoleKey(), ...Object.keys(safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {})))]; worldPresets().forEach(x => { if (x) names.push(roleKeyOf(x)); }); Object.keys(roleLines()).forEach(k => { const name = String(k).split('::')[0]; if (name) names.push(name); }); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
+  function saveTheaterCache() { return saveJSON(STORAGE_THEATERS, getTheaterCache()); }
+  function roleNamesForLineStorage() { const names = [companionRoleKey(), ...Object.keys(roleContexts())]; worldPresets().forEach(x => { if (x) names.push(roleKeyOf(x)); }); Object.keys(roleLines()).forEach(k => { const name = String(k).split('::')[0]; if (name) names.push(name); }); return Array.from(new Set(names.map(normalizePresetName).filter(Boolean))); }
   function validLineSet(game, set) {
     if (!set || typeof set !== 'object' || Array.isArray(set)) return false;
     const keys = Object.keys(DEFAULT_LINES[game] || {});
@@ -788,7 +880,7 @@ export async function initWanbanXiaowu() {
     const failKey = normalizePresetName(roleName || companionRoleKey()) + '::' + game;
     const jobs = theaterJobsForGame(game);
     const done = jobs.filter(([outcome, special]) => {
-      const arr = theaterCache[theaterCacheKeyForName(roleName, game, outcome, special === 'normal' ? '' : special)];
+      const arr = getTheaterCache()[theaterCacheKeyForName(roleName, game, outcome, special === 'normal' ? '' : special)];
       return Array.isArray(arr) && arr.some(v => String(v || '').trim());
     }).length;
     if (jobs.length && done === jobs.length) return '已有';
@@ -804,7 +896,7 @@ export async function initWanbanXiaowu() {
     const jobs = theaterJobsForGame(task.game);
     const pack = {};
     const valid = jobs.length > 0 && jobs.every(([outcome, special]) => {
-      const saved = theaterCache[theaterCacheKeyForName(roleName, task.game, outcome, special === 'normal' ? '' : special)];
+      const saved = getTheaterCache()[theaterCacheKeyForName(roleName, task.game, outcome, special === 'normal' ? '' : special)];
       pack[theaterPackKey(outcome, special)] = saved;
       return Array.isArray(saved) && saved.length === 3 && saved.every(item => normalizeTheaterItem(item).some(part => String(part || '').trim()));
     });
@@ -817,7 +909,7 @@ export async function initWanbanXiaowu() {
     const jobs = theaterJobsForGame(game);
     return jobs.map(([outcome, special]) => {
       const key = theaterCacheKeyForName(role, game, outcome, special === 'normal' ? '' : special);
-      const arr = theaterCache[key];
+      const arr = getTheaterCache()[key];
       const title = theaterPackKey(outcome, special);
       if (!Array.isArray(arr) || !arr.length) return '【' + title + '】\n未生成';
       return '【' + title + '】\n' + arr.map((x,i) => (i + 1) + '. ' + textSegments(x).join(' / ').slice(0, 180)).join('\n');
@@ -830,8 +922,15 @@ export async function initWanbanXiaowu() {
       return '【' + k + '】\n' + (arr.length ? arr.join('\n') : '未存储');
     }).join('\n\n');
   }
-  function apiPresets() { return safeArray(loadJSON(STORAGE_API_PRESETS, [])); }
-  function saveApiPresets(v) { saveJSON(STORAGE_API_PRESETS, v); }
+  function apiPresets() {
+    if (!apiPresetsCache) apiPresetsCache = safeArray(loadJSON(STORAGE_API_PRESETS, []));
+    return apiPresetsCache.slice();
+  }
+  function saveApiPresets(v) {
+    if (!saveJSON(STORAGE_API_PRESETS, v)) return false;
+    apiPresetsCache = safeArray(v).slice();
+    return true;
+  }
   function apiConfigFromPresetIndex(index) {
     const idx = parseInt(index, 10);
     const pr = apiPresets()[idx];
@@ -843,7 +942,28 @@ export async function initWanbanXiaowu() {
     const cfg = pr || settings();
     return { apiUrl:cfg.apiUrl || '', apiKey:cfg.apiKey || '', apiModel:cfg.apiModel || '' };
   }
-  function worldPresets() { return safeArray(loadJSON(STORAGE_WORLD_PRESETS, [])); }
+  function worldPresets() {
+    if (!worldPresetsCache) worldPresetsCache = safeArray(loadJSON(STORAGE_WORLD_PRESETS, []));
+    return worldPresetsCache.slice();
+  }
+  function roleContexts() {
+    if (!roleContextsCache) roleContextsCache = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}));
+    return Object.assign({}, roleContextsCache);
+  }
+  function saveRoleContexts(v) {
+    if (!saveJSON(STORAGE_ROLE_CONTEXTS, v)) return false;
+    roleContextsCache = safeObject(v);
+    return true;
+  }
+  function cardRoles() {
+    if (!cardRolesCache) cardRolesCache = safeObject(loadJSON(STORAGE_CARD_ROLES, {}));
+    return Object.assign({}, cardRolesCache);
+  }
+  function saveCardRoles(v) {
+    if (!saveJSON(STORAGE_CARD_ROLES, v)) return false;
+    cardRolesCache = safeObject(v);
+    return true;
+  }
   function roleKeyOf(role) { return String(role?.roleKey || role?.name || role?.charName || ''); }
   function companionRoleKey() { return settings().roleKey || companionName(); }
   function characterCardId(card) {
@@ -863,7 +983,7 @@ export async function initWanbanXiaowu() {
   }
   function savedRole(key) {
     const name = String(key || '');
-    const all = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}));
+    const all = roleContexts();
     if (all[name]) return Object.assign({}, all[name], { roleKey:all[name].roleKey || name });
     const presets = worldPresets();
     const direct = presets.find(role => roleKeyOf(role) === name);
@@ -884,10 +1004,10 @@ export async function initWanbanXiaowu() {
   function defaultRoleForCard(card) {
     const cardId = characterCardId(card);
     if (!cardId) return null;
-    const selected = safeObject(loadJSON(STORAGE_CARD_ROLES, {}))[cardId];
+    const selected = cardRoles()[cardId];
     const remembered = selected && savedRole(selected.roleKey);
     if (remembered && characterCardId(cardForRole(remembered)) === cardId) return remembered;
-    const all = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}));
+    const all = roleContexts();
     const roles = worldPresets().concat(Object.entries(all).map(([key, role]) => Object.assign({}, role, { roleKey:role.roleKey || key })));
     return roles.filter(role => characterCardId(cardForRole(role)) === cardId)
       .sort((a,b) => Number(b.roleUpdatedAt || 0) - Number(a.roleUpdatedAt || 0))[0] || null;
@@ -897,9 +1017,9 @@ export async function initWanbanXiaowu() {
     role.roleKey = roleKeyOf(source) || role.charName;
     saveRoleContext(role);
     if (makeDefault && role.cardId) {
-      const defaults = safeObject(loadJSON(STORAGE_CARD_ROLES, {}));
+      const defaults = cardRoles();
       defaults[role.cardId] = { roleKey:role.roleKey, cardName:role.cardName };
-      saveJSON(STORAGE_CARD_ROLES, defaults);
+      saveCardRoles(defaults);
     }
     setSettings(Object.assign({}, role, { companionRolePinned:pinned, lastHostCardId:characterCardId(currentHostCharacter()), selectedWorldPresetName:role.roleKey }));
     applyRoleToAllGames(role.roleKey);
@@ -921,14 +1041,14 @@ export async function initWanbanXiaowu() {
     return { cardId:characterCardId(card), cardName:characterNameValue(card), characterAvatar:characterAvatarValue(card) };
   }
   function roleForCardAndName(cardId, name) {
-    return Object.entries(safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}))).map(([key, role]) => Object.assign({}, role, { roleKey:role.roleKey || key }))
+    return Object.entries(roleContexts()).map(([key, role]) => Object.assign({}, role, { roleKey:role.roleKey || key }))
       .concat(worldPresets()).find(role => role.charName === name && characterCardId(cardForRole(role)) === cardId) || null;
   }
   function newRoleKey() { return 'role_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9); }
   function copyRoleGeneratedContent(sourceKey, targetKey) {
     if (!sourceKey || sourceKey === targetKey) return true;
     const lines = roleLines();
-    const theaters = Object.assign({}, theaterCache);
+    const theaters = Object.assign({}, getTheaterCache());
     const bank = loadJSON(STORAGE_WORD_GUESS_BANK, {});
     const prefix = sourceKey + '::';
     Object.entries(lines).forEach(([key, value]) => {
@@ -951,16 +1071,18 @@ export async function initWanbanXiaowu() {
   function saveWorldPresets(v) {
     const previous = worldPresets();
     const snapshots = v.map(pr => Object.assign({}, pr, captureRoleContext(pr, pr.charName || pr.name)));
-    saveJSON(STORAGE_WORLD_PRESETS, snapshots);
+    if (!saveJSON(STORAGE_WORLD_PRESETS, snapshots)) return false;
+    worldPresetsCache = snapshots;
     snapshots.forEach((pr, index) => {
       const old = previous.find(item => roleKeyOf(item) === roleKeyOf(pr));
       if (!old || JSON.stringify(old) !== JSON.stringify(v[index])) saveRoleContext(pr);
     });
+    return true;
   }
   function saveRoleContext(role) {
-    const all = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}));
+    const all = roleContexts();
     all[roleKeyOf(role)] = isolatedRole(role);
-    saveJSON(STORAGE_ROLE_CONTEXTS, all);
+    return saveRoleContexts(all);
   }
   function characterNameValue(character) {
     const data = character?.data || character || {};
@@ -1004,13 +1126,13 @@ export async function initWanbanXiaowu() {
     const value = String(url || '').trim();
     if (!value || !isHostAvatarUrl(value)) return value;
     const key = roleAvatarCacheKey(name, card, value);
-    if (!roleAvatarCacheVersions.has(key)) roleAvatarCacheVersions.set(key, Date.now());
+    if (!roleAvatarCacheVersions.has(key)) setBoundedMapValue(roleAvatarCacheVersions, key, Date.now(), 48);
     const clean = value.replace(/([?&])wbv=[^&#]*(&?)/i, (match, prefix, trailing) => trailing ? prefix : '');
     return clean + (clean.includes('?') ? '&' : '?') + 'wbv=' + roleAvatarCacheVersions.get(key);
   }
   function invalidateCurrentHostAvatarCache() {
     const current = currentHostCharacter();
-    if (current) roleAvatarCacheVersions.set(roleAvatarCacheKey(characterNameValue(current), current), Date.now());
+    if (current) setBoundedMapValue(roleAvatarCacheVersions, roleAvatarCacheKey(characterNameValue(current), current), Date.now(), 48);
   }
   function captureRoleContext(source, name) {
     const role = isolatedRole(source, name);
@@ -1053,13 +1175,14 @@ export async function initWanbanXiaowu() {
     const cfg = settings();
     const hostRoleChanged = cfg.lastHostCardId !== cardId;
     const source = hostRoleChanged ? defaultRoleForCard(current) : savedRole(companionRoleKey());
-    setSettings({ lastHostCardId:cardId });
+    if (hostRoleChanged) setSettings({ lastHostCardId:cardId });
     if (!source) return false;
     const snapshot = captureRoleContext(source, source.charName || source.name);
     snapshot.roleKey = roleKeyOf(source);
     const changed = JSON.stringify(isolatedRole(cfg)) !== JSON.stringify(snapshot);
     if (hostRoleChanged) activateCompanionRole(snapshot);
     else if (changed) { saveRoleContext(snapshot); setSettings(snapshot); }
+    if (!hostRoleChanged && !changed) return false;
 
     const petData = petFullData();
     let petChanged = false;
@@ -1146,11 +1269,19 @@ export async function initWanbanXiaowu() {
     Object.keys(GAME_META).forEach(game => { selections[roleLineScope(game)] = role; });
     saveLinePresetSelection(selections);
   }
-  function summaries() { return safeArray(loadJSON(STORAGE_SUMMARIES, [])); }
-  function saveSummaries(v) { saveJSON(STORAGE_SUMMARIES, v); }
+  function summaries() {
+    if (!summariesCache) summariesCache = safeArray(loadJSON(STORAGE_SUMMARIES, []));
+    return summariesCache.slice();
+  }
+  function saveSummaries(v) {
+    if (!saveJSON(STORAGE_SUMMARIES, v)) return false;
+    summariesCache = safeArray(v).slice();
+    return true;
+  }
   function summaryReq() { return localStorage.getItem(STORAGE_SUMMARY_REQ) || ''; }
   function saveSummaryReq(v) { try { localStorage.setItem(STORAGE_SUMMARY_REQ, String(v || '')); } catch(e) {} }
-  const PROGRESS_SAVE_DELAY = 700;
+  const PROGRESS_SAVE_DELAY = 1200;
+  const PROGRESS_SAVE_MAX_DELAY = 15000;
   function progress() {
     if (!progressCache) progressCache = safeObject(loadJSON(STORAGE_PROGRESS, {}));
     return progressCache;
@@ -1183,8 +1314,10 @@ export async function initWanbanXiaowu() {
       clearTimeout(progressSaveTimers[game]);
       delete progressSaveTimers[game];
     }
+    delete progressSaveStartedAt[game];
+    const staged = progressSaveCache[game];
     const p = progress();
-    p[game] = progressSaveCache[game];
+    p[game] = buildProgressEntry(game, staged);
     if (saveJSON(STORAGE_PROGRESS, p)) delete progressSaveCache[game];
   }
   function flushAllProgressSaves() {
@@ -1275,20 +1408,31 @@ export async function initWanbanXiaowu() {
   }
   function saveProgress(game, state, options) {
     progressDeleteCache.delete(game);
-    progressSaveCache[game] = buildProgressEntry(game, state);
+    const prev = progressSaveCache[game] || progress()[game] || {};
+    const extra = game === currentGame ? { lineEvents:currentRoundLineEvents.slice(-120), roleContext:currentRoundRoleContext, progressRecordId:currentRoundProgressRecordId || prev.progressRecordId || '' } : {};
+    progressSaveCache[game] = Object.assign({}, state || {}, extra, {
+      initialized:true,
+      savedAt:Date.now(),
+      startedAt:(state && state.startedAt) || prev.startedAt || gameStartAt || Date.now(),
+      durationMs:game === currentGame ? currentGameDurationMs() : (state && state.durationMs) || prev.durationMs || 0,
+      petRewardNextMs:game === currentGame ? gamePetRewardNextMs : (state && state.petRewardNextMs) || prev.petRewardNextMs || nextPetGameRewardThreshold((state && state.durationMs) || prev.durationMs || 0),
+    });
     if (options && options.immediate) {
       flushProgressSave(game);
       return;
     }
-    if (!progressSaveTimers[game]) {
-      progressSaveTimers[game] = setTimeout(() => flushProgressSave(game), PROGRESS_SAVE_DELAY);
-    }
+    const now = Date.now();
+    if (!progressSaveStartedAt[game]) progressSaveStartedAt[game] = now;
+    if (progressSaveTimers[game]) clearTimeout(progressSaveTimers[game]);
+    const maxRemaining = Math.max(0, PROGRESS_SAVE_MAX_DELAY - (now - progressSaveStartedAt[game]));
+    progressSaveTimers[game] = setTimeout(() => flushProgressSave(game), Math.min(PROGRESS_SAVE_DELAY, maxRemaining));
   }
   function clearProgress(game) {
     if (progressSaveTimers[game]) {
       clearTimeout(progressSaveTimers[game]);
       delete progressSaveTimers[game];
     }
+    delete progressSaveStartedAt[game];
     delete progressSaveCache[game];
     if (game === 'sudoku') clearSudokuStateSnapshot();
     const p = progress();
@@ -1537,7 +1681,7 @@ export async function initWanbanXiaowu() {
     if (!n) return;
     const sc = scores();
     const old = parseInt(sc.memoryBestMoves, 10);
-    if (!old || n < old) { sc.memoryBestMoves = n; saveJSON(STORAGE_SCORES, sc); }
+    if (!old || n < old) { sc.memoryBestMoves = n; saveScores(sc); }
   }
   function wordGuessBestCompanion() {
     const groups = new Map();
@@ -1561,7 +1705,50 @@ export async function initWanbanXiaowu() {
   function gameIconHTML(g) {
     const fallback = '<span>' + esc(g.icon || '') + '</span>';
     if (!g.iconImage) return '<div class="wb-game-icon">' + fallback + '</div>';
-    return '<div class="wb-game-icon has-image"><img src="' + esc(g.iconImage) + '" alt="" loading="lazy" decoding="async" onerror="this.style.display=&#39;none&#39;;this.nextElementSibling.style.display=&#39;grid&#39;;this.parentNode.classList.remove(&#39;has-image&#39;);">' + fallback + '</div>';
+    return '<div class="wb-game-icon"><img data-src="' + esc(g.iconImage) + '" alt="" loading="lazy" decoding="async">' + fallback + '</div>';
+  }
+  function loadGameCardIcon(icon) {
+    const img = icon?.querySelector('img[data-src]');
+    if (!img) return;
+    const src = img.dataset.src;
+    delete img.dataset.src;
+    img.onload = () => {
+      const fallback = img.nextElementSibling;
+      if (fallback) fallback.style.display = 'none';
+      icon.classList.add('has-image');
+    };
+    img.onerror = () => { img.remove(); };
+    img.src = src;
+  }
+  function observeGameCardIcons(container, eager = false) {
+    const icons = qsa('.wb-game-icon', container).filter(icon => icon.querySelector('img[data-src]'));
+    if (!icons.length) return;
+    if (eager) {
+      icons.forEach(loadGameCardIcon);
+      return;
+    }
+    const view = getHostWindow();
+    if (!view.IntersectionObserver) {
+      icons.forEach(loadGameCardIcon);
+      return;
+    }
+    if (!gameIconObserver) {
+      gameIconObserver = new view.IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
+          gameIconObserver?.unobserve(entry.target);
+          loadGameCardIcon(entry.target);
+        });
+      }, { root:qs('#wb-body'), rootMargin:'180px 0px', threshold:0.01 });
+    }
+    icons.forEach(icon => gameIconObserver.observe(icon));
+  }
+  function cancelGameListRendering() {
+    gameListRenderToken += 1;
+    if (gameIconObserver) gameIconObserver.disconnect();
+    gameIconObserver = null;
+    if (gameListLoadObserver) gameListLoadObserver.disconnect();
+    gameListLoadObserver = null;
   }
   function inferResult(game, title, scoreText) { const t = String((title || '') + ' ' + (scoreText || '')); const g = GAME_META[game] || {}; if (g.mode === 'double') { if (/你赢|1胜/.test(t) && !/平局/.test(t)) return 'user_win'; if (/TA获胜|失败|0胜/.test(t) && !/平局/.test(t)) return 'ta_win'; if (/平局/.test(t)) return 'draw'; return 'finished'; } const m = t.match(/(\d+)\s*分/); return { outcome: 'score', score: m ? parseInt(m[1], 10) : 0 }; }
   function recordGameResult(game, title, scoreText, explicitResult, meta, deferSave) {
@@ -1849,6 +2036,21 @@ export async function initWanbanXiaowu() {
     return html;
   }
   const markdownCache = new Map();
+  let markdownCacheCharacters = 0;
+  function rememberMarkdown(raw, html) {
+    const size = raw.length + html.length;
+    const constrained = memoryConstrainedDevice();
+    const maxEntries = constrained ? 36 : 120;
+    const maxCharacters = (constrained ? 256 : 1024) * 1024;
+    if (size > maxCharacters) return;
+    while (markdownCache.size >= maxEntries || markdownCacheCharacters + size > maxCharacters) {
+      const oldest = markdownCache.keys().next().value;
+      markdownCacheCharacters -= oldest.length + markdownCache.get(oldest).length;
+      markdownCache.delete(oldest);
+    }
+    markdownCache.set(raw, html);
+    markdownCacheCharacters += size;
+  }
   function markdownTextHTML(text) {
     const raw = displayCharText(text || '');
     if (markdownCache.has(raw)) return markdownCache.get(raw);
@@ -1878,9 +2080,59 @@ export async function initWanbanXiaowu() {
     closeList();
     closeCode();
     const html = out.join('');
-    markdownCache.set(raw, html);
-    if (markdownCache.size > 120) markdownCache.delete(markdownCache.keys().next().value);
+    rememberMarkdown(raw, html);
     return html;
+  }
+  function releaseTransientCaches() {
+    const backgroundUsesSettings = !!(settingsCache?.messageNotify || settingsCache?.petDesktopEnabled || settingsCache?.floatingBallEnabled);
+    if (!pendingRecords) recordsCache = null;
+    if (!Object.keys(progressSaveCache).length && !progressDeleteCache.size) progressCache = null;
+    linesCache = null;
+    roleLinesCache = null;
+    linePresetSelectionCache = null;
+    apiPresetsCache = null;
+    worldPresetsCache = null;
+    summariesCache = null;
+    roleContextsCache = null;
+    cardRolesCache = null;
+    theaterCache = null;
+    canvasPaletteCache = null;
+    markdownCache.clear();
+    markdownCacheCharacters = 0;
+    petStoryPageCache.clear();
+    petStoryPageCacheCharacters = 0;
+    if (!settingsCache?.petDesktopEnabled) {
+      petTestInfoCache = null;
+      petTestInfoSource = '';
+    }
+    if (!backgroundUsesSettings) settingsCache = null;
+    clearStoredJSONCache();
+  }
+  function cancelTransientCacheCleanup() {
+    transientCacheCleanupGeneration += 1;
+    if (transientCacheCleanupId === null) return;
+    const win = getHostWindow();
+    if (transientCacheCleanupUsesIdle && typeof win.cancelIdleCallback === 'function') win.cancelIdleCallback(transientCacheCleanupId);
+    else win.clearTimeout(transientCacheCleanupId);
+    transientCacheCleanupId = null;
+  }
+  function scheduleTransientCacheCleanup() {
+    cancelTransientCacheCleanup();
+    const win = getHostWindow();
+    const generation = transientCacheCleanupGeneration;
+    const release = () => {
+      transientCacheCleanupId = null;
+      const shell = qs('#' + SHELL_ID, getHostDocument());
+      if (generation !== transientCacheCleanupGeneration || shell?.classList.contains('wb-shell-visible')) return;
+      releaseTransientCaches();
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      transientCacheCleanupUsesIdle = true;
+      transientCacheCleanupId = win.requestIdleCallback(release, { timeout:1200 });
+    } else {
+      transientCacheCleanupUsesIdle = false;
+      transientCacheCleanupId = win.setTimeout(release, 300);
+    }
   }
 	  function normalizeTheaterItem(item) {
 	    if (Array.isArray(item)) return textSegments(item);
@@ -2574,7 +2826,7 @@ export async function initWanbanXiaowu() {
 旁白、动作描写、心理描写不得写成外语。
 语言风格必须服务于角色性格、关系感、小游戏输赢和当局情绪，不要写成翻译练习或语言教材。`;
   }
-  function addTaWin(game) { const sc = scores(); const cur = sc[game] && typeof sc[game] === 'object' ? sc[game] : { user: sc[game] || 0, ta: 0 }; cur.ta = (cur.ta || 0) + 1; sc[game] = cur; saveJSON(STORAGE_SCORES, sc); }
+  function addTaWin(game) { const sc = scores(); const cur = sc[game] && typeof sc[game] === 'object' ? sc[game] : { user: sc[game] || 0, ta: 0 }; cur.ta = (cur.ta || 0) + 1; sc[game] = cur; saveScores(sc); }
   function isMobileHost() {
     const win = getHostWindow();
     const nav = win.navigator || navigator;
@@ -2772,6 +3024,17 @@ export async function initWanbanXiaowu() {
   let messageNotifyBound = false;
   const messageNotifySeen = new Set();
   let messageNotifyPollTimer = null;
+  function messageNotifyActivityEnabled() {
+    const cfg = settings();
+    return !!(cfg.messageNotify || cfg.petDesktopEnabled);
+  }
+  function stopMessageNotifyFallback() {
+    if (messageNotifyPollTimer) clearInterval(messageNotifyPollTimer);
+    messageNotifyPollTimer = null;
+    const w = getHostWindow();
+    if (w.__wanbanMessageNotifyRetry) clearInterval(w.__wanbanMessageNotifyRetry);
+    w.__wanbanMessageNotifyRetry = null;
+  }
   function messageNotificationChatKey() {
     const ctx = getHostContext() || {};
     let chatId = ctx.chatId || ctx.chat_id || ctx.characters?.[ctx.characterId]?.chat || '';
@@ -2795,6 +3058,8 @@ export async function initWanbanXiaowu() {
     try { activeGameController?.save?.(); } catch(e) {}
     commitGameActiveDuration(true);
     gamePaused = true;
+    if (randomLineTimer) clearTimeout(randomLineTimer);
+    randomLineTimer = null;
     showGamePauseOverlay();
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
   }
@@ -2803,6 +3068,8 @@ export async function initWanbanXiaowu() {
     try { activeGameController?.save?.(); } catch(e) {}
     commitGameActiveDuration(true, true);
     gamePaused = true;
+    if (randomLineTimer) clearTimeout(randomLineTimer);
+    randomLineTimer = null;
     gameActiveStartedAt = 0;
     showGamePauseOverlay();
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
@@ -2926,6 +3193,10 @@ export async function initWanbanXiaowu() {
     sendMessageFinishedNotification(messageId, text, msg);
   }
   function bindMessageNotifyEvents() {
+    if (!messageNotifyActivityEnabled()) {
+      stopMessageNotifyFallback();
+      return;
+    }
     if (messageNotifyBound) return;
     const w = getHostWindow();
     const eventSource = hostValue('eventSource');
@@ -2952,6 +3223,10 @@ export async function initWanbanXiaowu() {
     startMessageNotifyPolling();
   }
   function startMessageNotifyPolling() {
+    if (!messageNotifyActivityEnabled()) {
+      stopMessageNotifyFallback();
+      return;
+    }
     if (messageNotifyBound) {
       primeMessageNotifyBaseline();
       if (messageNotifyPollTimer) clearInterval(messageNotifyPollTimer);
@@ -3007,6 +3282,7 @@ export async function initWanbanXiaowu() {
     return guardedSave;
   }
   function stopGame(options) {
+    gameStartRequest += 1;
     stopHeartChallenge();
     cancelGameEntryPrompt();
     qs('#wb-message-notify-mask')?.remove();
@@ -3032,7 +3308,7 @@ export async function initWanbanXiaowu() {
     if (screwTimer) clearInterval(screwTimer);
     if (linkLinkTimer) clearInterval(linkLinkTimer);
     if (shuerteTimer) clearInterval(shuerteTimer);
-    if (randomLineTimer) clearInterval(randomLineTimer);
+    if (randomLineTimer) clearTimeout(randomLineTimer);
     if (singleDialogueTimer) clearTimeout(singleDialogueTimer);
     snakeTimer = tetrisTimer = jumpTimer = screwTimer = linkLinkTimer = shuerteTimer = randomLineTimer = null;
     singleDialogueTimer = null;
@@ -3100,9 +3376,12 @@ export async function initWanbanXiaowu() {
   }
   function scheduleFitGameSurface() {
     const win = getHostWindow();
+    if (scheduleFitGameSurface.frame) return;
     const raf = win.requestAnimationFrame ? win.requestAnimationFrame.bind(win) : (fn) => setTimeout(fn, 16);
-    raf(() => fitGameSurface());
-    setTimeout(fitGameSurface, 80);
+    scheduleFitGameSurface.frame = raf(() => {
+      scheduleFitGameSurface.frame = 0;
+      fitGameSurface();
+    });
   }
 
   function syncMobileShellViewport() {
@@ -3124,6 +3403,15 @@ export async function initWanbanXiaowu() {
 	    shell.style.height = h + 'px';
 	    shell.style.setProperty('--wb-vvh', h + 'px');
 	  }
+  function scheduleMobileShellViewportSync() {
+    if (scheduleMobileShellViewportSync.frame) return;
+    const win = getHostWindow();
+    const raf = win.requestAnimationFrame ? win.requestAnimationFrame.bind(win) : (fn => win.setTimeout(fn, 16));
+    scheduleMobileShellViewportSync.frame = raf(() => {
+      scheduleMobileShellViewportSync.frame = 0;
+      syncMobileShellViewport();
+    });
+  }
   let petTestInfoCache = null;
   let petTestInfoSource = '';
   let petTestInfoLoading = null;
@@ -3616,7 +3904,7 @@ export async function initWanbanXiaowu() {
     return true;
   }
   function petFullCaretakerOptions() {
-    const names = Array.from(new Set([companionRoleKey(), ...Object.keys(safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}))), ...worldPresets().map(roleKeyOf)]));
+    const names = Array.from(new Set([companionRoleKey(), ...Object.keys(roleContexts()), ...worldPresets().map(roleKeyOf)]));
     return names.filter(Boolean).map(name => {
       const cfg = rolePromptConfig(name);
       return Object.assign({ name:cfg.charName, worldIndex:-1 }, isolatedRole(cfg), {
@@ -4794,6 +5082,10 @@ export async function initWanbanXiaowu() {
     const doc = getHostDocument();
     const cfg = settings();
     let el = qs('#' + PET_FLOAT_ID, doc);
+    if (doc.hidden) {
+      clearPetTimers();
+      return;
+    }
     if (!cfg.petDesktopEnabled || !petHasCurrentPet()) {
       if (el) el.remove();
       clearPetTimers();
@@ -4841,6 +5133,7 @@ export async function initWanbanXiaowu() {
   function syncFloatingBall() {
     const doc = getHostDocument();
     const cfg = settings();
+    bindMessageNotifyEvents();
     let btn = qs('#' + FLOAT_ID, doc);
     if (cfg.petDesktopEnabled) {
       if (btn) btn.remove();
@@ -4871,10 +5164,25 @@ export async function initWanbanXiaowu() {
       });
     }
   }
+  function bindRuntimeVisibility() {
+    if (runtimeVisibilityBound) return;
+    runtimeVisibilityBound = true;
+    const doc = getHostDocument();
+    doc.addEventListener('visibilitychange', () => {
+      if (doc.hidden) {
+        flushSettingsProgress();
+        pauseGameForInactiveSurface();
+        flushAllProgressSaves();
+        clearPetTimers();
+      } else if (settings().petDesktopEnabled) syncPetDesktop();
+    });
+  }
   function buildPopup(options) {
     if (confirmPetGenerationLeave(() => buildPopup(options))) return;
+	  cancelTransientCacheCleanup();
 	    applySelectedFont();
     invalidateCurrentHostAvatarCache();
+    if (settings().lastHostCardId !== characterCardId(currentHostCharacter())) syncCurrentHostRoleContext();
     const doc = getHostDocument();
     let shell = qs('#' + SHELL_ID, doc);
     if (!shell) {
@@ -4884,15 +5192,13 @@ export async function initWanbanXiaowu() {
       shell.addEventListener('click', e => { if (e.target === shell) closePopupShell(); });
       const win = getHostWindow();
       const vp = win.visualViewport || (typeof visualViewport !== 'undefined' ? visualViewport : null);
-      if (vp && !shell.dataset.vpBound) { vp.addEventListener('resize', () => { syncMobileShellViewport(); scheduleFitGameSurface(); }); vp.addEventListener('scroll', () => { syncMobileShellViewport(); scheduleFitGameSurface(); }); shell.dataset.vpBound = '1'; }
-      win.addEventListener('resize', scheduleFitGameSurface);
+      if (vp && !shell.dataset.vpBound) { vp.addEventListener('resize', () => { scheduleMobileShellViewportSync(); scheduleFitGameSurface(); }, { passive:true }); vp.addEventListener('scroll', scheduleMobileShellViewportSync, { passive:true }); shell.dataset.vpBound = '1'; }
+      win.addEventListener('resize', scheduleFitGameSurface, { passive:true });
       win.addEventListener('orientationchange', () => { setTimeout(syncMobileShellViewport, 120); setTimeout(scheduleFitGameSurface, 160); });
-      if (!shell.dataset.visibilityBound) {
-        doc.addEventListener('visibilitychange', () => { if (doc.hidden) pauseGameForInactiveSurface(); });
-        shell.dataset.visibilityBound = '1';
-      }
+      bindRuntimeVisibility();
       if (!shell.dataset.leaveBound) {
         win.addEventListener('pagehide', () => {
+          flushSettingsProgress();
           if (!gameStarted || !currentGame) { flushAllProgressSaves(); return; }
           try { activeGameController?.save?.(); } catch(e) {}
           commitGameActiveDuration(true, true);
@@ -4924,7 +5230,11 @@ export async function initWanbanXiaowu() {
   }
   function closePopupShell() {
     if (confirmPetGenerationLeave(closePopupShell)) return;
+    flushSettingsProgress();
+    saveWindowState(currentTab, currentGame);
     stopHeartChallenge();
+    gameStartRequest += 1;
+    cancelGameListRendering();
     cancelGameEntryPrompt();
     qs('#wb-message-notify-mask')?.remove();
     if (activeGameController || (gameStarted && currentGame)) stopGame();
@@ -4933,7 +5243,19 @@ export async function initWanbanXiaowu() {
     const shell = qs('#' + SHELL_ID, doc);
     if (shell) { shell.classList.remove('wb-shell-visible'); shell.style.display = 'none'; }
     const p = qs('#' + POPUP_ID, doc);
-    if (p) p.style.display = 'none';
+    if (p) {
+      p.style.display = 'none';
+      const body = qs('#wb-body', p);
+      if (body) {
+        body.replaceChildren();
+        body.className = 'wb-body';
+      }
+    }
+    currentRoundLineEvents = [];
+    currentRoundRoleContext = null;
+    currentRoundTheaterInfo = null;
+    currentRoundProgressRecordId = '';
+    scheduleTransientCacheCleanup();
     if (!settings().petDesktopEnabled) clearPetTimers();
   }
 	  function syncPopupModeClass() {
@@ -4944,22 +5266,36 @@ export async function initWanbanXiaowu() {
 	    p.className = theme + (currentGame ? ' wb-playing' : '') + ' wb-tab-' + (currentTab || 'single');
 	    applyTavernThemeVars(p);
 	  }
+  function ensurePopupFrame(p) {
+    if (qs('.wb-head', p) && qs('#wb-body', p)) return;
+    const singleCount = Object.values(GAME_META).filter(g => g.mode === 'single').length;
+    const doubleCount = Object.values(GAME_META).filter(g => g.mode === 'double').length;
+    const countBadge = n => '<span class="wb-tab-count">' + esc(n) + '</span>';
+    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏' + countBadge(singleCount) + '</button><button class="wb-tab" data-tab="double">双人游戏' + countBadge(doubleCount) + '</button><button class="wb-tab" data-tab="intimacy">亲密互动' + countBadge(1) + '</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V' + esc(EXTENSION_VERSION) + '，本游戏发布者 Gloria"><span><i>当前版本</i>V' + esc(EXTENSION_VERSION) + '</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
+    qsa('.wb-tab', p).forEach(b => {
+      b.onclick = () => {
+        flushSettingsProgress();
+        stopGame();
+        currentGame = null;
+        currentTab = b.dataset.tab;
+        saveWindowState(currentTab, '');
+        render();
+      };
+    });
+    qs('#wb-close', p).onclick = () => {
+      closePopupShell();
+    };
+  }
   function render() {
     if (confirmPetGenerationLeave(render)) return;
     stopHeartChallenge();
-    bindRoleContextEvents();
-    syncCurrentHostRoleContext();
-    const cfg = settings(); const p = qs('#' + POPUP_ID); syncPopupModeClass();
+    cancelGameListRendering();
+    const p = qs('#' + POPUP_ID); syncPopupModeClass();
     p.onwheel = (e) => { e.stopPropagation(); };
     p.ontouchmove = (e) => { e.stopPropagation(); };
-    const singleCount = Object.values(GAME_META).filter(g => g.mode === 'single').length;
-    const doubleCount = Object.values(GAME_META).filter(g => g.mode === 'double').length;
-    const intimacyCount = 1;
-    const countBadge = n => '<span class="wb-tab-count">' + esc(n) + '</span>';
-    p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏' + countBadge(singleCount) + '</button><button class="wb-tab" data-tab="double">双人游戏' + countBadge(doubleCount) + '</button><button class="wb-tab" data-tab="intimacy">亲密互动' + countBadge(intimacyCount) + '</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V' + esc(EXTENSION_VERSION) + '，本游戏发布者 Gloria"><span><i>当前版本</i>V' + esc(EXTENSION_VERSION) + '</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
+    ensurePopupFrame(p);
     syncUpdateNoticeClass();
-    qsa('.wb-tab', p).forEach(b => { b.classList.toggle('active', b.dataset.tab === currentTab); b.onclick = () => { flushSettingsProgress(); stopGame(); currentGame = null; currentTab = b.dataset.tab; saveWindowState(currentTab, ''); render(); }; });
-    qs('#wb-close', p).onclick = () => { flushSettingsProgress(); saveWindowState(currentTab, currentGame); stopGame(); closePopupShell(); };
+    qsa('.wb-tab', p).forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
     try {
       if (currentGame) renderGame(currentGame); else if (currentTab === 'settings') renderSettings(); else if (currentTab === 'intimacy') renderIntimacy(); else renderSelect(currentTab);
       if (settings().petDesktopEnabled) syncFloatingBall();
@@ -5053,6 +5389,8 @@ export async function initWanbanXiaowu() {
     }));
   }
   function heartWorldSources() {
+    if (!heartModules?.world?.heartWorldFromRole) throw new Error('心动挑战模块尚未加载。');
+    const heartWorldFromRole = heartModules.world.heartWorldFromRole;
     const liveCard = currentHostCharacter(), liveCardId = characterCardId(liveCard);
     const user = heartUserSource();
     const sources = [{ source:settings(), id:'current', name:'当前世界观设置', kind:'existing-world' },
@@ -5137,10 +5475,22 @@ export async function initWanbanXiaowu() {
     stopHeartChallenge(); clearPetTimers();
     const body = qs('#wb-body');
     try {
-      const { createHeartChallenge } = await import('../heart-challenge/ui.js?v=4.1.13-heart-logs');
+      if (!heartModulePromise) {
+        heartModulePromise = Promise.all([
+          import('../heart-challenge/ui.js?v=4.1.13-heart-logs'),
+          import('../heart-challenge/world.js?v=4.1.13-heart-logs'),
+          import('../heart-challenge/generation-log.js?v=4.1.13-heart-logs'),
+        ]).then(([ui, world, generationLog]) => ({ ui, world, generationLog })).catch(error => {
+          heartModulePromise = null;
+          throw error;
+        });
+      }
+      heartModules = await heartModulePromise;
+      if (!body?.isConnected || currentTab !== 'intimacy') return;
+      const { createHeartChallenge } = heartModules.ui;
       heartController = createHeartChallenge(body, {
         storage:localStorage, toast,
-        saveGenerationLog:record => uploadGenerationLog(record, { headers:getRequestHeaders() }),
+        saveGenerationLog:record => heartModules.generationLog.uploadGenerationLog(record, { headers:getRequestHeaders() }),
         worlds:heartWorldSources, importWorld:heartImportWorld, readWorldPart:heartReadWorldPart,
         languages:specialLanguageOptions,
         languageInstruction:language => specialLanguageRequirement('line', { specialLanguageEnabled:true, specialLanguage:language }),
@@ -5956,6 +6306,21 @@ export async function initWanbanXiaowu() {
     const roomRect = room && room.getBoundingClientRect ? room.getBoundingClientRect() : null;
     return Math.max(180, Math.min(760, (roomRect && roomRect.width ? roomRect.width : 360) - 32));
   }
+  function rememberPetStoryPages(cacheKey, pages) {
+    const size = cacheKey.length + pages.reduce((total, page) => total + page.length, 0);
+    const constrained = memoryConstrainedDevice();
+    const maxEntries = constrained ? 24 : 80;
+    const maxCharacters = (constrained ? 512 : 2048) * 1024;
+    if (size > maxCharacters) return;
+    while (petStoryPageCache.size >= maxEntries || petStoryPageCacheCharacters + size > maxCharacters) {
+      const oldest = petStoryPageCache.keys().next().value;
+      const oldPages = petStoryPageCache.get(oldest);
+      petStoryPageCacheCharacters -= oldest.length + oldPages.reduce((total, page) => total + page.length, 0);
+      petStoryPageCache.delete(oldest);
+    }
+    petStoryPageCache.set(cacheKey, pages);
+    petStoryPageCacheCharacters += size;
+  }
   function petMeasuredStoryLinePages(text, className) {
     const raw = String(text || '');
     if (!raw) return [''];
@@ -5964,7 +6329,6 @@ export async function initWanbanXiaowu() {
     const width = Math.round(petStoryMeasureWidth(doc));
     const cacheKey = width + '|' + (className || '') + '|' + raw;
     if (petStoryPageCache.has(cacheKey)) return petStoryPageCache.get(cacheKey).slice();
-    if (petStoryPageCache.size > 80) petStoryPageCache.clear();
     const source = qs('#wb-pet-dialogue .wb-pet-dialogue-text', doc);
     const probe = doc.createElement('div');
     probe.className = 'wb-pet-dialogue-text ' + (className || '');
@@ -6006,7 +6370,7 @@ export async function initWanbanXiaowu() {
     }
     probe.remove();
     const result = pages.length ? pages : [''];
-    petStoryPageCache.set(cacheKey, result);
+    rememberPetStoryPages(cacheKey, result);
     return result.slice();
   }
   function petStoryLineAt(info, state, active) {
@@ -7705,10 +8069,73 @@ export async function initWanbanXiaowu() {
 
 
   function renderSelect(mode) {
+    cancelGameListRendering();
+    const renderToken = gameListRenderToken;
     syncPopupModeClass();
-    const body = qs('#wb-body'); body.className = 'wb-body'; const ids = Object.values(GAME_META).filter(g => g.mode === mode).map(g => g.id);
-    body.innerHTML = '<div class="wb-cardgrid">' + ids.map(id => { const g = GAME_META[id]; return '<div class="wb-game-card" data-game="' + id + '">' + gameIconHTML(g) + '<div class="wb-game-info"><div class="wb-game-name">' + esc(g.name) + '</div><div class="wb-muted">' + esc(cardScoreDisplay(id)) + '</div></div></div>'; }).join('') + '</div>';
-    qsa('.wb-game-card', body).forEach(c => c.onclick = () => { currentGame = c.dataset.game; if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode; saveWindowState(currentTab, currentGame); renderGame(currentGame); });
+    const body = qs('#wb-body'); body.className = 'wb-body';
+    const ids = Object.values(GAME_META).filter(g => g.mode === mode).map(g => g.id);
+    body.innerHTML = '<div class="wb-cardgrid"></div>';
+    const grid = qs('.wb-cardgrid', body);
+    const mobile = isMobileHost();
+    const firstBatch = mobile ? 5 : 9;
+    const batchSize = mobile ? 5 : 9;
+    let cursor = 0;
+    const appendBatch = count => {
+      if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
+      const end = Math.min(ids.length, cursor + count);
+      const wrapper = getHostDocument().createElement('div');
+      wrapper.innerHTML = ids.slice(cursor, end).map(id => {
+        const g = GAME_META[id];
+        return '<div class="wb-game-card" data-game="' + id + '">' + gameIconHTML(g) + '<div class="wb-game-info"><div class="wb-game-name">' + esc(g.name) + '</div><div class="wb-muted">' + esc(cardScoreDisplay(id)) + '</div></div></div>';
+      }).join('');
+      const cards = Array.from(wrapper.children);
+      cards.forEach(card => {
+        card.onclick = () => {
+          cancelGameListRendering();
+          currentGame = card.dataset.game;
+          if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode;
+          saveWindowState(currentTab, currentGame);
+          renderGame(currentGame);
+        };
+        grid.appendChild(card);
+      });
+      observeGameCardIcons(grid, cursor === 0);
+      cursor = end;
+      if (cursor >= ids.length) {
+        gameListLoadObserver?.disconnect();
+        gameListLoadObserver = null;
+        qs('.wb-game-list-sentinel', grid)?.remove();
+        return;
+      }
+      let sentinel = qs('.wb-game-list-sentinel', grid);
+      if (!sentinel) {
+        sentinel = getHostDocument().createElement('div');
+        sentinel.className = 'wb-game-list-sentinel';
+        sentinel.setAttribute('aria-hidden', 'true');
+        grid.appendChild(sentinel);
+      }
+      if (!gameListLoadObserver) {
+        const view = getHostWindow();
+        if (!view.IntersectionObserver) {
+          view.setTimeout(() => {
+            if (renderToken === gameListRenderToken && sentinel?.isConnected) appendBatch(batchSize);
+          }, 180);
+          return;
+        }
+        const observer = new view.IntersectionObserver(entries => {
+          if (!entries.some(entry => entry.isIntersecting)) return;
+          observer.disconnect();
+          if (gameListLoadObserver === observer) gameListLoadObserver = null;
+          sentinel?.remove();
+          appendBatch(batchSize);
+        }, { root:body, rootMargin:'320px 0px', threshold:0.01 });
+        gameListLoadObserver = observer;
+        view.setTimeout(() => {
+          if (renderToken === gameListRenderToken && gameListLoadObserver === observer && sentinel?.isConnected) observer.observe(sentinel);
+        }, 180);
+      }
+    };
+    appendBatch(firstBatch);
   }
 
   function markdownLiteHTML(text) {
@@ -8095,8 +8522,11 @@ export async function initWanbanXiaowu() {
     delete out.apiModel;
     return out;
   }
-  function sanitizeImportValue(key, value, currentApi) {
-    if (key === HEART_STORAGE_KEY) return normalizeHeartStore(value);
+  async function sanitizeImportValue(key, value, currentApi) {
+    if (key === HEART_STORAGE_KEY) {
+      const { normalizeStore } = await import('../heart-challenge/engine.js?v=4.1.13-heart-logs');
+      return normalizeStore(value);
+    }
     if (key === STORAGE_SETTINGS) {
       const raw = safeObject(value);
       const clean = {};
@@ -8120,14 +8550,14 @@ export async function initWanbanXiaowu() {
     if (key === STORAGE_SUMMARY_REQ) return String(value || '');
     return value == null ? {} : value;
   }
-  function buildImportPlan(items) {
+  async function buildImportPlan(items) {
     if (!isPlainObject(items)) throw new Error('备份内容缺少 items 数据。');
     const currentApi = ((cfg) => ({ apiUrl: cfg.apiUrl || '', apiKey: cfg.apiKey || '', apiModel: cfg.apiModel || '' }))(settings());
     const plan = {};
-    exportDataKeys().forEach(key => {
-      if (!Object.prototype.hasOwnProperty.call(items, key)) return;
-      plan[key] = sanitizeImportValue(key, items[key], currentApi);
-    });
+    for (const key of exportDataKeys()) {
+      if (!Object.prototype.hasOwnProperty.call(items, key)) continue;
+      plan[key] = await sanitizeImportValue(key, items[key], currentApi);
+    }
     // Older backups omitted the route key; restore it from their pet selection.
     const routeKey = SCRIPT_ID + '_petLastRoute';
     if (!Object.hasOwn(plan, routeKey)) {
@@ -8157,6 +8587,15 @@ export async function initWanbanXiaowu() {
       throw new Error(quota ? '手机端本地存储空间不足，已放弃导入并保留原数据。' : ('写入失败，已放弃导入并保留原数据：' + (e && e.message ? e.message : e)));
     }
     if (Object.hasOwn(plan, STORAGE_RECORDS)) { pendingRecords = null; recordsCache = null; }
+    if (Object.hasOwn(plan, STORAGE_SCORES)) scoresCache = null;
+    if (Object.hasOwn(plan, STORAGE_LINES)) linesCache = null;
+    if (Object.hasOwn(plan, STORAGE_ROLE_LINES)) roleLinesCache = null;
+    if (Object.hasOwn(plan, STORAGE_LINE_PRESET_SELECTION)) linePresetSelectionCache = null;
+    if (Object.hasOwn(plan, STORAGE_API_PRESETS)) apiPresetsCache = null;
+    if (Object.hasOwn(plan, STORAGE_WORLD_PRESETS)) worldPresetsCache = null;
+    if (Object.hasOwn(plan, STORAGE_SUMMARIES)) summariesCache = null;
+    if (Object.hasOwn(plan, STORAGE_ROLE_CONTEXTS)) roleContextsCache = null;
+    if (Object.hasOwn(plan, STORAGE_CARD_ROLES)) cardRolesCache = null;
     if (Object.hasOwn(plan, STORAGE_SETTINGS)) settingsCache = Object.assign({}, DEFAULT_SETTINGS, safeObject(loadJSON(STORAGE_SETTINGS, {})));
     if (Object.hasOwn(plan, STORAGE_PET_FULL)) petFullActiveCaretakerId = '';
     if (Object.hasOwn(plan, SCRIPT_ID + '_petLastRoute')) petRuntimeMode = plan[SCRIPT_ID + '_petLastRoute'];
@@ -8167,6 +8606,7 @@ export async function initWanbanXiaowu() {
       Object.values(progressSaveTimers).forEach(clearTimeout);
       progressSaveTimers = {};
       progressSaveCache = {};
+      progressSaveStartedAt = {};
       progressCache = null;
       progressDeleteCache.clear();
     }
@@ -8212,11 +8652,11 @@ export async function initWanbanXiaowu() {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const data = JSON.parse(String(reader.result || '{}'));
         const items = data.items || data;
-        const plan = buildImportPlan(items);
+        const plan = await buildImportPlan(items);
         const st = qs('#wb-import-export-status'); if (st) st.textContent = '已读取备份：' + (file.name || '备份文件') + '，等待确认导入。';
         showConfirm('导入备份', '导入前会先校验并修复可恢复的数据；如果手机存储空间不足或写入失败，会放弃导入并保留当前数据。当前 API 配置和 API 预设会保留，不会被覆盖。确定要继续导入吗？', () => {
           try {
@@ -8938,6 +9378,7 @@ export async function initWanbanXiaowu() {
       startGameDurationRewardTimer();
       hideGamePauseOverlay();
       const btn = qs('#wb-pause'); if (btn) btn.textContent = '暂停';
+      scheduleRandomGameLine();
     };
     qs('#wb-resume-cancel', mask).onclick = () => {
       cleanup();
@@ -9023,7 +9464,7 @@ export async function initWanbanXiaowu() {
   }
   function saveCompleteTheaterPack(game, jobs, data, roleName) {
     const targetRole = normalizePresetName(roleName || companionRoleKey());
-    const previous = theaterCache;
+    const previous = getTheaterCache();
     const next = Object.assign({}, previous);
     jobs.forEach(([outcome, special]) => {
       next[theaterCacheKeyForName(targetRole, game, outcome, special === 'normal' ? '' : special)] = data[theaterPackKey(outcome, special)];
@@ -9245,7 +9686,8 @@ export async function initWanbanXiaowu() {
     const lineResult = await generateLineOnlyForGame(game, promptCfg, preset, roleName, onAiCall, options);
     if (lineResult && lineResult.skipped) return lineResult;
     if (shouldStop && shouldStop()) return false;
-    await preGenerateTheaters(game, promptCfg, onAiCall, roleName).catch(e => console.warn('[玩伴小屋] theater pregenerate failed:', e));
+    const theaterResult = await preGenerateTheaters(game, promptCfg, onAiCall, roleName, options);
+    if (theaterResult && theaterResult.skipped) return theaterResult;
     return true;
   }
   function openBatchLineGenerator() {
@@ -9988,8 +10430,10 @@ export async function initWanbanXiaowu() {
     }
     try {
       let menuItem = pd.getElementById(MENU_ID);
+      const menuRoot = MENU_SELECTORS.map(selector => pd.querySelector(selector)).find(Boolean);
+      if (!menuRoot) return;
       const observer = new MutationObserver(() => {
-        if (menuItem?.isConnected || !pj || !pd.body) return;
+        if (menuItem?.isConnected || !pj || !menuRoot.isConnected) return;
         menuItem = pd.getElementById(MENU_ID);
         if (menuItem) return;
         for (const sel of MENU_SELECTORS) {
@@ -9997,19 +10441,52 @@ export async function initWanbanXiaowu() {
           if (found.length) { appendMenuItem(found, pd, pj); menuItem = pd.getElementById(MENU_ID); break; }
         }
       });
-      observer.observe(pd.body, { childList: true, subtree: true });
+      observer.observe(menuRoot, { childList:true });
       menuObservers.set(pd, observer);
     } catch(e) {}
   }
 
-  function init() {
-    syncCurrentHostRoleContext();
-    addMenuItem();
-    bindMessageNotifyEvents();
-    bindRoleContextEvents();
-    syncFloatingBall();
-    scheduleInitialUpdateCheck();
+  function scheduleLegacyStorageMaintenance() {
+    const marker = SCRIPT_ID + '_storageCompacted_v1';
+    try { if (localStorage.getItem(marker) === '1') return; } catch (_) { return; }
+    const view = getHostWindow();
+    if (typeof view.requestIdleCallback !== 'function') return;
+    const schedule = () => view.requestIdleCallback(() => {
+      const shell = qs('#' + SHELL_ID, getHostDocument());
+      if (gameStarted || shell?.classList.contains('wb-shell-visible')) {
+        view.setTimeout(schedule, 15000);
+        return;
+      }
+      try {
+        compactLegacyStorage(localStorage, SCRIPT_ID + '_', [STORAGE_SUMMARY_REQ]);
+        localStorage.setItem(marker, '1');
+      } catch (error) {
+        console.warn('[玩伴小屋] storage maintenance unavailable:', error);
+      }
+    });
+    view.setTimeout(schedule, 10000);
   }
+
+  function init() {
+    addMenuItem();
+    loadPromptTextTemplates();
+    getHostWindow().setTimeout(() => {
+      syncCurrentHostRoleContext();
+      bindMessageNotifyEvents();
+      bindRoleContextEvents();
+      bindRuntimeVisibility();
+      syncFloatingBall();
+      scheduleInitialUpdateCheck();
+      scheduleLegacyStorageMaintenance();
+      runtimeReady = true;
+      if (runtimeOpenRequested && runtimeOpenHandler) {
+        runtimeOpenRequested = false;
+        runtimeOpenHandler();
+      }
+    }, 0);
+  }
+
+  runtimeOpenHandler = buildPopup;
 
   if (typeof window[FLAG] === 'undefined') {
     window[FLAG] = true;
@@ -10019,7 +10496,7 @@ export async function initWanbanXiaowu() {
         clearInterval(waitJQ);
         const doc = getHostDocument();
         const state = doc.readyState;
-        const startDelay = state === 'complete' ? 1500 : 4000;
+        const startDelay = runtimeOpenRequested ? 0 : (state === 'complete' ? 1500 : 4000);
         const go = () => setTimeout(init, startDelay);
         if (state === 'complete' || state === 'interactive') go();
         else doc.addEventListener('DOMContentLoaded', go);
@@ -10136,7 +10613,7 @@ export async function initWanbanXiaowu() {
     gameEntryTimer = setTimeout(check, 60);
   }
   function renderGame(id) {
-    if (!gameStarted) syncCurrentHostRoleContext();
+    if (!gameStarted && settings().lastHostCardId !== characterCardId(currentHostCharacter())) syncCurrentHostRoleContext();
     stopGame();
     currentRoundProgressRecordId = '';
     currentRoundRoleContext = null;
@@ -10179,7 +10656,18 @@ export async function initWanbanXiaowu() {
     scheduleGameEntryPrompt(id, qs('#wb-start-cover-btn'));
   }
 
-  function startCurrentGame(id, savedState, options) {
+  function scheduleRandomGameLine() {
+    if (randomLineTimer) clearTimeout(randomLineTimer);
+    if (!currentGame || !gameStarted) { randomLineTimer = null; return; }
+    const remaining = gamePaused ? 3000 : Math.max(250, 10000 - (Date.now() - lastDialogueAt));
+    randomLineTimer = setTimeout(() => {
+      randomLineTimer = null;
+      if (currentGame && gameStarted && !gamePaused && Date.now() - lastDialogueAt >= 10000) speak(currentGame, 'random');
+      scheduleRandomGameLine();
+    }, remaining);
+  }
+
+  async function startCurrentGame(id, savedState, options) {
     if (gameStarted) return;
     const storedState = gameProgress(id);
     const forceNew = !!(options && options.forceNew);
@@ -10196,6 +10684,33 @@ export async function initWanbanXiaowu() {
     if (resumeState && needsFirstMoverChoice(id) && !storedState && !resumeState.firstMover) {
       showFirstMoverChoice(id, firstMover => startCurrentGame(id, Object.assign({}, resumeState, { firstMover })));
       return;
+    }
+    let modularFactory = null;
+    if (modularGameFactoryLoaders[id]) {
+      const coverBtn = qs('#wb-start-cover-btn');
+      if (coverBtn?.dataset.loading === '1') return;
+      const request = ++gameStartRequest;
+      if (coverBtn) {
+        coverBtn.dataset.loading = '1';
+        coverBtn.disabled = true;
+        coverBtn.textContent = '正在加载...';
+      }
+      try {
+        modularFactory = await loadModularGameFactory(id);
+      } catch (error) {
+        console.error('[玩伴小屋] game module load failed:', id, error);
+        if (request === gameStartRequest && currentGame === id && coverBtn?.isConnected) {
+          delete coverBtn.dataset.loading;
+          coverBtn.disabled = false;
+          coverBtn.textContent = '开始游戏';
+          toast('游戏资源加载失败，请重试');
+        }
+        return;
+      }
+      if (request !== gameStartRequest || currentGame !== id || !coverBtn?.isConnected) return;
+      delete coverBtn.dataset.loading;
+      coverBtn.disabled = false;
+      coverBtn.textContent = '开始游戏';
     }
     if (!resumeState) clearProgress(id);
     cancelGameEntryPrompt();
@@ -10219,11 +10734,9 @@ export async function initWanbanXiaowu() {
     gameStartAt = Date.now();
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '暂停';
     const coverBtn = qs('#wb-start-cover-btn'); if (coverBtn) coverBtn.style.display = 'none';
-    if (randomLineTimer) clearInterval(randomLineTimer);
+    if (randomLineTimer) clearTimeout(randomLineTimer);
     lastDialogueAt = Date.now();
-    randomLineTimer = setInterval(() => {
-      if (currentGame && gameStarted && !gamePaused && Date.now() - lastDialogueAt >= 10000) speak(currentGame, 'random');
-    }, 1000);
+    scheduleRandomGameLine();
     if (id === 'snake') startSnake(resumeState);
     if (id === 'jump') startJump(resumeState);
     if (id === 'plank') startPlank(resumeState);
@@ -10234,9 +10747,7 @@ export async function initWanbanXiaowu() {
     if (id === 'screw') startScrew(resumeState);
     if (id === 'popstar') startPopStar(resumeState);
     if (id === 'paopao') startPaopao(resumeState);
-    if (id === 'zuma') activeGameController = createZumaGame(resumeState, modularGameEnvironment(id));
-    if (id === 'watersort') activeGameController = createWaterSortGame(resumeState, modularGameEnvironment(id));
-    if (id === 'flappybird') activeGameController = createFlappyBirdGame(resumeState, modularGameEnvironment(id));
+    if (modularFactory) activeGameController = modularFactory(resumeState, modularGameEnvironment(id));
     if (id === 'numberklotski') activeGameController = createNumberKlotskiGame(resumeState, modularGameEnvironment(id));
     if (id === 'game1010') startGame1010(resumeState);
     if (id === 'turkey') startTurkey(resumeState);
@@ -10291,6 +10802,8 @@ export async function initWanbanXiaowu() {
       try { activeGameController?.save?.(); } catch(e) {}
       commitGameActiveDuration(true);
       gamePaused = true;
+      if (randomLineTimer) clearTimeout(randomLineTimer);
+      randomLineTimer = null;
       showGamePauseOverlay();
       const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
       return;
@@ -10630,7 +11143,7 @@ function showGameRecords(game, page) {
     if (screwTimer) clearInterval(screwTimer);
     if (linkLinkTimer) clearInterval(linkLinkTimer);
     if (shuerteTimer) clearInterval(shuerteTimer);
-    if (randomLineTimer) clearInterval(randomLineTimer);
+    if (randomLineTimer) clearTimeout(randomLineTimer);
     snakeTimer = tetrisTimer = jumpTimer = screwTimer = linkLinkTimer = shuerteTimer = randomLineTimer = null;
     const inferred = result || inferResult(game, title, scoreText);
     const g = GAME_META[game] || { name: '游戏', unit: '分' };
@@ -10685,7 +11198,7 @@ function showGameRecords(game, page) {
     refreshRecordSaveStatus();
     if (shouldShowTheater) {
       const roleName = activeGameRoleName(game);
-      const cachedTheater = theaterCache[theaterCacheKey(game, outcome, special)] || doubleTheaterFallback(game, outcome, special, roleName);
+      const cachedTheater = getTheaterCache()[theaterCacheKey(game, outcome, special)] || doubleTheaterFallback(game, outcome, special, roleName);
 	      showTheaterModal(special ? theaterTitleForSpecial(special) : '角色互动小剧场', cachedTheater, { game, recordId: rec.id });
     }
     const logBtnHandler = async () => { const btn = qs('#wb-generate-log', mask); if (!btn) return; btn.disabled = true; btn.textContent = '生成中...'; await generateGameLog(game, rec.id); btn.disabled = false; btn.textContent = '查看日志'; btn.onclick = () => { const latest = (records()[game] || []).find(r => r.id === rec.id); if (latest) showRecordLogModal(latest, game); }; };
@@ -10851,7 +11364,12 @@ function showGameRecords(game, page) {
       }
       if ((kind || 'all') !== 'lines') {
         try { await preGenerateTheaters(game, promptCfg, progress, preset); }
-        catch(theaterErr) { console.warn('[玩伴小屋] theater pregenerate failed:', theaterErr); toast('小剧场生成失败时会使用本地小剧场'); }
+        catch(theaterErr) {
+          console.warn('[玩伴小屋] theater pregenerate failed:', theaterErr);
+          const reason = theaterErr && theaterErr.message ? theaterErr.message : '未知错误';
+          if ((kind || 'all') === 'all') throw new Error('语录已保存；小剧场保存失败：' + reason);
+          throw theaterErr;
+        }
       }
       toast('已生成并覆盖“' + companionName() + ' / ' + roleDisplayName(preset) + '”的' + ((kind === 'lines') ? '语录' : (kind === 'theater' ? '小剧场' : '全部数据')));
       setLineGenerationStatus('生成' + GAME_META[game].name + '数据完成', false);
@@ -11057,11 +11575,11 @@ function showGameRecords(game, page) {
     if (g.mode === 'double') {
       const cur = sc[game] && typeof sc[game] === 'object' ? sc[game] : { user: sc[game] || 0, ta: 0 };
       if (value > (cur.user || 0)) cur.user = value;
-      sc[game] = cur; saveJSON(STORAGE_SCORES, sc);
+      sc[game] = cur; saveScores(sc);
       const h = qs('#wb-high'); if (h) h.textContent = scoreDisplay(game);
     } else {
       const old = sc[game] || 0;
-      if (value > old) { sc[game] = value; saveJSON(STORAGE_SCORES, sc); if (!currentRoundRecord && old > 0 && DEFAULT_LINES[game] && DEFAULT_LINES[game].record) { currentRoundRecord = true; speak(game, 'record'); } }
+      if (value > old) { sc[game] = value; saveScores(sc); if (!currentRoundRecord && old > 0 && DEFAULT_LINES[game] && DEFAULT_LINES[game].record) { currentRoundRecord = true; speak(game, 'record'); } }
     }
     const s = qs('#wb-score'); if (s) s.textContent = '本局：' + value;
   }
@@ -11409,7 +11927,8 @@ function showGameRecords(game, page) {
       }
       return Object.assign({ cols, deck, score:0, level:1, moves:0, completed:[], stepsSinceDeal:0, tools:{undo:1, eliminate:5}, details:{ mode:choice.id, hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, emptied:{}, dealEmptyLock:false, dangerPeak:false }, choiceSavePatch('spider', choice));
     };
-    let st = state && Array.isArray(state.cols) ? Object.assign(initial(), state) : initial();
+    const resumed = !!(state && Array.isArray(state.cols));
+    let st = resumed ? Object.assign(initial(), state) : initial();
     st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false })));
     st.deck = Array.isArray(st.deck) ? st.deck : makeBatch();
     st.completed = Array.isArray(st.completed) ? st.completed : [];
@@ -11430,6 +11949,7 @@ function showGameRecords(game, page) {
     qs('#sp-end').onclick = () => requestEndSpiderGame();
     qs('#sp-board').onclick = e => { if (e.target.id === 'sp-board') clearSelection(); };
     getHostDocument().addEventListener('keydown', spiderKeydown);
+    if (resumed && dealStepsLeft() === 0) setTimeout(resumeDueAutoDeal, 80);
     function spiderKeydown(e){ if(currentGame==='spider' && e.key === 'Escape') clearSelection(); }
     function save(){ if(!over) saveProgress('spider', Object.assign({}, st, { selected:null })); }
     save = registerLegacyGameSave('spider', save);
@@ -11463,7 +11983,7 @@ function showGameRecords(game, page) {
       st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)) + 1;
       await settle([from, to], true);
       await settle([], false);
-      if(allFilled()) st.dealEmptyLock = false;
+      if(canDealNow()) st.dealEmptyLock = false;
       await autoDealIfDue();
       checkOverflow();
       await checkClearTable();
@@ -11517,7 +12037,7 @@ function showGameRecords(game, page) {
       st.cols.forEach((c,i)=>{ if(!c.length && !st.emptied[i]){ st.emptied[i]=true; st.score += 50; st.details.emptyCols=(st.details.emptyCols||0)+1; speak('spider','empty_col'); } });
     }
     function resetEmptyRewardsAfterDeal(){ st.emptied = {}; }
-    function allFilled(){ return st.cols.every(c=>c.length>0); }
+    function canDealNow(){ return canSpiderDeal(st.deck.length, st.cols.map(c=>c.length)); }
     function dealStepLimit(){
       const collected = Math.max(0, Array.isArray(st.completed) ? st.completed.length : 0);
       return Math.max(10, 20 - Math.floor(collected / 6) * 2);
@@ -11525,25 +12045,36 @@ function showGameRecords(game, page) {
     function dealStepsLeft(){
       return Math.max(0, dealStepLimit() - Math.max(0, Number(st.stepsSinceDeal || 0)));
     }
-    async function manualDeal(){ if(busy || over || gamePaused) return; if(!st.deck.length){ showSpiderToast('没有底牌，无法发牌'); draw(); return; } if(!allFilled()){ st.dealEmptyLock=true; draw(); speak('spider','auto_3'); return; } busy=true; pushUndo(); await dealRow(false); await settle([], false); checkOverflow(); await checkClearTable(); draw(); save(); busy=false; }
+    async function manualDeal(){ if(busy || over || gamePaused) return; if(!canDealNow()){ st.dealEmptyLock=true; showSpiderToast('请先填满空列'); draw(); speak('spider','auto_3'); return; } busy=true; pushUndo(); if(!st.deck.length) ensureDeck(10); await dealRow(false); await settle([], false); checkOverflow(); await checkClearTable(); draw(); save(); busy=false; }
     async function autoDealIfDue(){
-      if(over || dealStepsLeft() > 0) return false;
-      if(!st.deck.length){
-        if(!st.noStockNotice){ st.noStockNotice=true; showSpiderToast('步数到达，但已经没有底牌'); }
-        draw();
-        return false;
-      }
-      if(!allFilled()){
+      const auto = spiderAutoDealState(st.deck.length, st.cols.map(c=>c.length), dealStepsLeft());
+      if(over || !auto.due) return false;
+      if(!auto.canDeal){
         st.dealEmptyLock = true;
         showSpiderToast('步数到达，请先填满空列');
         speak('spider','auto_3');
         return false;
       }
+      const replenished = !st.deck.length;
+      if(replenished) ensureDeck(10);
       st.details.autoDeals = (st.details.autoDeals || 0) + 1;
-      showSpiderToast('步数到达，自动发牌');
+      showSpiderToast(replenished ? '底牌用完，自动补牌' : '步数到达，自动发牌');
       await dealRow(true);
       await settle([], false);
       return true;
+    }
+    async function resumeDueAutoDeal(){
+      if(currentGame !== 'spider' || !gameStarted || gamePaused || busy || over) return;
+      busy = true;
+      try {
+        await autoDealIfDue();
+        checkOverflow();
+        await checkClearTable();
+        draw();
+        save();
+      } finally {
+        busy = false;
+      }
     }
     function addDealWant(list, suit, rank, weight, kind){
       if(!suit || rank < 1 || rank > 13) return;
@@ -11731,9 +12262,11 @@ function showGameRecords(game, page) {
       const maxH=Math.max(...st.cols.map(c=>c.length));
       const leftSteps = dealStepsLeft();
       const hasStock=st.deck.length>0;
-      const cd=qs('#sp-countdown'); if(cd){ cd.textContent = !hasStock ? '无底牌' : (leftSteps > 0 ? (leftSteps + ' 步后发牌') : '立即发牌'); cd.className='wb-spider-countdown' + (hasStock && leftSteps <= 3 ? ' warn' : ''); }
-      const hint=qs('#sp-deal-hint'); if(hint) hint.textContent = !hasStock ? '底牌已用完' : (st.dealEmptyLock || !allFilled() ? '请先填满空列 · 底牌 '+st.deck.length+' 张' : ('底牌 '+st.deck.length+' 张 · 已走 ' + Math.max(0, Number(st.stepsSinceDeal || 0)) + '/' + dealStepLimit() + ' 步'));
-      const deck=qs('#sp-deck'); if(deck){ deck.className='wb-spider-deck' + (!hasStock || !allFilled() ? ' blocked' : ''); deck.textContent = !hasStock ? '无底牌' : (leftSteps > 0 ? '提前发牌' : '发牌'); deck.disabled=!hasStock; }
+      const canDeal=canDealNow();
+      const partialDeal=hasStock && st.deck.length<st.cols.length;
+      const cd=qs('#sp-countdown'); if(cd){ cd.textContent = leftSteps > 0 ? (leftSteps + ' 步后发牌') : '立即发牌'; cd.className='wb-spider-countdown' + (leftSteps <= 3 ? ' warn' : ''); }
+      const hint=qs('#sp-deal-hint'); if(hint) hint.textContent = !canDeal ? '请先填满空列 · 底牌 '+st.deck.length+' 张' : (!hasStock ? '底牌 0 张 · 可继续发牌' : (partialDeal ? '底牌 '+st.deck.length+' 张 · 可直接发牌' : ('底牌 '+st.deck.length+' 张 · 已走 ' + Math.max(0, Number(st.stepsSinceDeal || 0)) + '/' + dealStepLimit() + ' 步')));
+      const deck=qs('#sp-deck'); if(deck){ deck.className='wb-spider-deck' + (!canDeal ? ' blocked' : ''); deck.textContent = hasStock && leftSteps > 0 ? '提前发牌' : '发牌'; deck.disabled=!canDeal; }
       const deckPile=qs('.wb-spider-deckpile'); if(deckPile) deckPile.classList.toggle('empty', !hasStock);
       const pile=qs('#sp-collect-pile'); if(pile){ const cap=Math.max(1, Math.floor(((pile.clientWidth || 36) + 7) / 16)); const shown=st.completed.slice(0, cap); pile.className='wb-spider-collectpile' + (!shown.length ? ' empty' : ''); pile.innerHTML = shown.length ? shown.map(d=>'<span class="wb-spider-collect-card '+(d.suit==='H'?'red':'')+'" title="第'+d.index+'副">'+faceInner({ rank:1, suit:d.suit })+'</span>').join('') : '<span class="wb-spider-collect-card">'+faceInner({ rank:1, suit:'S' })+'</span>'; }
       const hintBtn=qs('#sp-hint'); if(hintBtn) hintBtn.className='wb-spider-tool' + (hintMode ? ' hint-on' : '');
@@ -11748,7 +12281,7 @@ function showGameRecords(game, page) {
         const cardAreaH = (Math.max(maxH, 1) - 1) * gap + cardW * 1.38 + 4;
         const colH = Math.max(80, Math.min(Math.max(80, board.clientHeight - 8), cardAreaH));
         board.innerHTML = st.cols.map((col,i)=>{
-          let cls='wb-spider-col' + (legal[i]?' legal':'') + (st.dealEmptyLock&&!col.length?' empty-warn':'') + (col.length>MAX_COL?' overflow':'');
+          let cls='wb-spider-col' + (legal[i]?' legal':'') + (st.dealEmptyLock&&!canDeal&&!col.length?' empty-warn':'') + (col.length>MAX_COL?' overflow':'');
           const cards=col.map((c,idx)=> cardHTML(c,i,idx,idx*gap, (selected && selected.col===i && idx>=selected.idx ? 'selected ' : '') + (eliminateMode && c.face && isRun(i,idx) ? 'eliminate-choice ' : '') + (hintMode && c.face && isHelpfulMove(i,idx) ? 'hint-card' : ''))).join('');
           return '<div class="'+cls+'" data-col="'+i+'" style="height:'+colH+'px">'+cards+'</div>';
         }).join('');
@@ -14783,13 +15316,23 @@ function showGameRecords(game, page) {
     let feedback = state?.feedback || {};
     let tools = Object.assign({ hint:3, focus:2, shuffle:1 }, state?.tools || {});
     let details = Object.assign({ correct:Math.max(0, next - 1), wrong:0, hintUsed:0, focusUsed:0, shuffleUsed:0, reactionTotalMs:0, lateWrongStreak:0 }, state?.details || {});
-    let focusUntil = 0, lastProgressSaveAt = 0;
-    box.innerHTML = '<div class="wb-shuerte-panel"><div class="wb-shuerte-top"><span class="wb-pill" id="wb-shuerte-target"></span><span class="wb-pill" id="wb-shuerte-time"></span><span class="wb-pill" id="wb-shuerte-combo"></span><span class="wb-pill">' + (NO_FADE ? '盲点：开' : '盲点：关') + '</span></div><div class="wb-shuerte-board" id="wb-shuerte-board"></div><div class="wb-actions wb-shuerte-tools"><button type="button" class="wb-btn" id="wb-shuerte-hint">提示 <span id="wb-shuerte-hint-left">3</span></button><button type="button" class="wb-btn" id="wb-shuerte-focus">聚焦 <span id="wb-shuerte-focus-left">2</span></button><button type="button" class="wb-btn" id="wb-shuerte-shuffle">重排 <span id="wb-shuerte-shuffle-left">1</span></button></div><div class="wb-shuerte-note">按 1 → ' + TOTAL + ' 依次点击；' + (NO_FADE ? '盲点模式点对后不变色，分数略有加成。' : '点对后会变淡，错点会扣分。') + '</div></div>';
+    let focusUntil = 0;
+    box.innerHTML = '<div class="wb-shuerte-panel"><div class="wb-shuerte-top"><span class="wb-pill" id="wb-shuerte-target"></span><span class="wb-pill" id="wb-shuerte-time"></span><span class="wb-pill" id="wb-shuerte-combo"></span><span class="wb-pill">' + (NO_FADE ? '盲点：开' : '盲点：关') + '</span></div><div class="wb-shuerte-board" id="wb-shuerte-board">' + nums.map((v, i) => '<button type="button" class="wb-shuerte-cell" data-i="' + i + '" aria-label="舒尔特数字' + v + '"><span class="wb-shuerte-number">' + v + '</span></button>').join('') + '</div><div class="wb-actions wb-shuerte-tools"><button type="button" class="wb-btn" id="wb-shuerte-hint">提示 <span id="wb-shuerte-hint-left">3</span></button><button type="button" class="wb-btn" id="wb-shuerte-focus">聚焦 <span id="wb-shuerte-focus-left">2</span></button><button type="button" class="wb-btn" id="wb-shuerte-shuffle">重排 <span id="wb-shuerte-shuffle-left">1</span></button></div><div class="wb-shuerte-note">按 1 → ' + TOTAL + ' 依次点击；' + (NO_FADE ? '盲点模式点对后不变色，分数略有加成。' : '点对后会变淡，错点会扣分。') + '</div></div>';
+    const board = qs('#wb-shuerte-board', box);
+    const cells = qsa('.wb-shuerte-cell', board);
+    const targetEl = qs('#wb-shuerte-target', box);
+    const timeEl = qs('#wb-shuerte-time', box);
+    const comboEl = qs('#wb-shuerte-combo', box);
+    board.style.setProperty('--wb-shuerte-size', String(N));
+    board.onclick = event => {
+      const btn = event.target.closest('.wb-shuerte-cell');
+      if (btn && board.contains(btn)) clickCell(+btn.dataset.i, btn);
+    };
     tick();
     draw();
     save();
     if (shuerteTimer) clearInterval(shuerteTimer);
-    shuerteTimer = setInterval(tick, 50);
+    shuerteTimer = setInterval(tick, 100);
 
     function elapsedMs() { return elapsedBefore + (started && startAt ? Date.now() - startAt : 0); }
     function shuerteTimeText(ms) { return ((Math.max(0, Number(ms) || 0)) / 1000).toFixed(2) + '秒'; }
@@ -14798,10 +15341,7 @@ function showGameRecords(game, page) {
     }
     save = registerLegacyGameSave('shuerte', save);
     function tick() {
-      const el = qs('#wb-shuerte-time', box);
-      if (el) el.textContent = '用时：' + shuerteTimeText(elapsedMs());
-      const now = Date.now();
-      if (started && !over && currentGame === 'shuerte' && !gamePaused && now - lastProgressSaveAt >= 500) { lastProgressSaveAt = now; save(); }
+      if (timeEl) timeEl.textContent = '用时：' + shuerteTimeText(elapsedMs());
     }
     function targetIndex() { return nums.findIndex(v => v === next); }
     function useTool(name) {
@@ -14809,7 +15349,7 @@ function showGameRecords(game, page) {
       tools[name]--;
       details[name + 'Used'] = (details[name + 'Used'] || 0) + 1;
       score = Math.max(0, score - 30);
-      setScore('shuerte', score);
+      updateScoreLabel();
       return true;
     }
     function drawFloat(btn, text, good) {
@@ -14819,11 +15359,26 @@ function showGameRecords(game, page) {
       btn.appendChild(tag);
       setTimeout(() => tag.remove(), 520);
     }
+    function updateScoreLabel() {
+      const scoreEl = qs('#wb-score');
+      if (scoreEl) scoreEl.textContent = '本局：' + score;
+    }
+    function updateCell(i, tIdx, focusOn) {
+      const btn = cells[i];
+      if (!btn) return;
+      const v = nums[i], done = !NO_FADE && v < next, hit = feedback[i] || '';
+      const r = Math.floor(i / N), c = i % N, tr = Math.floor(tIdx / N), tc = tIdx % N;
+      const focus = focusOn && tIdx >= 0 && (r === tr || c === tc);
+      btn.className = ['wb-shuerte-cell', done ? 'done' : '', hit, focus ? 'focus' : '', focusOn && !focus && !done ? 'dim' : ''].filter(Boolean).join(' ');
+      btn.dataset.i = String(i);
+      btn.setAttribute('aria-label', '舒尔特数字' + v);
+      const number = btn.querySelector('.wb-shuerte-number');
+      if (number && number.textContent !== String(v)) number.textContent = String(v);
+    }
     function draw() {
-      const board = qs('#wb-shuerte-board', box);
-      board.style.setProperty('--wb-shuerte-size', String(N));
-      qs('#wb-shuerte-target', box).textContent = next <= TOTAL ? '目标：' + next : '完成';
-      qs('#wb-shuerte-combo', box).textContent = '连击：×' + combo + ' / 最高×' + maxCombo;
+      targetEl.textContent = next <= TOTAL ? '目标：' + next : '完成';
+      comboEl.textContent = '连击：×' + combo + ' / 最高×' + maxCombo;
+      updateScoreLabel();
       ['hint','focus','shuffle'].forEach(k => {
         const left = qs('#wb-shuerte-' + k + '-left', box), btn = qs('#wb-shuerte-' + k, box);
         if (left) left.textContent = String(tools[k] || 0);
@@ -14831,14 +15386,7 @@ function showGameRecords(game, page) {
       });
       const tIdx = targetIndex();
       const focusOn = focusUntil > Date.now();
-      board.innerHTML = nums.map((v, i) => {
-        const done = !NO_FADE && v < next, hit = feedback[i] || '', r = Math.floor(i / N), c = i % N;
-        const tr = Math.floor(tIdx / N), tc = tIdx % N;
-        const focus = focusOn && tIdx >= 0 && (r === tr || c === tc);
-        const cls = ['wb-shuerte-cell', done ? 'done' : '', hit, focus ? 'focus' : '', focusOn && !focus && !done ? 'dim' : ''].filter(Boolean).join(' ');
-        return '<button type="button" class="' + cls + '" data-i="' + i + '" aria-label="舒尔特数字' + v + '">' + v + '</button>';
-      }).join('');
-      qsa('.wb-shuerte-cell', board).forEach(btn => btn.onclick = () => clickCell(+btn.dataset.i, btn));
+      cells.forEach((_, i) => updateCell(i, tIdx, focusOn));
     }
     function clickCell(i, btn) {
       if (gamePaused || over || next > TOTAL) return;
@@ -14862,8 +15410,8 @@ function showGameRecords(game, page) {
         next++;
         if (next > TOTAL) finish();
         else {
-          setScore('shuerte', score);
-          if (!NO_FADE) setTimeout(() => { delete feedback[i]; draw(); }, 180);
+          updateScoreLabel();
+          if (!NO_FADE) setTimeout(() => { delete feedback[i]; updateCell(i, targetIndex(), focusUntil > Date.now()); }, 180);
           draw();
           save();
         }
@@ -14876,9 +15424,9 @@ function showGameRecords(game, page) {
         feedback[i] = 'bad';
         drawFloat(btn, '-' + penalty, false);
         speak('shuerte','wrong');
-        setScore('shuerte', score);
+        updateScoreLabel();
         draw();
-        setTimeout(() => { delete feedback[i]; draw(); }, 220);
+        setTimeout(() => { delete feedback[i]; updateCell(i, targetIndex(), focusUntil > Date.now()); }, 220);
         save();
       }
     }
