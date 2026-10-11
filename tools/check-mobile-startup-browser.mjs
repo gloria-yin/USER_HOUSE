@@ -60,6 +60,9 @@ localStorage.setItem('wanbanXiaowu_apiPresets_v1',JSON.stringify(Array.from({len
 window.__storageReads={};
 const nativeStorageGet=Storage.prototype.getItem;
 Storage.prototype.getItem=function(key){__storageReads[key]=(__storageReads[key]||0)+1;return nativeStorageGet.call(this,key)};
+window.__storageWrites=[];
+const nativeStorageSet=Storage.prototype.setItem;
+Storage.prototype.setItem=function(key,value){__storageWrites.push({key,time:performance.now()});return nativeStorageSet.call(this,key,value)};
 import('/index.js').then(()=>window.__launcherReady=true).catch(error=>__errors.push(String(error)));
 </script></body></html>`;
 
@@ -432,9 +435,22 @@ try {
   })()`);
   assert.ok(progressPromptMs < 80, 'saved progress prompt waited ' + progressPromptMs.toFixed(1) + 'ms');
   assert.ok(await evaluate('!!document.querySelector("#wb-progress-continue")'), 'saved progress prompt must appear without an idle callback');
-  await evaluate('document.querySelector("#wb-progress-continue").click()');
+  await evaluate('window.__continueStarted=performance.now();document.querySelector("#wb-progress-continue").click()');
   await waitFor('document.querySelector("#wb-shuerte-target")?.textContent==="目标：9"');
+  const continueResumeMs = await evaluate('performance.now()-window.__continueStarted');
+  assert.ok(continueResumeMs < 1350, 'saved game resume took ' + continueResumeMs.toFixed(1) + 'ms');
   assert.equal(await evaluate('!!document.querySelector("#wb-pause-overlay")'), false, 'continued game must leave the pause state after its countdown');
+  const pauseResumeMs = await evaluate(`(async()=>{
+    document.querySelector('#wb-pause').click();
+    await new Promise(requestAnimationFrame);
+    const started=performance.now();
+    document.querySelector('#wb-pause').click();
+    while((document.querySelector('#wb-resume-mask')||document.querySelector('#wb-pause-overlay'))&&performance.now()-started<1800){
+      await new Promise(requestAnimationFrame);
+    }
+    return performance.now()-started;
+  })()`);
+  assert.ok(pauseResumeMs < 1350, 'pause resume countdown took ' + pauseResumeMs.toFixed(1) + 'ms');
   await evaluate(`(()=>{
     const button=Array.from(document.querySelectorAll('.wb-shuerte-cell')).find(cell=>cell.querySelector('.wb-shuerte-number')?.textContent==='9');
     button.click();
@@ -866,10 +882,45 @@ try {
   assert.equal(waterSortInteraction.firstStarted && waterSortInteraction.secondStarted, true, 'every water sort pour must start both bottle animations');
   assert.equal(waterSortInteraction.firstCleared && waterSortInteraction.secondCleared, true, 'water sort pour classes must clear after every animation');
   assert.ok(waterSortInteraction.handler < 30, 'water sort selection handler took ' + waterSortInteraction.handler.toFixed(1) + 'ms');
-  const waterSortBackMs = await evaluate(`(()=>{const started=performance.now();document.querySelector('#wb-back').click();return performance.now()-started})()`);
+  const waterSortBackMs = await evaluate(`(()=>{window.__storageWrites.length=0;const started=performance.now();document.querySelector('#wb-back').click();return performance.now()-started})()`);
   assert.ok(waterSortBackMs < 30, 'water sort back handler took ' + waterSortBackMs.toFixed(1) + 'ms');
   assert.ok(await evaluate('!!document.querySelector(".wb-cardgrid")'), 'water sort back must render the game list synchronously');
+  const returnListScroll = await evaluate(`(async()=>{
+    const body=document.querySelector('#wb-body');
+    const shell=document.querySelector('#wanbanXiaowu-shell');
+    const maxScroll=Math.max(0,body.scrollHeight-body.clientHeight);
+    const frames=[],work=[];
+    window.__returnLongTasks=[];
+    const observer=globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')
+      ? new PerformanceObserver(list=>list.getEntries().forEach(entry=>window.__returnLongTasks.push(entry.duration)))
+      : null;
+    observer?.observe({type:'longtask',buffered:false});
+    for(let step=1;step<=12;step++){
+      const started=performance.now();
+      body.scrollTop=maxScroll*step/12;
+      body.dispatchEvent(new Event('scroll'));
+      document.elementFromPoint(body.clientWidth/2,Math.min(innerHeight-2,body.getBoundingClientRect().bottom-2));
+      work.push(performance.now()-started);
+      await new Promise(requestAnimationFrame);
+      frames.push(performance.now()-started);
+    }
+    observer?.disconnect();
+    const competingWrites=window.__storageWrites.filter(item=>item.key==='wanbanXiaowu_progress_v1__watersort'||item.key==='wanbanXiaowu_records_v1');
+    return {
+      maxFrame:Math.max(...frames),maxWork:Math.max(...work),maxLongTask:Math.max(0,...window.__returnLongTasks),
+      competingWrites:competingWrites.length,bodyScrollable:maxScroll>0,
+      shellScrollable:shell.scrollHeight>shell.clientHeight+1,popupHeight:document.querySelector('#wanbanXiaowu-popup').clientHeight,shellHeight:shell.clientHeight,
+    };
+  })()`);
+  assert.equal(returnListScroll.bodyScrollable, true, 'returned game list must remain scrollable');
+  assert.equal(returnListScroll.shellScrollable, false, 'mobile house must not create a competing outer scroll container');
+  assert.equal(returnListScroll.competingWrites, 0, 'progress or record storage writes competed with return-list scrolling');
+  assert.ok(returnListScroll.maxWork < 30, 'return-list scroll work took ' + returnListScroll.maxWork.toFixed(1) + 'ms');
+  assert.ok(returnListScroll.maxLongTask < 80, 'return-list scroll produced a ' + returnListScroll.maxLongTask.toFixed(1) + 'ms long task');
+  assert.ok(returnListScroll.maxFrame < 80, 'return-list scroll frame took ' + returnListScroll.maxFrame.toFixed(1) + 'ms');
   await sleep(900);
+  assert.equal(await evaluate(`window.__storageWrites.some(item=>item.key==='wanbanXiaowu_progress_v1__watersort')`), true, 'water sort progress did not flush after scrolling stopped');
+  assert.equal(await evaluate(`window.__storageWrites.some(item=>item.key==='wanbanXiaowu_records_v1')`), true, 'water sort record did not flush after scrolling stopped');
   assert.ok(await evaluate('!!localStorage.getItem("wanbanXiaowu_progress_v1__watersort")'), 'water sort back must flush its deferred snapshot');
   for (let i = 0; i < 10 && !(await evaluate('!!document.querySelector("[data-game=watersort]")')); i++) {
     await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
@@ -1171,7 +1222,7 @@ try {
   ];
   for (const [game, tab, selector] of startupSmokes) await smokeStartListedGame(game, tab, selector);
   assert.deepEqual(await evaluate('window.__errors'), []);
-  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; tabs single/double/intimacy ' + tabSwitches.single.toFixed(1) + '/' + tabSwitches.double.toFixed(1) + '/' + tabSwitches.intimacy.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms/progress prompt ' + progressPromptMs.toFixed(1) + 'ms/save ' + progressAutoSaveMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; game over ' + gameOverInteraction.maxHandler.toFixed(1) + 'ms/theater close ' + theaterCloseMs.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.elapsed.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
+  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; tabs single/double/intimacy ' + tabSwitches.single.toFixed(1) + '/' + tabSwitches.double.toFixed(1) + '/' + tabSwitches.intimacy.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms/progress prompt ' + progressPromptMs.toFixed(1) + 'ms/save ' + progressAutoSaveMs.toFixed(1) + 'ms/resume ' + continueResumeMs.toFixed(1) + 'ms/pause resume ' + pauseResumeMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; game over ' + gameOverInteraction.maxHandler.toFixed(1) + 'ms/theater close ' + theaterCloseMs.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms/return scroll ' + returnListScroll.maxFrame.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.elapsed.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
 } finally {
   client?.close();
   if (browser) {

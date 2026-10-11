@@ -212,6 +212,7 @@ export async function initWanbanXiaowu(options = {}) {
   let pendingRecords = null;
   let recordsCache = null;
   let recordsSaveTimer = null;
+  let recordsSaveStartedAt = 0;
   let progressCache = null;
   let scoresCache = null;
   let linesCache = null;
@@ -1405,7 +1406,9 @@ export async function initWanbanXiaowu(options = {}) {
   function saveSummaryReq(v) { try { localStorage.setItem(STORAGE_SUMMARY_REQ, String(v || '')); } catch(e) {} }
   const PROGRESS_SAVE_DELAY = 300;
   const PROGRESS_SAVE_MAX_DELAY = 5000;
-  const PROGRESS_EXIT_SAVE_DELAY = 32;
+  const PROGRESS_EXIT_SAVE_DELAY = 280;
+  const PERSISTENCE_INPUT_GRACE = 220;
+  const PERSISTENCE_RETRY_DELAY = 120;
   function progressShardKey(game) { return STORAGE_PROGRESS_SHARD_PREFIX + String(game || ''); }
   function progressShardKeys() {
     try {
@@ -1525,6 +1528,13 @@ export async function initWanbanXiaowu(options = {}) {
       warnStorageFailure();
     }
   }
+  function shouldDeferPersistenceWrite(startedAt) {
+    const win = getHostWindow();
+    const doc = getHostDocument();
+    if (doc.hidden || !startedAt || Date.now() - startedAt >= PROGRESS_SAVE_MAX_DELAY) return false;
+    const inputPending = !!win.navigator?.scheduling?.isInputPending?.({ includeContinuous:true });
+    return inputPending || !!qs('.wb-countdown', doc) || Date.now() - lastPersistenceInputAt < PERSISTENCE_INPUT_GRACE;
+  }
   function scheduleProgressSave(game, delay = PROGRESS_SAVE_DELAY) {
     if (!game || !progressSaveCache[game]) return;
     const now = Date.now();
@@ -1533,6 +1543,10 @@ export async function initWanbanXiaowu(options = {}) {
     const maxRemaining = Math.max(0, PROGRESS_SAVE_MAX_DELAY - (now - progressSaveStartedAt[game]));
     progressSaveTimers[game] = getHostWindow().setTimeout(() => {
       delete progressSaveTimers[game];
+      if (shouldDeferPersistenceWrite(progressSaveStartedAt[game])) {
+        scheduleProgressSave(game, PERSISTENCE_RETRY_DELAY);
+        return;
+      }
       flushProgressSave(game);
     }, Math.min(Math.max(0, delay), maxRemaining));
   }
@@ -1585,6 +1599,9 @@ export async function initWanbanXiaowu(options = {}) {
     doc.addEventListener('pointerdown', markInput, { capture:true, passive:true });
     doc.addEventListener('keydown', markInput, { capture:true, passive:true });
     doc.addEventListener('touchstart', markInput, { capture:true, passive:true });
+    doc.addEventListener('touchmove', markInput, { capture:true, passive:true });
+    doc.addEventListener('wheel', markInput, { capture:true, passive:true });
+    doc.addEventListener('scroll', markInput, { capture:true, passive:true });
   }
   function flushAllProgressSaves(forcePendingUiWork) {
     if (forcePendingUiWork) {
@@ -1884,16 +1901,24 @@ export async function initWanbanXiaowu(options = {}) {
       getHostWindow().clearTimeout(recordsSaveTimer);
       recordsSaveTimer = null;
     }
+    recordsSaveStartedAt = 0;
     if (pendingRecords && saveJSON(STORAGE_RECORDS, pendingRecords)) pendingRecords = null;
     refreshRecordSaveStatus();
     return !pendingRecords;
   }
   function scheduleRecordsSaveSoon(delay = 80) {
-    if (!pendingRecords || recordsSaveTimer != null) return;
+    if (!pendingRecords) return;
+    if (!recordsSaveStartedAt) recordsSaveStartedAt = Date.now();
+    if (recordsSaveTimer != null) getHostWindow().clearTimeout(recordsSaveTimer);
+    const maxRemaining = Math.max(0, PROGRESS_SAVE_MAX_DELAY - (Date.now() - recordsSaveStartedAt));
     recordsSaveTimer = getHostWindow().setTimeout(() => {
       recordsSaveTimer = null;
+      if (shouldDeferPersistenceWrite(recordsSaveStartedAt)) {
+        scheduleRecordsSaveSoon(PERSISTENCE_RETRY_DELAY);
+        return;
+      }
       flushRecordsSave();
-    }, delay);
+    }, Math.min(Math.max(0, delay), maxRemaining));
   }
   function stageRecordsSave(v) {
     recordsCache = safeObject(v);
@@ -8812,8 +8837,10 @@ export async function initWanbanXiaowu(options = {}) {
       const card = cardFromEvent(event);
       if (card && grid.contains(card)) prepareGameEntry(card.dataset.game);
     };
-    grid.addEventListener('pointerdown', prepareFromEvent, { passive:true });
-    grid.addEventListener('pointerover', prepareFromEvent, { passive:true });
+    grid.addEventListener('pointerover', event => {
+      if (event.pointerType === 'mouse') prepareFromEvent(event);
+    }, { passive:true });
+    grid.addEventListener('focusin', prepareFromEvent, { passive:true });
     grid.addEventListener('click', event => {
       const card = cardFromEvent(event);
       if (!card || !grid.contains(card)) return;
@@ -8839,15 +8866,6 @@ export async function initWanbanXiaowu(options = {}) {
       if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(fillStats, { timeout:1200 });
       else view.setTimeout(fillStats, inputPending ? 64 : 24);
     };
-    const pendingProgress = ids.slice();
-    const warmProgressFrame = () => {
-      if (renderToken !== gameListRenderToken || !grid?.isConnected || currentGame) return;
-      for (let i = 0; i < 4 && pendingProgress.length; i++) {
-        const id = pendingProgress.shift();
-        if (!progressReadCache.has(id) && !progressSaveCache[id]) readGameProgress(id);
-      }
-      if (pendingProgress.length) getHostWindow().requestAnimationFrame(warmProgressFrame);
-    };
     afterNextPaint(() => {
       if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
       if (pendingStats.length) {
@@ -8856,7 +8874,6 @@ export async function initWanbanXiaowu(options = {}) {
         else view.setTimeout(fillStats, 24);
       }
     });
-    getHostWindow().requestAnimationFrame(warmProgressFrame);
     scheduleGameIconWarmup();
   }
 
@@ -9308,7 +9325,7 @@ export async function initWanbanXiaowu(options = {}) {
       const quota = e && (e.name === 'QuotaExceededError' || e.code === 22 || /quota/i.test(e.message || ''));
       throw new Error(quota ? '手机端本地存储空间不足，已放弃导入并保留原数据。' : ('写入失败，已放弃导入并保留原数据：' + (e && e.message ? e.message : e)));
     }
-    if (Object.hasOwn(plan, STORAGE_RECORDS)) { pendingRecords = null; recordsCache = null; cardScoreDisplayCache.clear(); }
+    if (Object.hasOwn(plan, STORAGE_RECORDS)) { pendingRecords = null; recordsCache = null; recordsSaveStartedAt = 0; cardScoreDisplayCache.clear(); }
     if (Object.hasOwn(plan, STORAGE_SCORES)) { scoresCache = null; cardScoreDisplayCache.clear(); }
     if (Object.hasOwn(plan, STORAGE_LINES)) linesCache = null;
     if (Object.hasOwn(plan, STORAGE_ROLE_LINES)) roleLinesCache = null;
@@ -10073,14 +10090,17 @@ export async function initWanbanXiaowu(options = {}) {
 
   function startContinueCountdown(mask, game, state) {
     const modal = qs('.wb-modal', mask) || mask;
-    let left = 3;
+    const countdownEndsAt = Date.now() + 1000;
     modal.innerHTML = '<div class="wb-modal-title">准备继续</div>'
-      + '<div class="wb-countdown"><div class="wb-countdown-num" id="wb-progress-count">3</div><div class="wb-muted">秒后继续上次进度</div></div>'
+      + '<div class="wb-countdown"><div class="wb-countdown-num" id="wb-progress-count">1</div><div class="wb-muted">秒后继续上次进度</div></div>'
       + '<div class="wb-actions"><button class="wb-btn" id="wb-count-cancel">取消</button></div>';
     const cancel = qs('#wb-count-cancel', mask);
     let timer = null;
+    let finished = false;
     const finish = () => {
-      if (timer) clearInterval(timer);
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
       timer = null;
       const num = qs('#wb-progress-count', mask);
       const status = qs('.wb-muted', mask);
@@ -10091,13 +10111,15 @@ export async function initWanbanXiaowu(options = {}) {
         if (mask?.parentNode) mask.remove();
       });
     };
-    if (cancel) cancel.onclick = () => { if (timer) clearInterval(timer); if (mask && mask.parentNode) mask.remove(); };
-    timer = setInterval(() => {
-      left -= 1;
+    if (cancel) cancel.onclick = () => { if (timer) clearTimeout(timer); if (mask && mask.parentNode) mask.remove(); };
+    const tick = () => {
+      const remaining = countdownEndsAt - Date.now();
+      if (remaining <= 0) { finish(); return; }
       const num = qs('#wb-progress-count', mask);
-      if (num) num.textContent = String(Math.max(0, left));
-      if (left <= 0) finish();
-    }, 1000);
+      if (num) num.textContent = String(Math.max(1, Math.ceil(remaining / 1000)));
+      timer = setTimeout(tick, Math.min(100, remaining));
+    };
+    timer = setTimeout(tick, 100);
   }
 
   function startPauseResumeCountdown() {
@@ -10107,42 +10129,45 @@ export async function initWanbanXiaowu(options = {}) {
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-resume-mask';
-    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">准备继续</div><div class="wb-countdown"><div class="wb-countdown-num" id="wb-resume-count">3</div><div class="wb-muted">秒后继续当前游戏</div></div><div class="wb-actions"><button class="wb-btn" id="wb-resume-cancel">取消</button></div></div>';
+    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">准备继续</div><div class="wb-countdown"><div class="wb-countdown-num" id="wb-resume-count">1</div><div class="wb-muted">秒后继续当前游戏</div></div><div class="wb-actions"><button class="wb-btn" id="wb-resume-cancel">取消</button></div></div>';
     appendModalMask(mask);
-    let left = 3;
+    const countdownEndsAt = Date.now() + 1000;
     let timer = null;
+    let finished = false;
     const pbtn = qs('#wb-pause');
     if (pbtn) pbtn.disabled = true;
-    const cleanup = () => { if (timer) clearInterval(timer); if (pbtn) pbtn.disabled = false; };
+    const cleanup = () => { if (timer) clearTimeout(timer); timer = null; if (pbtn) pbtn.disabled = false; };
     const finish = () => {
+      if (finished) return;
+      finished = true;
       cleanup();
       if (!gameStarted || !currentGame) { if (mask?.parentNode) mask.remove(); return; }
       const num = qs('#wb-resume-count', mask);
       const status = qs('.wb-muted', mask);
       if (num) num.textContent = '✓';
       if (status) status.textContent = '正在恢复游戏...';
-      afterNextPaint(() => {
-        gamePaused = false;
-        try { activeGameController?.resume?.(); } catch(e) {}
-        gameActiveStartedAt = Date.now();
-        startGameDurationRewardTimer();
-        hideGamePauseOverlay();
-        const btn = qs('#wb-pause'); if (btn) btn.textContent = '暂停';
-        scheduleRandomGameLine();
-        if (mask?.parentNode) mask.remove();
-      });
+      gamePaused = false;
+      try { activeGameController?.resume?.(); } catch(e) {}
+      gameActiveStartedAt = Date.now();
+      startGameDurationRewardTimer();
+      hideGamePauseOverlay();
+      const btn = qs('#wb-pause'); if (btn) btn.textContent = '暂停';
+      scheduleRandomGameLine();
+      if (mask?.parentNode) mask.remove();
     };
     qs('#wb-resume-cancel', mask).onclick = () => {
       cleanup();
       if (mask && mask.parentNode) mask.remove();
       const btn = qs('#wb-pause'); if (btn) btn.textContent = '继续';
     };
-    timer = setInterval(() => {
-      left -= 1;
+    const tick = () => {
+      const remaining = countdownEndsAt - Date.now();
+      if (remaining <= 0) { finish(); return; }
       const num = qs('#wb-resume-count', mask);
-      if (num) num.textContent = String(Math.max(0, left));
-      if (left <= 0) finish();
-    }, 1000);
+      if (num) num.textContent = String(Math.max(1, Math.ceil(remaining / 1000)));
+      timer = setTimeout(tick, Math.min(100, remaining));
+    };
+    timer = setTimeout(tick, 100);
   }
 
   function theaterJobsForGame(game) {
@@ -11503,7 +11528,10 @@ export async function initWanbanXiaowu(options = {}) {
       startCover.disabled = true;
       startCover.textContent = options?.resume ? '正在恢复...' : '正在开始...';
     }
-    await new Promise(resolve => afterNextPaint(resolve));
+    if (!options?.resume) {
+      const view = getHostWindow();
+      await new Promise(resolve => typeof view.requestAnimationFrame === 'function' ? view.requestAnimationFrame(resolve) : view.setTimeout(resolve, 0));
+    }
     if (currentGame !== id || gameStarted || !startCover?.isConnected) return;
     delete startCover.dataset.loading;
     startCover.disabled = false;
