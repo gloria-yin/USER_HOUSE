@@ -185,6 +185,7 @@ export function createNumberKlotskiGame(savedState, env) {
   let destroyed = false;
   let over = false;
   let pendingSaveTimer = 0;
+  let timer = 0;
   const bests = bestStorage(win);
 
   root.innerHTML = '<div class="wb-number-klotski"><div class="wb-number-klotski-top"><div class="wb-number-klotski-stat"><span>难度</span><b>' + size + '×' + size + '</b></div><div class="wb-number-klotski-stat"><span>步数</span><b id="wb-number-klotski-moves">0</b></div><div class="wb-number-klotski-stat"><span>用时</span><b id="wb-number-klotski-time">00:00</b></div><div class="wb-number-klotski-stat"><span>最佳</span><b id="wb-number-klotski-best">--</b></div></div><div class="wb-number-klotski-stage"><div class="wb-number-klotski-board" id="wb-number-klotski-board" role="grid" aria-label="' + size + '乘' + size + '数字华容道"></div></div><div class="wb-number-klotski-actions"><button type="button" class="wb-btn primary" id="wb-number-klotski-undo">↶ 撤回</button><button type="button" class="wb-btn" id="wb-number-klotski-shuffle">⤨ 重新打乱</button></div><div class="wb-number-klotski-note">点击空格旁的数字移动 · 方向键或滑动可移动空格</div></div>';
@@ -452,10 +453,10 @@ export function createNumberKlotskiGame(savedState, env) {
 
   function destroy() {
     if (destroyed) return;
-    save(true);
     destroyed = true;
     if (pendingSaveTimer) win.clearTimeout(pendingSaveTimer);
-    win.clearInterval(timer);
+    if (timer) win.clearInterval(timer);
+    timer = 0;
     boardElement.removeEventListener('click', onBoardClick);
     boardElement.removeEventListener('pointerdown', onPointerDown);
     boardElement.removeEventListener('pointerup', onPointerUp);
@@ -472,9 +473,20 @@ export function createNumberKlotskiGame(savedState, env) {
   doc.addEventListener('keydown', onKeyDown);
   win.addEventListener?.('pagehide', saveOnLeave);
   doc.addEventListener?.('visibilitychange', saveOnHidden);
-  const timer = win.setInterval(timerTick, 250);
+  function startTimer() {
+    lastClockAt = Date.now();
+    if (!timer && !destroyed && !over && env.isActive() && !env.isPaused()) timer = win.setInterval(timerTick, 1000);
+  }
+  function pause() {
+    syncClock();
+    if (timer) win.clearInterval(timer);
+    timer = 0;
+    lastClockAt = Date.now();
+  }
+  function resume() { startTimer(); }
+  startTimer();
   env.speak(restored ? 'resume' : 'start');
   updateUI(true);
   save(true);
-  return { destroy, save:() => save(true), getState:stateData };
+  return { destroy, pause, resume, save:() => save(true), getState:stateData };
 }

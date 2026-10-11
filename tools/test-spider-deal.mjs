@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { canSpiderDeal, spiderAutoDealState, spiderDealColumns } from '../src/games/spider-rules.js';
+import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../src/games/spider-rules.js';
 
 test('spider deals only when stock exists and caps a row at ten cards', () => {
   assert.deepEqual(spiderDealColumns(0), []);
@@ -43,13 +43,38 @@ test('a resumed due game automatically deals stock rows of ten or more when allo
   assert.equal(spiderAutoDealState(0, Array(10).fill(0), 0).shouldDeal, true);
 });
 
+test('tall spider columns preserve readable face-up spacing and scroll instead of collapsing', () => {
+  const cards = Array.from({ length:30 }, () => ({ face:true }));
+  const layout = spiderCardLayout(cards, 200, 40);
+  const gaps = layout.tops.slice(1).map((top, index) => top - layout.tops[index]);
+  assert.ok(gaps.every(gap => gap >= 13), 'face-up ranks must keep at least 13px spacing');
+  assert.equal(layout.scroll, true);
+  assert.ok(layout.height > 200);
+});
+
+test('mixed tall columns preserve separate face-down and face-up minimum spacing', () => {
+  const cards = [
+    ...Array.from({ length:10 }, () => ({ face:false })),
+    ...Array.from({ length:20 }, () => ({ face:true })),
+  ];
+  const layout = spiderCardLayout(cards, 180, 40);
+  const gaps = layout.tops.slice(1).map((top, index) => top - layout.tops[index]);
+  assert.ok(gaps.slice(0, 10).every(gap => gap >= 6), 'face-down cards must keep at least 6px spacing');
+  assert.ok(gaps.slice(10).every(gap => gap >= 13), 'face-up ranks must keep at least 13px spacing');
+  assert.equal(layout.scroll, true);
+});
+
 test('the spider runtime does not refill stock while dealing', () => {
   const source = readFileSync(new URL('../src/runtime/wanban-app.js', import.meta.url), 'utf8');
   const from = source.indexOf('    async function dealRow(auto){');
-  const to = source.indexOf('\n    async function animateDealCard', from);
+  const to = source.indexOf('\n    async function animateDealCards', from);
   const dealRow = source.slice(from, to);
+  assert.ok(from >= 0 && to > from, 'dealRow source boundaries must be found');
   assert.match(dealRow, /spiderDealColumns\(st\.deck\.length, st\.cols\.length\)/);
   assert.doesNotMatch(dealRow, /ensureDeck\(/);
+  const dealLoop = dealRow.slice(dealRow.indexOf('for(const i of targets){'), dealRow.indexOf('await animateDealCards'));
+  assert.doesNotMatch(dealLoop, /draw\(/, 'dealing must not redraw the whole board once per card');
+  assert.match(dealRow, /await animateDealCards\(dealt\)/, 'deal flights should run as one batch');
 });
 
 test('the spider runtime uses one deal guard for input, automatic dealing, and controls', () => {
@@ -66,4 +91,27 @@ test('the spider runtime uses one deal guard for input, automatic dealing, and c
   assert.match(runtime, /if\(replenished\) ensureDeck\(10\)/);
   assert.match(runtime, /deck\.disabled=!canDeal/);
   assert.match(runtime, /st\.dealEmptyLock&&!canDeal&&!col\.length/);
+});
+
+test('the spider runtime reuses card nodes and removes every shared listener on destroy', () => {
+  const source = readFileSync(new URL('../src/runtime/wanban-app.js', import.meta.url), 'utf8');
+  const start = source.indexOf('  function startSpider(state) {');
+  const end = source.indexOf('\n  function startGame1010', start);
+  const runtime = source.slice(start, end);
+  assert.match(runtime, /const cardElements = new Map\(\)/);
+  assert.match(runtime, /boardElement\.addEventListener\('click', spiderBoardClick\)/);
+  assert.match(runtime, /boardElement\.addEventListener\('pointerdown', spiderBoardPointerDown/);
+  assert.match(runtime, /let element = cardElements\.get\(card\.id\)/);
+  assert.match(runtime, /if\(element\.parentElement !== column\) column\.appendChild\(element\)/);
+  assert.match(runtime, /resizeObserver\?\.disconnect\(\)/);
+  assert.match(runtime, /boardElement\.removeEventListener\('click', spiderBoardClick\)/);
+  assert.match(runtime, /hostDoc\.removeEventListener\('keydown', spiderKeydown\)/);
+  assert.match(runtime, /hostDoc\.removeEventListener\('pointerup', endDrag\)/);
+  assert.doesNotMatch(runtime, /board\.innerHTML=st\.cols/, 'draws must not rebuild the full tableau');
+});
+
+test('pet story taps allow the pet egg button to advance the scene', () => {
+  const source = readFileSync(new URL('../src/runtime/wanban-app.js', import.meta.url), 'utf8');
+  assert.match(source, /if \(button && button\.id !== 'wb-pet-poke'\) return;/);
+  assert.match(source, /storyMode \? '继续剧情' : '戳一戳'/);
 });

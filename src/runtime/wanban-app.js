@@ -4,10 +4,10 @@ import { yaml } from '../../../../../../lib.js';
 import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 import { NUMBER_KLOTSKI_BEST_STORAGE_KEY, createNumberKlotskiGame, isNumberKlotskiSolved, isSolvableNumberKlotskiBoard } from '../games/number-klotski.js';
-import { canSpiderDeal, spiderAutoDealState, spiderDealColumns } from '../games/spider-rules.js?v=4.2.0-smooth2';
+import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../games/spider-rules.js?v=4.2.1';
 import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js';
 import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
-import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.2.0-smooth2';
+import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.2.1';
 import { parsePetInfo, parsePetStoryLines, assertPetInfo } from './pet-info.js';
 import { petStoryMemoryText } from './pet-memory.js';
 import { parseGeneratedJson } from './generated-json.js';
@@ -107,10 +107,13 @@ export async function initWanbanXiaowu(options = {}) {
   const STORAGE_SUMMARIES = SCRIPT_ID + '_summaries_v1';
   const STORAGE_SUMMARY_REQ = SCRIPT_ID + '_summaryReq_v1';
   const STORAGE_PROGRESS = SCRIPT_ID + '_progress_v1';
+  const STORAGE_PROGRESS_SHARD_PREFIX = STORAGE_PROGRESS + '__';
   const STORAGE_SUDOKU_STATE = SCRIPT_ID + '_sudokuState_v1';
   const STORAGE_RECORDS = SCRIPT_ID + '_records_v1';
   const STORAGE_PET_TEST = SCRIPT_ID + '_petTest_v1';
   const STORAGE_PET_FULL = SCRIPT_ID + '_petFull_v1';
+  const STORAGE_PET_ACTIVE_CARETAKER = SCRIPT_ID + '_petActiveCaretaker_v1';
+  const STORAGE_PET_STATE_SHARD_PREFIX = SCRIPT_ID + '_petState_v1__';
   const STORAGE_WORD_GUESS_BANK = SCRIPT_ID + '_wordGuessBank_v1';
   const STORAGE_WORD_GUESS_BANK_SOURCE = SCRIPT_ID + '_wordGuessBankSource_v1';
   const STORAGE_WORD_GUESS_BANK_FILTER = SCRIPT_ID + '_wordGuessBankFilter_v1';
@@ -142,9 +145,9 @@ export async function initWanbanXiaowu(options = {}) {
   let gameIconObserver = null;
   let gameListLoadObserver = null;
   const modularGameFactoryLoaders = {
-    zuma:() => import('../games/zuma.js?v=4.2.0').then(module => module.createZumaGame),
-    watersort:() => import('../games/water-sort.js?v=4.2.0').then(module => module.createWaterSortGame),
-    flappybird:() => import('../games/flappy-bird.js?v=4.2.0').then(module => module.createFlappyBirdGame),
+    zuma:() => import('../games/zuma.js?v=4.2.1').then(module => module.createZumaGame),
+    watersort:() => import('../games/water-sort.js?v=4.2.1').then(module => module.createWaterSortGame),
+    flappybird:() => import('../games/flappy-bird.js?v=4.2.1').then(module => module.createFlappyBirdGame),
   };
   const modularGameFactoryPromises = new Map();
   function loadModularGameFactory(id) {
@@ -186,6 +189,9 @@ export async function initWanbanXiaowu(options = {}) {
   let progressSaveTimers = {};
   let progressSaveCache = {};
   let progressSaveStartedAt = {};
+  let deferImmediateProgressWrites = false;
+  let deferredPersistenceHandle = null;
+  let deferredPersistenceUsesIdleCallback = false;
   const progressDeleteCache = new Set();
   let pendingRecords = null;
   let recordsCache = null;
@@ -218,6 +224,7 @@ export async function initWanbanXiaowu(options = {}) {
   let petStoryTypeTimer = 0;
   const petStoryPageCache = new Map();
   let petStoryPageCacheCharacters = 0;
+  let petStoryMeasureContext = null;
   let petDesktopPokeLockedUntil = 0;
   const petOnlineSessionStartedAt = Date.now();
   let petAutoDailyLogRunning = {};
@@ -237,6 +244,7 @@ export async function initWanbanXiaowu(options = {}) {
   let transientCacheCleanupId = null;
   let transientCacheCleanupUsesIdle = false;
   let transientCacheCleanupGeneration = 0;
+  let pendingPopupCloseFinalizer = null;
 
   const GAME_ICON_BASE = new URL('../../assets/game-icons/', import.meta.url).href;
   const PET_ASSET_BASE = new URL('../../assets/pets/', import.meta.url).href;
@@ -561,10 +569,45 @@ export async function initWanbanXiaowu(options = {}) {
   function qs(s, root) { return (root || getHostDocument()).querySelector(s); }
   function qsa(s, root) { return Array.from((root || getHostDocument()).querySelectorAll(s)); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+  let htmlPatchTemplate = null;
+  function patchElementHTML(element, html) {
+    if (!element) return;
+    const doc = element.ownerDocument || getHostDocument();
+    if (!htmlPatchTemplate || htmlPatchTemplate.ownerDocument !== doc) htmlPatchTemplate = doc.createElement('template');
+    const template = htmlPatchTemplate;
+    template.innerHTML = html;
+    const patchNode = (current, next) => {
+      if (!current || current.nodeType !== next.nodeType || current.nodeName !== next.nodeName) {
+        current?.replaceWith(next.cloneNode(true));
+        return;
+      }
+      if (current.nodeType === 3) {
+        if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
+        return;
+      }
+      Array.from(current.attributes || []).forEach(attr => {
+        if (!next.hasAttribute(attr.name)) current.removeAttribute(attr.name);
+      });
+      Array.from(next.attributes || []).forEach(attr => {
+        if (current.getAttribute(attr.name) !== attr.value) current.setAttribute(attr.name, attr.value);
+      });
+      patchChildren(current, next);
+    };
+    const patchChildren = (currentParent, nextParent) => {
+      const desired = Array.from(nextParent.childNodes);
+      for (let index = 0; index < desired.length; index++) {
+        const current = currentParent.childNodes[index];
+        if (!current) currentParent.appendChild(desired[index].cloneNode(true));
+        else patchNode(current, desired[index]);
+      }
+      while (currentParent.childNodes.length > desired.length) currentParent.lastChild.remove();
+    };
+    patchChildren(element, template.content);
+  }
   function loadJSON(key, fallback) { try { const v = localStorage.getItem(key); return v ? decodeStoredJSON(v) : fallback; } catch(e) { console.warn('[玩伴小屋] saved data read failed:', key, e); return fallback; } }
-  function saveJSON(key, value) {
+  function saveJSON(key, value, options) {
     try {
-      writeStoredJSON(localStorage, key, value);
+      writeStoredJSON(localStorage, key, value, options);
       lastStorageWriteError = '';
       return true;
     } catch(e) {
@@ -608,6 +651,11 @@ export async function initWanbanXiaowu(options = {}) {
       if (Object.prototype.hasOwnProperty.call(next || {}, 'theme')) canvasPaletteCache = null;
     }
     return merged;
+  }
+  function setSettingsIfChanged(next) {
+    const current = settings();
+    const changed = Object.keys(next || {}).some(key => current[key] !== next[key]);
+    return changed ? setSettings(next) : current;
   }
   function currentTheme() {
     if (!settingsCache) settings();
@@ -1282,8 +1330,33 @@ export async function initWanbanXiaowu(options = {}) {
   function saveSummaryReq(v) { try { localStorage.setItem(STORAGE_SUMMARY_REQ, String(v || '')); } catch(e) {} }
   const PROGRESS_SAVE_DELAY = 1200;
   const PROGRESS_SAVE_MAX_DELAY = 15000;
+  function progressShardKey(game) { return STORAGE_PROGRESS_SHARD_PREFIX + String(game || ''); }
+  function progressShardKeys() {
+    try {
+      return Array.from({ length:localStorage.length }, (_, index) => localStorage.key(index))
+        .filter(key => key && key.startsWith(STORAGE_PROGRESS_SHARD_PREFIX) && key.length > STORAGE_PROGRESS_SHARD_PREFIX.length);
+    } catch (_) { return []; }
+  }
+  function removeProgressShards() {
+    progressShardKeys().forEach(key => {
+      try { localStorage.removeItem(key); } catch (_) {}
+    });
+  }
   function progress() {
-    if (!progressCache) progressCache = safeObject(loadJSON(STORAGE_PROGRESS, {}));
+    if (!progressCache) {
+      const merged = safeObject(loadJSON(STORAGE_PROGRESS, {}));
+      progressShardKeys().forEach(key => {
+        const game = key.slice(STORAGE_PROGRESS_SHARD_PREFIX.length);
+        const shard = safeObject(loadJSON(key, null));
+        if (!game || !Object.keys(shard).length) return;
+        const aggregateSavedAt = Number(merged[game]?.savedAt || 0);
+        const shardSavedAt = Number(shard.savedAt || 0);
+        if (shardSavedAt < aggregateSavedAt) return;
+        if (shard.deleted === true) delete merged[game];
+        else merged[game] = shard;
+      });
+      progressCache = merged;
+    }
     return progressCache;
   }
   function clearSudokuStateSnapshot() { try { localStorage.removeItem(STORAGE_SUDOKU_STATE); } catch(e) {} }
@@ -1316,11 +1389,35 @@ export async function initWanbanXiaowu(options = {}) {
     }
     delete progressSaveStartedAt[game];
     const staged = progressSaveCache[game];
-    const p = progress();
-    p[game] = buildProgressEntry(game, staged);
-    if (saveJSON(STORAGE_PROGRESS, p)) delete progressSaveCache[game];
+    const entry = buildProgressEntry(game, staged);
+    if (saveJSON(progressShardKey(game), entry, { compress:false })) {
+      progress()[game] = entry;
+      delete progressSaveCache[game];
+    }
+  }
+  function cancelDeferredPersistenceFlush() {
+    if (deferredPersistenceHandle == null) return;
+    const win = getHostWindow();
+    if (deferredPersistenceUsesIdleCallback && typeof win.cancelIdleCallback === 'function') win.cancelIdleCallback(deferredPersistenceHandle);
+    else win.clearTimeout(deferredPersistenceHandle);
+    deferredPersistenceHandle = null;
+    deferredPersistenceUsesIdleCallback = false;
+  }
+  function scheduleDeferredPersistenceFlush() {
+    if (deferredPersistenceHandle != null) return;
+    const win = getHostWindow();
+    const run = () => {
+      deferredPersistenceHandle = null;
+      deferredPersistenceUsesIdleCallback = false;
+      flushAllProgressSaves();
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      deferredPersistenceUsesIdleCallback = true;
+      deferredPersistenceHandle = win.requestIdleCallback(run, { timeout:700 });
+    } else deferredPersistenceHandle = win.setTimeout(run, 32);
   }
   function flushAllProgressSaves() {
+    cancelDeferredPersistenceFlush();
     Array.from(progressDeleteCache).forEach(clearProgress);
     Object.keys(progressSaveCache).forEach(flushProgressSave);
     flushRecordsSave();
@@ -1397,12 +1494,15 @@ export async function initWanbanXiaowu(options = {}) {
       gameActiveStartedAt = isGameSurfaceVisible() ? Date.now() : 0;
     }
     if (updateStored && currentGame) {
-      flushProgressSave(currentGame);
       const p = progress();
-      if (p[currentGame]) {
-        p[currentGame].durationMs = Math.max(Number(p[currentGame].durationMs || 0), gameAccumulatedMs || 0);
-        p[currentGame].petRewardNextMs = gamePetRewardNextMs;
-        saveJSON(STORAGE_PROGRESS, p);
+      const previous = progressSaveCache[currentGame] || p[currentGame];
+      if (previous) {
+        progressSaveCache[currentGame] = Object.assign({}, previous, {
+          durationMs:Math.max(Number(previous.durationMs || 0), gameAccumulatedMs || 0),
+          petRewardNextMs:gamePetRewardNextMs,
+        });
+        if (deferImmediateProgressWrites) scheduleDeferredPersistenceFlush();
+        else flushProgressSave(currentGame);
       }
     }
   }
@@ -1417,7 +1517,7 @@ export async function initWanbanXiaowu(options = {}) {
       durationMs:game === currentGame ? currentGameDurationMs() : (state && state.durationMs) || prev.durationMs || 0,
       petRewardNextMs:game === currentGame ? gamePetRewardNextMs : (state && state.petRewardNextMs) || prev.petRewardNextMs || nextPetGameRewardThreshold((state && state.durationMs) || prev.durationMs || 0),
     });
-    if (options && options.immediate) {
+    if (options && options.immediate && !deferImmediateProgressWrites) {
       flushProgressSave(game);
       return;
     }
@@ -1436,13 +1536,21 @@ export async function initWanbanXiaowu(options = {}) {
     delete progressSaveCache[game];
     if (game === 'sudoku') clearSudokuStateSnapshot();
     const p = progress();
-    if (!Object.prototype.hasOwnProperty.call(p, game)) {
-      progressDeleteCache.delete(game);
-      return;
-    }
     delete p[game];
-    if (saveJSON(STORAGE_PROGRESS, p)) progressDeleteCache.delete(game);
+    const tombstone = { deleted:true, savedAt:Date.now() };
+    if (saveJSON(progressShardKey(game), tombstone, { compress:false })) progressDeleteCache.delete(game);
     else progressDeleteCache.add(game);
+  }
+  function consolidateProgressShards() {
+    const shardKeys = progressShardKeys();
+    if (!shardKeys.length || Object.keys(progressSaveCache).length || progressDeleteCache.size) return false;
+    const merged = Object.assign({}, progress());
+    if (!saveJSON(STORAGE_PROGRESS, merged)) return false;
+    shardKeys.forEach(key => {
+      try { localStorage.removeItem(key); } catch (_) {}
+    });
+    progressCache = merged;
+    return true;
   }
   function wordGuessBank(roleName) {
     const raw = loadJSON(STORAGE_WORD_GUESS_BANK, []);
@@ -1776,12 +1884,12 @@ export async function initWanbanXiaowu(options = {}) {
     if (game === 'numberklotski') return '进度已保存：' + Math.max(4, Math.min(6, Number(state?.size) || 4)) + '×' + Math.max(4, Math.min(6, Number(state?.size) || 4)) + '，已移动' + Math.max(0, Number(state?.moves) || 0) + '步。';
     return '中途退出，当前进度已保存' + (score ? '；当前分数：' + score + '分' : '') + '。';
   }
-  function recordInterruptedGame(game) {
+  function recordInterruptedGame(game, options) {
     if (!game || !gameStarted) return null;
-    flushProgressSave(game);
-    if (progressSaveCache[game]) return null;
+    const deferWrite = !!options?.deferWrite;
+    if (!deferWrite) flushProgressSave(game);
     const allProgress = progress();
-    const state = allProgress[game];
+    const state = progressSaveCache[game] || allProgress[game];
     if (!state || !hasPlayableProgress(game, state)) return null;
     const all = records();
     const g = GAME_META[game] || { name:game };
@@ -1810,12 +1918,14 @@ export async function initWanbanXiaowu(options = {}) {
     };
     if (!all[game]) all[game] = [];
     all[game] = [item].concat(all[game].filter(record => record.id !== id)).slice(0, 100);
-    saveRecords(all);
+    if (deferWrite) {
+      recordsCache = all;
+      pendingRecords = all;
+    } else saveRecords(all);
     currentRoundProgressRecordId = id;
-    state.progressRecordId = id;
-    state.savedAt = Date.now();
-    allProgress[game] = state;
-    saveJSON(STORAGE_PROGRESS, allProgress);
+    progressSaveCache[game] = Object.assign({}, state, { progressRecordId:id, savedAt:Date.now() });
+    if (deferWrite) scheduleDeferredPersistenceFlush();
+    else flushProgressSave(game);
     return item;
   }
   function formatDuration(ms) { const sec = Math.max(0, Math.round((ms || 0) / 1000)); const m = Math.floor(sec / 60), s = sec % 60; return (m ? m + '分' : '') + s + '秒'; }
@@ -2086,6 +2196,7 @@ export async function initWanbanXiaowu(options = {}) {
   function releaseTransientCaches() {
     const backgroundUsesSettings = !!(settingsCache?.messageNotify || settingsCache?.petDesktopEnabled || settingsCache?.floatingBallEnabled);
     if (!pendingRecords) recordsCache = null;
+    if (!gameStarted && !Object.keys(progressSaveCache).length && !progressDeleteCache.size) consolidateProgressShards();
     if (!Object.keys(progressSaveCache).length && !progressDeleteCache.size) progressCache = null;
     linesCache = null;
     roleLinesCache = null;
@@ -2101,9 +2212,14 @@ export async function initWanbanXiaowu(options = {}) {
     markdownCacheCharacters = 0;
     petStoryPageCache.clear();
     petStoryPageCacheCharacters = 0;
+    petStoryMeasureContext = null;
     if (!settingsCache?.petDesktopEnabled) {
       petTestInfoCache = null;
       petTestInfoSource = '';
+      petFullDataCache = null;
+      petTrialDataCache = null;
+      petStateShardCache.clear();
+      petStoryCursorCache.clear();
     }
     if (!backgroundUsesSettings) settingsCache = null;
     clearStoredJSONCache();
@@ -3057,6 +3173,7 @@ export async function initWanbanXiaowu(options = {}) {
     if ((GAME_META[currentGame] || {}).mode === 'double') return;
     try { activeGameController?.save?.(); } catch(e) {}
     commitGameActiveDuration(true);
+    try { activeGameController?.pause?.(); } catch(e) {}
     gamePaused = true;
     if (randomLineTimer) clearTimeout(randomLineTimer);
     randomLineTimer = null;
@@ -3067,6 +3184,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (!gameStarted || !currentGame || gamePaused) return;
     try { activeGameController?.save?.(); } catch(e) {}
     commitGameActiveDuration(true, true);
+    try { activeGameController?.pause?.(); } catch(e) {}
     gamePaused = true;
     if (randomLineTimer) clearTimeout(randomLineTimer);
     randomLineTimer = null;
@@ -3265,7 +3383,11 @@ export async function initWanbanXiaowu(options = {}) {
 
   function registerLegacyGameSave(id, saveState, onDestroy) {
     const controller = {
-      save() { guardedSave(true); flushProgressSave(id); },
+      save() {
+        guardedSave(true);
+        if (deferImmediateProgressWrites) scheduleDeferredPersistenceFlush();
+        else flushProgressSave(id);
+      },
       destroy() {
         if (destroyed) return;
         destroyed = true;
@@ -3278,6 +3400,11 @@ export async function initWanbanXiaowu(options = {}) {
       saveState(force);
     };
     guardedSave.isActive = () => !destroyed && activeGameController === controller && currentGame === id && gameStarted;
+    guardedSave.setLifecycle = lifecycle => {
+      const handlers = lifecycle || {};
+      controller.pause = typeof handlers.pause === 'function' ? handlers.pause : undefined;
+      controller.resume = typeof handlers.resume === 'function' ? handlers.resume : undefined;
+    };
     activeGameController = controller;
     return guardedSave;
   }
@@ -3286,16 +3413,19 @@ export async function initWanbanXiaowu(options = {}) {
     stopHeartChallenge();
     cancelGameEntryPrompt();
     qs('#wb-message-notify-mask')?.remove();
-    const opts = Object.assign({ save:true, record:true }, options || {});
+    const opts = Object.assign({ save:true, record:true, deferWrites:false }, options || {});
     const stoppedGame = currentGame;
     const wasStarted = !!(gameStarted && stoppedGame);
+    const previousDeferWrites = deferImmediateProgressWrites;
+    deferImmediateProgressWrites = previousDeferWrites || !!opts.deferWrites;
     if (activeGameController && opts.save) {
       try { activeGameController.save?.(); } catch(e) { console.warn('[玩伴小屋] game snapshot save failed:', e); }
     }
     if (opts.save) {
       commitGameActiveDuration(true);
-      flushAllProgressSaves();
-      if (wasStarted && opts.record) recordInterruptedGame(stoppedGame);
+      if (wasStarted && opts.record) recordInterruptedGame(stoppedGame, { deferWrite:deferImmediateProgressWrites });
+      if (deferImmediateProgressWrites) scheduleDeferredPersistenceFlush();
+      else flushAllProgressSaves();
     }
     if (activeGameController) {
       try { activeGameController.destroy?.(); } catch(e) {}
@@ -3319,6 +3449,7 @@ export async function initWanbanXiaowu(options = {}) {
     gameStarted = false;
     gamePaused = true;
     gameActiveStartedAt = 0;
+    deferImmediateProgressWrites = previousDeferWrites;
   }
   function showGamePauseOverlay() {
     const box = qs('#wb-gamebox');
@@ -3415,13 +3546,17 @@ export async function initWanbanXiaowu(options = {}) {
   let petTestInfoCache = null;
   let petTestInfoSource = '';
   let petTestInfoLoading = null;
+  let petFullDataCache = null;
+  let petTrialDataCache = null;
+  const petStateShardCache = new Map();
+  const petStoryCursorCache = new Map();
   let petGenerationLeaveGuard = null;
   function confirmPetGenerationLeave(onLeave) {
     if (!petGenerationLeaveGuard) return false;
     petGenerationLeaveGuard(onLeave);
     return true;
   }
-  let petFullActiveCaretakerId = '';
+  let petFullActiveCaretakerId = String(loadJSON(STORAGE_PET_ACTIVE_CARETAKER, '') || '');
   let petRuntimeMode = loadJSON(SCRIPT_ID + '_petLastRoute', '') === 'test' ? 'test'
     : (safeObject(loadJSON(STORAGE_PET_FULL, {})).caretakers?.length ? 'full' : 'test');
   const PET_SPECIAL_CHAR_NAME = '沈栖白';
@@ -3479,16 +3614,109 @@ export async function initWanbanXiaowu(options = {}) {
   ];
 
   function defaultPetFullData() { return { activeCaretakerId:'', caretakers:[] }; }
+  function petStateShardKey(target) {
+    const t = target || {};
+    const id = t.mode === 'test' ? ('test_' + (t.journeyId || '')) : ('full_' + (t.caretakerId || '') + '_' + (t.petId || ''));
+    return STORAGE_PET_STATE_SHARD_PREFIX + encodeURIComponent(id);
+  }
+  function readPetStateShard(target) {
+    const key = petStateShardKey(target);
+    if (petStateShardCache.has(key)) return petStateShardCache.get(key);
+    const raw = loadJSON(key, null);
+    petStateShardCache.set(key, raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null);
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
+  }
+  function writePetStateShard(target, state) {
+    const key = petStateShardKey(target);
+    if (!saveJSON(key, state, { compress:false })) return false;
+    petStateShardCache.set(key, state);
+    return true;
+  }
+  function clearPetStateShard(target) {
+    const key = petStateShardKey(target);
+    petStateShardCache.delete(key);
+    try { localStorage.removeItem(key); } catch (_) {}
+  }
+  function petStateShardKeys() {
+    try {
+      return Array.from({ length:localStorage.length }, (_, index) => localStorage.key(index))
+        .filter(key => key && key.startsWith(STORAGE_PET_STATE_SHARD_PREFIX));
+    } catch (_) { return []; }
+  }
+  function removePetStateShards(mode) {
+    const modePrefix = mode ? STORAGE_PET_STATE_SHARD_PREFIX + encodeURIComponent(mode + '_') : '';
+    const keys = petStateShardKeys().filter(key => !modePrefix || key.startsWith(modePrefix));
+    keys.forEach(key => { try { localStorage.removeItem(key); } catch (_) {} });
+    if (!modePrefix) {
+      petStateShardCache.clear();
+      petStoryCursorCache.clear();
+      return;
+    }
+    for (const key of petStateShardCache.keys()) if (key.startsWith(modePrefix)) petStateShardCache.delete(key);
+    for (const key of petStoryCursorCache.keys()) if (key.startsWith(modePrefix)) petStoryCursorCache.delete(key);
+  }
+  function petStoryCursorKey(target) { return petStateShardKey(target) + '__story'; }
+  function readPetStoryCursor(target) {
+    const key = petStoryCursorKey(target);
+    if (petStoryCursorCache.has(key)) return petStoryCursorCache.get(key);
+    const value = loadJSON(key, null);
+    petStoryCursorCache.set(key, value && typeof value === 'object' && !Array.isArray(value) ? value : null);
+    return petStoryCursorCache.get(key);
+  }
+  function clearPetStoryCursor(target) {
+    const key = petStoryCursorKey(target);
+    petStoryCursorCache.delete(key);
+    try { localStorage.removeItem(key); } catch (_) {}
+  }
+  function applyPetStoryCursor(state, target) {
+    const cursor = readPetStoryCursor(target);
+    return cursor ? Object.assign(state, { activeStory:cursor.activeStory || null, suspendedStory:cursor.suspendedStory || null }) : state;
+  }
+  function savePetStoryPosition(state) {
+    const target = petStorageTarget();
+    const key = JSON.stringify(target);
+    const saved = Object.assign({}, state, {
+      activeStory:state?.activeStory ? Object.assign({}, state.activeStory) : null,
+      suspendedStory:state?.suspendedStory ? Object.assign({}, state.suspendedStory) : null,
+    });
+    const cursor = { savedAt:Date.now(), activeStory:saved.activeStory || null, suspendedStory:saved.suspendedStory || null };
+    if (!saveJSON(petStoryCursorKey(target), cursor, { compress:false })) {
+      pendingPetStates.set(key, { target, state:saved });
+      toast('剧情位置暂存在当前页面，请重试保存或导出备份后再关闭网页。');
+      return false;
+    }
+    petStoryCursorCache.set(petStoryCursorKey(target), cursor);
+    const pending = pendingPetStates.get(key);
+    if (pending) {
+      pendingPetStates.set(key, {
+        target:pending.target,
+        state:Object.assign({}, pending.state, {
+          activeStory:saved.activeStory,
+          suspendedStory:saved.suspendedStory,
+        }),
+      });
+    }
+    return true;
+  }
   function petFullData() {
-    const data = Object.assign(defaultPetFullData(), safeObject(loadJSON(STORAGE_PET_FULL, {})));
+    if (!petFullDataCache) petFullDataCache = Object.assign(defaultPetFullData(), safeObject(loadJSON(STORAGE_PET_FULL, {})));
+    const data = Object.assign(defaultPetFullData(), petFullDataCache);
     data.caretakers = Array.isArray(data.caretakers) ? data.caretakers.filter(c => c && typeof c === 'object' && c.id) : [];
-    data.caretakers.forEach(c => { c.pets = Array.isArray(c.pets) ? c.pets.filter(p => p && typeof p === 'object' && p.id) : []; });
+    data.caretakers.forEach(c => { c.pets = Array.isArray(c.pets) ? c.pets.filter(p => p && typeof p === 'object' && p.id).map(p => {
+      const target = { mode:'full', caretakerId:c.id, petId:p.id };
+      const shard = readPetStateShard(target);
+      const merged = shard && Number(shard.savedAt || 0) >= Number(p.stateSavedAt || 0)
+        ? Object.assign({}, p, { state:shard.state || p.state, stateSavedAt:Number(shard.savedAt || Date.now()) }) : p;
+      merged.state = applyPetStoryCursor(Object.assign({}, merged.state || {}), target);
+      return merged;
+    }) : []; });
     return data;
   }
   function savePetFullData(data) {
     if (!saveJSON(STORAGE_PET_FULL, Object.assign(defaultPetFullData(), data || {}))) {
       throw new Error('宠物存档写入失败：' + lastStorageWriteError);
     }
+    petFullDataCache = Object.assign(defaultPetFullData(), data || {});
     return true;
   }
   function petFullActiveCaretaker(data) {
@@ -3512,12 +3740,9 @@ export async function initWanbanXiaowu(options = {}) {
   function withPetFullActive(caretakerId) {
     const data = petFullData();
     if (!data.caretakers.some(c => c.id === caretakerId)) throw new Error('饲养员档案不存在，请重新选择角色');
-    if (data.activeCaretakerId !== caretakerId) {
-      data.activeCaretakerId = caretakerId;
-      savePetFullData(data);
-    }
     petRuntimeMode = 'full';
     petFullActiveCaretakerId = caretakerId;
+    saveJSON(STORAGE_PET_ACTIVE_CARETAKER, caretakerId, { compress:false });
     clearPetTimers();
     qsa('#wb-pet-hatch-mask, #wb-pet-route-choice, #wb-pet-story-prompt').forEach(mask => mask.remove());
     saveJSON(SCRIPT_ID + '_petLastRoute', 'full');
@@ -3536,17 +3761,10 @@ export async function initWanbanXiaowu(options = {}) {
     petTestInfoLoading = null;
   }
   function savePetFullActivePetState(state) {
-    const data = petFullData();
-    const c = petFullActiveCaretaker(data);
-    if (!c) return false;
-    const pet = petFullActivePet(data, c);
-    if (!pet) return false;
-    pet.state = Object.assign(defaultPetTestState(), state || {});
-    if (pet.state.ended) pet.endedAt = pet.endedAt || Date.now();
-    c.activePetId = pet.id;
-    data.activeCaretakerId = c.id;
-    savePetFullData(data);
-    return true;
+    const target = petStorageTarget();
+    if (!target.caretakerId || !target.petId) return false;
+    try { updatePetTargetState(target, () => state); return true; }
+    catch (_) { return false; }
   }
   function petStorageTarget() {
     if (petRuntimeMode === 'test') return petTrialStorageTarget();
@@ -3555,7 +3773,8 @@ export async function initWanbanXiaowu(options = {}) {
     return { mode:petRuntimeMode, caretakerId:caretaker?.id || '', petId:pet?.id || '', journeyId:'' };
   }
   function petTrialStorageTarget() {
-    return { mode:'test', caretakerId:'', petId:'', journeyId:loadJSON(STORAGE_PET_TEST, {}).journeyId || '' };
+    const base = petTrialDataCache || (petTrialDataCache = safeObject(loadJSON(STORAGE_PET_TEST, {})));
+    return { mode:'test', caretakerId:'', petId:'', journeyId:base.journeyId || '' };
   }
   function petTargetIsCurrent(target) {
     return JSON.stringify(target) === JSON.stringify(petStorageTarget());
@@ -3570,14 +3789,24 @@ export async function initWanbanXiaowu(options = {}) {
     const key = JSON.stringify(target);
     const pending = pendingPetStates.get(key)?.state;
     const prepare = stored => {
-      const state = JSON.parse(JSON.stringify(update(Object.assign(defaultPetTestState(), pending || stored || {}))));
-      pendingPetStates.set(key, { target, state });
-      return state;
+      const updated = update(Object.assign(defaultPetTestState(), pending || stored || {}));
+      return Object.assign(defaultPetTestState(), updated || {});
+    };
+    const rememberFailedState = state => {
+      pendingPetStates.set(key, { target, state:JSON.parse(JSON.stringify(state)) });
     };
     if (target.mode === 'test') {
-      const state = Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
+      const base = petTrialDataCache || (petTrialDataCache = safeObject(loadJSON(STORAGE_PET_TEST, {})));
+      const shard = readPetStateShard(target);
+      const state = applyPetStoryCursor(Object.assign(defaultPetTestState(), base, shard?.state || {}), target);
       if ((state.journeyId || '') !== target.journeyId) { pendingPetStates.delete(key); throw new Error('原宠物旅程已更换，无法保存到新宠物'); }
-      if (!saveJSON(STORAGE_PET_TEST, prepare(state))) throw new Error('宠物记录保存失败：' + lastStorageWriteError);
+      const next = prepare(state);
+      if (!writePetStateShard(target, { savedAt:Date.now(), state:next })) {
+        rememberFailedState(next);
+        throw new Error('宠物记录保存失败：' + lastStorageWriteError);
+      }
+      petTrialDataCache = Object.assign({}, base, next);
+      clearPetStoryCursor(target);
       pendingPetStates.delete(key);
       return;
     }
@@ -3585,9 +3814,16 @@ export async function initWanbanXiaowu(options = {}) {
     const caretaker = data.caretakers.find(c => c.id === target.caretakerId);
     const pet = caretaker?.pets.find(p => p.id === target.petId);
     if (!pet) { pendingPetStates.delete(key); throw new Error('原宠物档案已不存在，无法保存记录'); }
-    pet.state = prepare(pet.state);
+    pet.state = prepare(applyPetStoryCursor(Object.assign({}, pet.state, readPetStateShard(target)?.state || {}), target));
     if (pet.state.ended) pet.endedAt = pet.endedAt || pet.state.endedAt || Date.now();
-    savePetFullData(data);
+    const savedAt = Date.now();
+    if (!writePetStateShard(target, { savedAt, state:pet.state })) {
+      rememberFailedState(pet.state);
+      throw new Error('宠物记录保存失败：' + lastStorageWriteError);
+    }
+    pet.stateSavedAt = savedAt;
+    petFullDataCache = data;
+    clearPetStoryCursor(target);
     pendingPetStates.delete(key);
   }
   function petFullCaretakerById(id) { return (petFullData().caretakers || []).find(c => c.id === id) || null; }
@@ -3854,6 +4090,20 @@ export async function initWanbanXiaowu(options = {}) {
     try { return pet && pet.infoText ? parsePetInfoText(pet.infoText) : null; }
     catch (_) { return null; }
   }
+  function petFullPreviewInfo(pet) {
+    const raw = String(pet?.infoText || '');
+    const block = raw.match(/(?:^|\n)\s*pet_card\s*:\s*\n([\s\S]*?)(?=\n\s*(?:main_story|side_story|quotes)\s*:|$)/i)?.[1] || '';
+    const scalar = key => {
+      const value = block.match(new RegExp('(?:^|\\n)\\s*' + key + '\\s*:\\s*([^\\n]*)', 'i'))?.[1]?.trim() || '';
+      if (/^"[\s\S]*"$/.test(value)) { try { return JSON.parse(value); } catch (_) {} }
+      return value.replace(/^['"]|['"]$/g, '').trim();
+    };
+    return { pet_card:{
+      pet_name:scalar('pet_name') || pet?.state?.testPetName || '',
+      egg:scalar('egg') || pet?.egg || pet?.state?.testEgg || '',
+      species:scalar('species') || pet?.state?.testSpecies || '',
+    } };
+  }
   function petLatestCaretakerConfig(caretaker) {
     if (petCaretakerIsShen(caretaker)) return null;
     return rolePromptConfig(caretaker.roleKey || caretaker.name || caretaker.charName, settings());
@@ -3930,8 +4180,8 @@ export async function initWanbanXiaowu(options = {}) {
     savePetFullData(data);
     return c;
   }
-  function petFullAddPet(caretakerId, infoText, state, meta) {
-    assertPetInfo(parsePetInfoText(infoText), { strict:false });
+  function petFullAddPet(caretakerId, infoText, state, meta, parsedInfo) {
+    assertPetInfo(parsedInfo || parsePetInfoText(infoText), { strict:false });
     const data = petFullData();
     const c = data.caretakers.find(x => x.id === caretakerId);
     if (!c) throw new Error('饲养员档案尚未保存，请重新添加该角色');
@@ -3953,11 +4203,15 @@ export async function initWanbanXiaowu(options = {}) {
     const pet = petFullActivePet(data, c);
     if (!pet) return false;
     const id = pet.id;
+    const removedTarget = { mode:'full', caretakerId:c.id, petId:id };
     c.pets = (c.pets || []).filter(p => p.id !== id);
     c.activePetId = '';
     c.activePetCleared = true;
     data.activeCaretakerId = c.id;
     savePetFullData(data);
+    clearPetStateShard(removedTarget);
+    clearPetStoryCursor(removedTarget);
+    pendingPetStates.delete(JSON.stringify(removedTarget));
     withPetFullActive(c.id);
     petTestInfoCache = null;
     petTestInfoLoading = null;
@@ -3969,9 +4223,17 @@ export async function initWanbanXiaowu(options = {}) {
     const activeFullPet = petFullActivePet();
     if (activeFullPet && activeFullPet.infoText) {
       if (petTestInfoCache && petTestInfoSource === activeFullPet.infoText) return petTestInfoCache;
-      petTestInfoCache = assertPetInfo(parsePetInfoText(activeFullPet.infoText), { strict:false });
-      petTestInfoSource = activeFullPet.infoText;
-      return petTestInfoCache;
+      const target = petStorageTarget();
+      const source = activeFullPet.infoText;
+      const view = getHostWindow();
+      await new Promise(resolve => {
+        const afterFrame = () => view.setTimeout(resolve, 0);
+        if (typeof view.requestAnimationFrame === 'function') view.requestAnimationFrame(afterFrame);
+        else view.setTimeout(resolve, 0);
+      });
+      const info = assertPetInfo(parsePetInfoText(source), { strict:false });
+      if (petTargetIsCurrent(target)) { petTestInfoCache = info; petTestInfoSource = source; }
+      return info;
     }
     if (petRuntimeMode === 'full') throw new Error('当前角色尚未生成宠物档案');
     if (petTestInfoCache) return petTestInfoCache;
@@ -4033,14 +4295,18 @@ export async function initWanbanXiaowu(options = {}) {
     const activeFullPet = petFullActivePet();
     if (activeFullPet) return Object.assign(defaultPetTestState(), safeObject(activeFullPet.state || {}));
     if (petRuntimeMode === 'full') return defaultPetTestState();
-    return Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
+    const base = petTrialDataCache || (petTrialDataCache = safeObject(loadJSON(STORAGE_PET_TEST, {})));
+    const shard = readPetStateShard(petTrialStorageTarget());
+    return applyPetStoryCursor(Object.assign(defaultPetTestState(), base, shard?.state || {}), petTrialStorageTarget());
   }
   function petTrialState() {
     const pending = pendingPetStates.get(JSON.stringify(petTrialStorageTarget()));
-    return Object.assign(defaultPetTestState(), pending ? JSON.parse(JSON.stringify(pending.state)) : safeObject(loadJSON(STORAGE_PET_TEST, {})));
+    const base = petTrialDataCache || (petTrialDataCache = safeObject(loadJSON(STORAGE_PET_TEST, {})));
+    const shard = readPetStateShard(petTrialStorageTarget());
+    return applyPetStoryCursor(Object.assign(defaultPetTestState(), base, shard?.state || {}, pending ? JSON.parse(JSON.stringify(pending.state)) : {}), petTrialStorageTarget());
   }
   function petTrialHasSavedPet() {
-    const raw = safeObject(loadJSON(STORAGE_PET_TEST, {}));
+    const raw = petTrialState();
     return !!(raw.testSpecies || raw.testEgg || raw.testPetName || raw.userName || Number(raw.growth || 0) > 0
       || Object.keys(raw.logs || {}).length || Object.keys(raw.days || {}).length
       || (Array.isArray(raw.storyRecords) && raw.storyRecords.length)
@@ -4355,7 +4621,7 @@ export async function initWanbanXiaowu(options = {}) {
     return '<div class="wb-pet-snapshot" style="background-image:url(' + esc(petSceneUrl(snap)) + ')">' + petAssetHTML(snap, snap.petAction || 'normal') + '</div>';
   }
   function petSnapshotHTMLForInfo(snapshot, info) {
-    const snap = petSnapshotState(snapshot);
+    const snap = Object.assign(defaultPetTestState(), snapshot || {});
     return '<div class="wb-pet-snapshot" style="background-image:url(' + esc(petSceneUrl(snap)) + ')">' + petAssetHTMLForInfo(snap, snap.petAction || 'normal', info) + '</div>';
   }
   function petApplyInteraction(action) {
@@ -5178,6 +5444,7 @@ export async function initWanbanXiaowu(options = {}) {
     });
   }
   function buildPopup(options) {
+    if (pendingPopupCloseFinalizer) pendingPopupCloseFinalizer();
     if (confirmPetGenerationLeave(() => buildPopup(options))) return;
 	  cancelTransientCacheCleanup();
 	    applySelectedFont();
@@ -5230,33 +5497,45 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function closePopupShell() {
     if (confirmPetGenerationLeave(closePopupShell)) return;
-    flushSettingsProgress();
-    saveWindowState(currentTab, currentGame);
-    stopHeartChallenge();
-    gameStartRequest += 1;
-    cancelGameListRendering();
-    cancelGameEntryPrompt();
-    qs('#wb-message-notify-mask')?.remove();
-    if (activeGameController || (gameStarted && currentGame)) stopGame();
-    else flushAllProgressSaves();
     const doc = getHostDocument();
     const shell = qs('#' + SHELL_ID, doc);
     if (shell) { shell.classList.remove('wb-shell-visible'); shell.style.display = 'none'; }
     const p = qs('#' + POPUP_ID, doc);
-    if (p) {
-      p.style.display = 'none';
+    if (p) p.style.display = 'none';
+    try { activeGameController?.pause?.(); } catch(e) {}
+    gamePaused = true;
+    gameStartRequest += 1;
+    cancelGameListRendering();
+    cancelGameEntryPrompt();
+    qs('#wb-message-notify-mask')?.remove();
+
+    const finalize = () => {
+      if (pendingPopupCloseFinalizer !== finalize) return;
+      pendingPopupCloseFinalizer = null;
+      flushSettingsProgress();
+      saveWindowState(currentTab, currentGame);
+      stopHeartChallenge();
+      if (gameStarted && currentGame) commitGameActiveDuration(false, true);
+      if (activeGameController || (gameStarted && currentGame)) stopGame();
+      else flushAllProgressSaves();
       const body = qs('#wb-body', p);
       if (body) {
         body.replaceChildren();
         body.className = 'wb-body';
       }
-    }
-    currentRoundLineEvents = [];
-    currentRoundRoleContext = null;
-    currentRoundTheaterInfo = null;
-    currentRoundProgressRecordId = '';
-    scheduleTransientCacheCleanup();
-    if (!settings().petDesktopEnabled) clearPetTimers();
+      currentRoundLineEvents = [];
+      currentRoundRoleContext = null;
+      currentRoundTheaterInfo = null;
+      currentRoundProgressRecordId = '';
+      scheduleTransientCacheCleanup();
+      if (!settings().petDesktopEnabled) clearPetTimers();
+    };
+    pendingPopupCloseFinalizer = finalize;
+    const win = getHostWindow();
+    if (typeof win.requestAnimationFrame === 'function') {
+      win.requestAnimationFrame(() => win.setTimeout(finalize, 0));
+      win.setTimeout(finalize, 120);
+    } else win.setTimeout(finalize, 0);
   }
 	  function syncPopupModeClass() {
 	    const p = qs('#' + POPUP_ID);
@@ -5510,7 +5789,7 @@ export async function initWanbanXiaowu(options = {}) {
   }
 
   function openPetFullEntry() {
-    syncCurrentHostRoleContext();
+    if (settings().lastHostCardId !== characterCardId(currentHostCharacter())) syncCurrentHostRoleContext();
     if (petRuntimeMode === 'test' && petTrialHasSavedPet()) {
       withPetTrialActive();
       renderPetHouse();
@@ -5565,12 +5844,23 @@ export async function initWanbanXiaowu(options = {}) {
       const userName = (qs('#wb-pet-test-user', body)?.value || '').trim() || '你';
       const testPetName = (qs('#wb-pet-test-name', body)?.value || '').trim() || PET_DEFAULT_STORY_NAMES[selectedSpecies] || '宠物';
       const previous = petTrialState();
+      const previousTarget = petTrialStorageTarget();
       const archives = (previous.archives || []).slice();
       if (previous.ended) {
         const archived = Object.assign({}, previous, { petInfo:previous.petInfo || (petRuntimeMode === 'test' ? petTestInfoCache : null), archives:[] });
         archives.unshift(archived);
       }
-      if (!saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { userName, testEgg:selectedEgg, testSpecies:selectedSpecies, testPetName, cheatMode:!!options.cheatMode, journeyId:Date.now().toString() + '_' + Math.random().toString(36).slice(2, 6), archives }))) return;
+      const nextTrial = Object.assign(defaultPetTestState(), { userName, testEgg:selectedEgg, testSpecies:selectedSpecies, testPetName, cheatMode:!!options.cheatMode, journeyId:Date.now().toString() + '_' + Math.random().toString(36).slice(2, 6), archives });
+      if (!saveJSON(STORAGE_PET_TEST, nextTrial)) return;
+      petTrialDataCache = nextTrial;
+      const nextTarget = petTrialStorageTarget();
+      clearPetStateShard(nextTarget);
+      clearPetStoryCursor(nextTarget);
+      if (JSON.stringify(previousTarget) !== JSON.stringify(nextTarget)) {
+        clearPetStateShard(previousTarget);
+        clearPetStoryCursor(previousTarget);
+        pendingPetStates.delete(JSON.stringify(previousTarget));
+      }
       withPetTrialActive();
       renderPetHouse();
     };
@@ -6327,48 +6617,54 @@ export async function initWanbanXiaowu(options = {}) {
     const doc = getHostDocument();
     if (!doc || !doc.body) return [raw];
     const width = Math.round(petStoryMeasureWidth(doc));
-    const cacheKey = width + '|' + (className || '') + '|' + raw;
-    if (petStoryPageCache.has(cacheKey)) return petStoryPageCache.get(cacheKey).slice();
     const source = qs('#wb-pet-dialogue .wb-pet-dialogue-text', doc);
-    const probe = doc.createElement('div');
-    probe.className = 'wb-pet-dialogue-text ' + (className || '');
-    probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;z-index:-1;visibility:hidden;pointer-events:none;box-sizing:border-box;display:block!important;max-height:none!important;height:auto!important;-webkit-line-clamp:unset!important;-webkit-box-orient:initial!important;white-space:normal!important;word-break:break-all!important;overflow-wrap:anywhere!important;overflow:visible!important;padding:0!important;border:0!important;margin:0!important;';
-    probe.style.width = width + 'px';
-    if (source && doc.defaultView) {
-      const cs = doc.defaultView.getComputedStyle(source);
-      ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','lineHeight','textTransform'].forEach(prop => { probe.style[prop] = cs[prop]; });
-    } else {
-      probe.style.fontSize = '13px';
-      probe.style.fontWeight = '800';
-      probe.style.lineHeight = '1.45';
-    }
-    doc.body.appendChild(probe);
-    const cs = doc.defaultView ? doc.defaultView.getComputedStyle(probe) : null;
+    const cs = source && doc.defaultView ? doc.defaultView.getComputedStyle(source) : null;
     const fontSize = cs ? parseFloat(cs.fontSize) || 13 : 13;
-    const lineHeight = cs ? parseFloat(cs.lineHeight) || fontSize * 1.45 : fontSize * 1.45;
-    const maxHeight = lineHeight * 2 + 4;
-    const fits = chunk => {
-      probe.textContent = chunk || '';
-      const h = probe.getBoundingClientRect ? probe.getBoundingClientRect().height : probe.scrollHeight;
-      return h <= maxHeight;
+    const fontFamily = cs?.fontFamily || "'Microsoft YaHei',sans-serif";
+    const fontWeight = cs?.fontWeight || '800';
+    const fontStyle = cs?.fontStyle || 'normal';
+    const letterSpacing = cs && cs.letterSpacing !== 'normal' ? parseFloat(cs.letterSpacing) || 0 : 0;
+    const font = fontStyle + ' ' + fontWeight + ' ' + fontSize + 'px ' + fontFamily;
+    const cacheKey = width + '|' + font + '|' + letterSpacing + '|' + (className || '') + '|' + raw;
+    if (petStoryPageCache.has(cacheKey)) return petStoryPageCache.get(cacheKey).slice();
+    if (!petStoryMeasureContext) petStoryMeasureContext = doc.createElement('canvas').getContext('2d');
+    const context = petStoryMeasureContext;
+    if (context) context.font = font;
+    const characters = Array.from(raw);
+    const safeWidth = Math.max(80, width * .96);
+    const measuredWidth = (start, end) => {
+      const count = Math.max(0, end - start);
+      if (!count) return 0;
+      const chunk = characters.slice(start, end).join('');
+      return (context ? context.measureText(chunk).width : count * fontSize) + Math.max(0, count - 1) * letterSpacing;
+    };
+    const fitLine = start => {
+      const newline = characters.indexOf('\n', start);
+      const limit = newline < 0 ? characters.length : newline;
+      if (limit <= start) return Math.min(characters.length, start + 1);
+      let low = start + 1, high = limit, best = start + 1;
+      while (low <= high) {
+        const middle = Math.floor((low + high) / 2);
+        if (measuredWidth(start, middle) <= safeWidth) { best = middle; low = middle + 1; }
+        else high = middle - 1;
+      }
+      return best;
     };
     const pages = [];
     let start = 0;
-    while (start < raw.length) {
-      let lo = 1, hi = raw.length - start, best = 1;
-      while (lo <= hi) {
-        const mid = Math.floor((lo + hi) / 2);
-        if (fits(raw.slice(start, start + mid))) { best = mid; lo = mid + 1; }
-        else hi = mid - 1;
+    while (start < characters.length) {
+      const pageStart = start;
+      let lastLineStart = start;
+      for (let line = 0; line < 2 && start < characters.length; line++) {
+        lastLineStart = start;
+        start = fitLine(start);
+        if (characters[start] === '\n') start++;
       }
-      let end = start + best;
-      if (end < raw.length && best > 14) end = start + Math.max(1, best - 2);
-      while (end < raw.length && /[，。！？、；：,.!?;:）】』」》]/.test(raw[end]) && fits(raw.slice(start, end + 1))) end++;
-      pages.push(raw.slice(start, end));
-      start = end;
-      while (start < raw.length && /\s/.test(raw[start])) start++;
+      while (start < characters.length && /[，。！？、；：,.!?;:）】』」》]/.test(characters[start])
+        && measuredWidth(lastLineStart, start + 1) <= safeWidth) start++;
+      pages.push(characters.slice(pageStart, start).join('').trimEnd());
+      while (start < characters.length && /\s/.test(characters[start])) start++;
     }
-    probe.remove();
     const result = pages.length ? pages : [''];
     rememberPetStoryPages(cacheKey, result);
     return result.slice();
@@ -6413,6 +6709,71 @@ export async function initWanbanXiaowu(options = {}) {
       }
     }
     return '<div class="wb-pet-dialogue-name">' + esc(petCharName()) + '</div><div class="wb-pet-dialogue-text">' + petInlineHTML(petRenderText(charLine || '', info, state)) + '</div><div class="wb-pet-dialogue-actions"></div>';
+  }
+  function startPetStoryTyping(room, state) {
+    if (petStoryTypeTimer) { clearInterval(petStoryTypeTimer); petStoryTypeTimer = 0; }
+    if (!(state.activeStory && state.activeStory.id && !state.activeStory.prompt && !state.activeStory.done)) return;
+    const textEl = qs('.wb-pet-dialogue-text', room);
+    if (!textEl) return;
+    const full = textEl.dataset.raw || textEl.textContent || '';
+    textEl.textContent = '';
+    let i = 0;
+    const step = Math.max(6, Math.ceil(full.length / 26));
+    petStoryTypeTimer = setInterval(() => {
+      i = Math.min(full.length, i + step);
+      textEl.textContent = full.slice(0, i);
+      if (i >= full.length) { clearInterval(petStoryTypeTimer); petStoryTypeTimer = 0; textEl.innerHTML = petInlineHTML(full); }
+    }, 32);
+  }
+  function renderPetStoryFrame(info, state) {
+    const room = qs('#wb-pet-room');
+    const dialogue = qs('#wb-pet-dialogue', room);
+    if (!room || !dialogue) { renderPetHouseLoaded(info, state); return; }
+    const activeLine = petActiveStoryLine(info, state);
+    dialogue.innerHTML = petDialogueHTML(info, state, state.lastCharLine || '');
+    const scene = qs('#wb-pet-scene', room);
+    const portraitUrl = petShenPortraitUrl(activeLine, state);
+    let portrait = qs('.wb-pet-npc-portrait', scene);
+    if (portraitUrl) {
+      if (!portrait) {
+        portrait = scene.ownerDocument.createElement('img');
+        portrait.className = 'wb-pet-npc-portrait';
+        portrait.alt = PET_SPECIAL_CHAR_NAME;
+        scene.appendChild(portrait);
+      }
+      if (portrait.src !== portraitUrl) portrait.src = portraitUrl;
+    } else portrait?.remove();
+    const speaker = String(activeLine?.speaker || '');
+    setPetSpriteState(room, ['U','C','user','char','{{user}}','{{char}}'].includes(speaker) ? 'happy' : 'normal');
+    startPetStoryTyping(room, state);
+  }
+  function renderPetInteractionFrame(info, state, action) {
+    const room = qs('#wb-pet-room');
+    if (!room || state.activeStory || state.ended) { renderPetHouseLoaded(info, state, { action }); return; }
+    const isEgg = state.stage === 'egg';
+    const name = petDisplayName(info, state);
+    const statusName = qs('.wb-pet-status-name', room); if (statusName) statusName.textContent = name;
+    const statusStage = qs('.wb-pet-status-stage', room); if (statusStage) statusStage.textContent = petDisplayStage(state);
+    const place = qs('.wb-pet-status-place i', room); if (place) place.textContent = petLocationName(state.location);
+    const bars = qs('.wb-pet-bars', room);
+    if (bars) {
+      bars.className = 'wb-pet-bars' + (isEgg ? ' egg' : '');
+      bars.innerHTML = petBarHTML('成长值', petGrowthPercent(state), '#43c96f')
+        + (isEgg ? '' : petBarHTML('饱食度', state.fullness, '#ff9f43') + petBarHTML('开心值', state.happiness, '#ff6f91'));
+    }
+    const dialogue = qs('#wb-pet-dialogue', room);
+    if (dialogue) dialogue.innerHTML = petDialogueHTML(info, state, state.lastCharLine || '');
+    const scene = qs('#wb-pet-scene', room);
+    const line = petRenderText(state.lastPetLine || '', info, state);
+    let speech = qs('.wb-pet-speech', scene);
+    if (line) {
+      if (!speech) { speech = scene.ownerDocument.createElement('div'); speech.className = 'wb-pet-speech'; scene.appendChild(speech); }
+      speech.textContent = line;
+    } else speech?.remove();
+    const poke = qs('#wb-pet-poke', room);
+    if (poke) poke.classList.toggle('egg-shake', isEgg && !!state.lastPetLine);
+    if (!isEgg) setPetSpriteState(room, action || state.petAction || 'normal');
+    resetPetAnimationLoop(room, action === 'eat' || action === 'happy');
   }
   function petActiveStoryLine(info, state) {
     const active = state && state.activeStory;
@@ -6827,7 +7188,7 @@ export async function initWanbanXiaowu(options = {}) {
     syncPopupModeClass();
     injectPetArcadeStyle();
     if (settings().petDesktopEnabled) {
-      setSettings({ petDesktopEnabled:false, petDesktopState:'normal', petForm:petCurrentForm() });
+      setSettingsIfChanged({ petDesktopEnabled:false, petDesktopState:'normal', petForm:petCurrentForm() });
       syncFloatingBall();
     }
     const body = qs('#wb-body');
@@ -6879,7 +7240,7 @@ export async function initWanbanXiaowu(options = {}) {
     const storyTalkAction = storyMode && activeLine && ['U','C','user','char','{{user}}','{{char}}'].includes(String(activeLine.speaker || '')) && Math.random() < .45 ? (Math.random() < .5 ? 'happy' : 'normal') : '';
     const autoAction = storyMode ? '' : petAutoAction(renderState);
     const action = options.action || storyTalkAction || autoAction || renderState.petAction || 'normal';
-    setSettings({ petDesktopState: action, petForm:petFormForStage(renderState) });
+    setSettingsIfChanged({ petDesktopState: action, petForm:petFormForStage(renderState) });
     const pendingCount = (state.pendingStories || []).length;
     const isEgg = renderState.stage === 'egg';
     const isEnded = !!renderState.ended;
@@ -6898,7 +7259,7 @@ export async function initWanbanXiaowu(options = {}) {
       + (!storyMode && !isEnded && petLine ? '<div class="wb-pet-speech">' + esc(petLine) + '</div>' : '')
       + (!storyMode && !isEnded ? '<div class="wb-pet-scene-drawer" id="wb-pet-scene-drawer"><div class="wb-pet-scene-menu"><button class="wb-btn wb-pet-scene-choice" data-loc="home"><span class="wb-pet-scene-thumb" style="background-image:url(' + esc(PET_ASSET_BASE + 'scene/home-' + petTimeOfDay() + '.png') + ')"></span>小屋</button><button class="wb-btn wb-pet-scene-choice ' + (petLocationUnlocked(state, 'outside') ? '' : 'locked') + '" data-loc="outside" data-locked="' + (petLocationUnlocked(state, 'outside') ? '0' : '1') + '"><span class="wb-pet-scene-thumb" style="background-image:url(' + esc(PET_ASSET_BASE + 'scene/outside-' + petTimeOfDay() + '.png') + ')"></span>小院</button><button class="wb-btn wb-pet-scene-choice ' + (petLocationUnlocked(state, 'garden') ? '' : 'locked') + '" data-loc="garden" data-locked="' + (petLocationUnlocked(state, 'garden') ? '0' : '1') + '"><span class="wb-pet-scene-thumb" style="background-image:url(' + esc(PET_ASSET_BASE + 'scene/garden-' + petTimeOfDay() + '.png') + ')"></span>花园</button></div><button class="wb-btn wb-pet-scene-toggle" id="wb-pet-scene-toggle" title="切换场景" aria-label="切换场景"><span class="wb-pet-scene-toggle-text"><i>切</i><i>换</i><i>场</i><i>景</i></span>' + petUiIcon('scene') + '</button></div>' : '')
       + (!storyMode && !isEnded ? '<div class="wb-pet-scene-actions">' + (isEgg ? '<button class="wb-btn wb-pet-iconbtn" id="wb-pet-pat" title="抚摸" aria-label="抚摸">' + petUiIcon('pat') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-log" title="写日志" aria-label="写日志">' + petUiIcon('log') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-records" title="记录" aria-label="记录">' + petUiIcon('records') + '</button>' + cheatActionHTML + '' : '<button class="wb-btn wb-pet-iconbtn" id="wb-pet-walk" title="遛弯" aria-label="遛弯">' + petUiIcon('walk') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-feed" title="喂食" aria-label="喂食" ' + (canFeed ? '' : 'disabled') + '>' + petUiIcon('feed') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-pat" title="抚摸" aria-label="抚摸">' + petUiIcon('pat') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-log" title="写日志" aria-label="写日志">' + petUiIcon('log') + '</button><button class="wb-btn wb-pet-iconbtn" id="wb-pet-records" title="记录" aria-label="记录">' + petUiIcon('records') + '</button>' + cheatActionHTML + '') + (state.endingReady && Number(state.growth || 0) >= petStageCap(state.stage) && !state.ended && !isEgg ? '<button class="wb-btn wb-pet-iconbtn primary" id="wb-pet-ending" title="进入结局" aria-label="进入结局">' + petUiIcon('ending') + '</button>' : '') + '</div>' : '')
-      + (!isEnded ? '<button class="wb-pet-room-fox' + (isEgg && state.lastPetLine ? ' egg-shake' : '') + '" id="wb-pet-poke" type="button" title="戳一戳" style="border:0;background:transparent;padding:0;box-shadow:none!important;">' + petAssetHTML(renderState, action) + '</button>' : '<div class="wb-pet-empty-stage">这段灵息旅程已经完成。</div>')
+      + (!isEnded ? '<button class="wb-pet-room-fox' + (isEgg && state.lastPetLine ? ' egg-shake' : '') + '" id="wb-pet-poke" type="button" title="' + (storyMode ? '继续剧情' : '戳一戳') + '" aria-label="' + (storyMode ? '继续剧情' : '戳一戳') + '" style="border:0;background:transparent;padding:0;box-shadow:none!important;">' + petAssetHTML(renderState, action) + '</button>' : '<div class="wb-pet-empty-stage">这段灵息旅程已经完成。</div>')
       + (storyMode ? '<button class="wb-btn wb-pet-story-exit" id="wb-pet-story-exit" type="button">退出剧情</button>' : '')
       + (shenPortraitUrl ? '<img class="wb-pet-npc-portrait" src="' + esc(shenPortraitUrl) + '" alt="' + PET_SPECIAL_CHAR_NAME + '">' : '')
       + '</div>'
@@ -6939,19 +7300,7 @@ export async function initWanbanXiaowu(options = {}) {
       currentSprite.dataset.petAnimationKey = JSON.stringify([petStorageTarget(), renderState.stage]);
       transferPetFrames(previousSprite, currentSprite);
     }
-    if (storyMode && !(state.activeStory && state.activeStory.done)) {
-      const textEl = qs('.wb-pet-dialogue-text', room);
-      if (textEl) {
-        const full = textEl.dataset.raw || textEl.textContent || '';
-        textEl.textContent = '';
-        let i = 0;
-        petStoryTypeTimer = setInterval(() => {
-          i = Math.min(full.length, i + 6);
-          textEl.textContent = full.slice(0, i);
-          if (i >= full.length) { clearInterval(petStoryTypeTimer); petStoryTypeTimer = 0; textEl.innerHTML = petInlineHTML(full); }
-        }, 12);
-      }
-    }
+    if (storyMode) startPetStoryTyping(room, state);
     if (petIdleTimer) { clearTimeout(petIdleTimer); petIdleTimer = null; }
     if (!storyMode && action !== 'eat' && action !== 'happy') resetPetIdleTimer(room);
     resetPetAnimationLoop(room, action === 'eat' || action === 'happy');
@@ -6969,16 +7318,20 @@ export async function initWanbanXiaowu(options = {}) {
       next.lastPetLine = next.stage === 'egg' && (kind === 'pet' || kind === 'poke') ? '......' : petQuote(info, 'pet', stage, kind === 'feed' ? 'feed' : (kind === 'pet' ? 'pet' : 'poke'), petLineFor(shownState));
       next.lastCharLine = petQuote(info, 'char', stage === 'egg' ? 'egg' : stage, kind === 'feed' ? 'feed' : (kind === 'pet' ? 'pet' : 'poke'), '');
       next = updatePetPendingStories(next, info);
-      savePetTestState(next);
+      const saved = savePetTestState(next);
       const interactionTarget = petStorageTarget();
-      renderPetHouseLoaded(info, next, { action:shownState });
+      if (saved) renderPetInteractionFrame(info, next, shownState);
+      else renderPetHouseLoaded(info, next, { action:shownState });
       if (petStateReturnTimer) clearTimeout(petStateReturnTimer);
       petStateReturnTimer = setTimeout(() => {
         petStateReturnTimer = null;
         if (!petTargetIsCurrent(interactionTarget)) return;
         const latest = Object.assign({}, petTestState(), { petAction:'normal' });
-        savePetTestState(latest);
-        if (!latest.activeStory && qs('#wb-pet-room')) renderPetHouseLoaded(info, latest);
+        const savedLatest = savePetTestState(latest);
+        if (!latest.activeStory && qs('#wb-pet-room')) {
+          if (savedLatest) renderPetInteractionFrame(info, latest, 'normal');
+          else renderPetHouseLoaded(info, latest);
+        }
       }, 4500);
       setTimeout(() => {
         if (!petTargetIsCurrent(interactionTarget) || !qs('#wb-pet-room')) return;
@@ -6993,12 +7346,12 @@ export async function initWanbanXiaowu(options = {}) {
       if (btn.dataset.locked === '1' || btn.classList.contains('locked')) { toast('当前未解锁，继续养宠物解锁场景吧！'); return; }
       const next = Object.assign({}, petTestState(), { location:btn.dataset.loc });
       savePetTestState(updatePetPendingStories(next, info));
-      renderPetHouse();
+      renderPetHouseLoaded(info, updatePetPendingStories(next, info));
     });
     const recordsBtn = qs('#wb-pet-records', room); if (recordsBtn) recordsBtn.onclick = () => openPetRecords(info);
     const cheatBtn = qs('#wb-pet-cheat', room); if (cheatBtn) cheatBtn.onclick = () => {
       const next = petApplyCheatGrowth(5);
-      renderPetHouseLoaded(info, next);
+      renderPetInteractionFrame(info, next, next.petAction || 'normal');
       setTimeout(() => {
         if (petTestState().stage === 'egg' && Number(petTestState().growth || 0) >= petStageCap('egg')) openPetHatchPrompt(info);
         else openNextPetStoryPrompt(info);
@@ -7024,7 +7377,7 @@ export async function initWanbanXiaowu(options = {}) {
     const nextScene = qs('#wb-pet-next-scene', room); if (nextScene) nextScene.onclick = () => {
       const next = Object.assign({}, petTestState(), { location:petNextLocation(state) });
       savePetTestState(updatePetPendingStories(next, info));
-      renderPetHouse();
+      renderPetHouseLoaded(info, updatePetPendingStories(next, info));
     };
     const endingBtn = qs('#wb-pet-ending', room); if (endingBtn) endingBtn.onclick = () => {
       const next = Object.assign({}, petTestState(), { endingReady:true, finalConfirmed:true, pendingStories:Array.from(new Set([].concat(petTestState().pendingStories || [], 'M15'))) });
@@ -7041,7 +7394,15 @@ export async function initWanbanXiaowu(options = {}) {
       const fullCaretaker = petFullActiveCaretaker();
       if (petRuntimeMode === 'test' || petCaretakerIsShen(fullCaretaker)) {
         if (fullCaretaker) petFullRemoveActivePet(fullCaretaker.id);
-        else if (!saveJSON(STORAGE_PET_TEST, Object.assign(defaultPetTestState(), { archives:petTestState().archives || [] }))) return;
+        else {
+          const oldTarget = petTrialStorageTarget();
+          const resetState = Object.assign(defaultPetTestState(), { archives:petTestState().archives || [] });
+          if (!saveJSON(STORAGE_PET_TEST, resetState)) return;
+          petTrialDataCache = resetState;
+          clearPetStateShard(oldTarget);
+          clearPetStoryCursor(oldTarget);
+          pendingPetStates.delete(JSON.stringify(oldTarget));
+        }
         petTestInfoCache = null;
         petTestInfoLoading = null;
         openPetSpecialCompanionChoice({ forceNew:true });
@@ -7187,16 +7548,16 @@ export async function initWanbanXiaowu(options = {}) {
     mask.className = modalMaskClass();
     mask.id = 'wb-pet-caretaker-mask';
     const rows = data.caretakers || [];
-    const trialState = Object.assign(defaultPetTestState(), safeObject(loadJSON(STORAGE_PET_TEST, {})));
+    const trialState = petTrialState();
     const trialInfo = null;
     const trialPetName = petDisplayName(trialInfo, trialState, PET_SPECIES_LABELS[trialState.testSpecies] || '当前动物');
     const trialCycle = Number(trialState.adoptionCycle || 0) || Math.max(1, (Array.isArray(trialState.archives) ? trialState.archives.length : 0) + 1);
     const trialHTML = '<button class="wb-pet-caretaker-card wb-pet-full-caretaker wb-pet-trial-caretaker" type="button"><div class="wb-pet-avatar wb-pet-trial-avatar"><img src="' + esc(PET_SPECIAL_CHAR_AVATAR) + '" alt=""></div>' + petSnapshotHTMLForInfo(trialState, trialInfo) + '<div class="wb-pet-caretaker-info"><div class="wb-pet-caretaker-title"><b class="wb-pet-nameplate">' + PET_SPECIAL_CHAR_NAME + '</b><span class="wb-pill wb-pet-caretaker-tag">默认剧情</span></div><div class="wb-muted wb-pet-caretaker-line">当前动物：' + esc(trialPetName) + '</div><div class="wb-muted wb-pet-caretaker-line">第' + esc(String(trialCycle)) + '只宠物</div></div></button>';
     const rowHTML = rows.map(c => {
       const pet = petFullActivePet(data, c);
-      const infoObj = pet?.infoText ? parsePetInfoText(pet.infoText) : null;
+      const infoObj = pet ? petFullPreviewInfo(pet) : null;
       const state = Object.assign(defaultPetTestState(), pet?.state || {});
-      const caretakerAvatar = petCaretakerIsShen(c) ? PET_SPECIAL_CHAR_AVATAR : roleAvatarUrl(c.name || c.charName, petCaretakerPromptConfig(c));
+      const caretakerAvatar = petCaretakerIsShen(c) ? PET_SPECIAL_CHAR_AVATAR : roleAvatarUrl(c.name || c.charName, c);
       const avatar = caretakerAvatar ? '<img src="' + esc(caretakerAvatar) + '" alt="">' : esc((c.name || '?').slice(0, 1));
       const snap = pet ? petSnapshotHTMLForInfo(state, infoObj) : '<div class="wb-pet-snapshot"></div>';
       const completedCount = petFullCompletedCount(c);
@@ -7228,7 +7589,7 @@ export async function initWanbanXiaowu(options = {}) {
   }
 
   function openPetFullCharPicker(parentMask) {
-    syncCurrentHostRoleContext();
+    if (settings().lastHostCardId !== characterCardId(currentHostCharacter())) syncCurrentHostRoleContext();
     const doc = getHostDocument();
     const old = qs('#wb-pet-char-picker-mask', doc);
     if (old) old.remove();
@@ -7370,6 +7731,17 @@ export async function initWanbanXiaowu(options = {}) {
       if (petGenerationLeaveGuard === run.requestLeave) petGenerationLeaveGuard = null;
       setGenerating(false);
     };
+    const scheduleGenerationStream = run => {
+      if (run.streamFrame) return;
+      const view = getHostWindow();
+      const paint = () => {
+        run.streamFrame = 0;
+        if (generationRun !== run || run.controller.signal.aborted || !mask.isConnected) return;
+        const box = qs('#wb-pet-info-stream', mask);
+        if (box) { box.textContent = run.raw; box.scrollTop = box.scrollHeight; }
+      };
+      run.streamFrame = typeof view.requestAnimationFrame === 'function' ? view.requestAnimationFrame(paint) : view.setTimeout(paint, 16);
+    };
     const stopGeneration = () => {
       const run = generationRun;
       if (!run) return;
@@ -7421,8 +7793,7 @@ export async function initWanbanXiaowu(options = {}) {
             const result = await generatePetFullInfo(caretaker, Object.assign({}, form, { retry_feedback:lastErr?.message || '' }), delta => {
               if (generationRun !== run || run.controller.signal.aborted || !mask.isConnected) return;
               run.raw += delta;
-              const box = qs('#wb-pet-info-stream', mask);
-              if (box) { box.textContent = run.raw; box.scrollTop = box.scrollHeight; }
+              scheduleGenerationStream(run);
             }, run.controller.signal);
             if (generationRun !== run || run.controller.signal.aborted || !mask.isConnected) return;
             generated = result;
@@ -7442,7 +7813,7 @@ export async function initWanbanXiaowu(options = {}) {
         if (!generated) throw new Error('请先生成有效的宠物档案');
         form = form || collect();
         const state = Object.assign(defaultPetTestState(), { userName:form.user_name, adoptionCycle:cycle, firstSnapshot:null, cheatMode:petCaretakerIsShen(caretaker) && !!options?.cheatMode });
-        petFullAddPet(caretaker.id, generated.raw, state, { egg:generated.parsed.pet_card?.egg || draft.selected_egg });
+        petFullAddPet(caretaker.id, generated.raw, state, { egg:generated.parsed.pet_card?.egg || draft.selected_egg }, generated.parsed);
         petTestInfoCache = generated.parsed;
         petTestInfoSource = generated.raw;
         mask.remove();
@@ -7457,8 +7828,20 @@ export async function initWanbanXiaowu(options = {}) {
       success.innerHTML = '<div class="wb-modal wb-mini-modal wb-pet-modal wb-pet-adopt-success-modal"><div class="wb-pet-modal-head"><div class="wb-pet-modal-title">生成并解析成功</div></div><div class="wb-pet-scroll">' + petAdoptionEggCardHTML(generated.parsed, form, cycle) + '<details class="wb-pet-info-raw"><summary>查看全部输出</summary><pre class="wb-pet-info-stream">' + esc(generated.raw || '') + '</pre></details></div><div class="wb-actions"><button class="wb-btn primary" id="wb-pet-enter-house" style="flex:1;">进入灵息小屋</button><button class="wb-btn" id="wb-pet-adopt-regen" style="flex:1;">重新生成</button></div></div>';
       appendModalMask(success);
       qs('#wb-pet-enter-house', success).onclick = () => {
-        try { enterGeneratedHouse(form); success.remove(); }
-        catch (error) { toast(error.message + '；生成内容仍保留在此页，可重试保存。'); }
+        const enter = qs('#wb-pet-enter-house', success);
+        enter.disabled = true;
+        enter.textContent = '正在保存...';
+        const commit = () => {
+          try { enterGeneratedHouse(form); success.remove(); }
+          catch (error) {
+            enter.disabled = false;
+            enter.textContent = '进入灵息小屋';
+            toast(error.message + '；生成内容仍保留在此页，可重试保存。');
+          }
+        };
+        const view = getHostWindow();
+        if (typeof view.requestAnimationFrame === 'function') view.requestAnimationFrame(() => view.setTimeout(commit, 0));
+        else view.setTimeout(commit, 0);
       };
       qs('#wb-pet-adopt-regen', success).onclick = () => { success.remove(); generated = null; generate(); };
     };
@@ -7592,8 +7975,8 @@ export async function initWanbanXiaowu(options = {}) {
       if (view.page + 1 < view.pages.length) state.activeStory = { id:active.id, prompt:false, index:view.index, page:view.page + 1, done:false, replay:!!active.replay };
       else if (view.index + 1 >= view.lines.length) state.activeStory = { id:active.id, prompt:false, index:view.index, page:view.page, done:true, replay:!!active.replay };
       else state.activeStory = { id:active.id, prompt:false, index:view.index + 1, page:0, done:false, replay:!!active.replay };
-      savePetTestState(state);
-      renderPetHouseLoaded(info, state);
+      savePetStoryPosition(state);
+      renderPetStoryFrame(info, state);
     };
     if (next) next.onclick = e => { e.stopPropagation(); advance(); };
     const close = qs('#wb-pet-story-close', room);
@@ -7609,7 +7992,8 @@ export async function initWanbanXiaowu(options = {}) {
         e.stopPropagation();
         if (e.stopImmediatePropagation) e.stopImmediatePropagation();
       }
-      if (e.target && e.target.closest && e.target.closest('button')) return;
+      const button = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (button && button.id !== 'wb-pet-poke') return;
       const now = Date.now();
       if (now < petStoryTapLockedUntil) return;
       petStoryTapLockedUntil = now + 70;
@@ -8597,12 +8981,18 @@ export async function initWanbanXiaowu(options = {}) {
     if (Object.hasOwn(plan, STORAGE_ROLE_CONTEXTS)) roleContextsCache = null;
     if (Object.hasOwn(plan, STORAGE_CARD_ROLES)) cardRolesCache = null;
     if (Object.hasOwn(plan, STORAGE_SETTINGS)) settingsCache = Object.assign({}, DEFAULT_SETTINGS, safeObject(loadJSON(STORAGE_SETTINGS, {})));
-    if (Object.hasOwn(plan, STORAGE_PET_FULL)) petFullActiveCaretakerId = '';
+    if (Object.hasOwn(plan, STORAGE_PET_FULL)) { removePetStateShards('full'); petFullDataCache = null; }
+    if (Object.hasOwn(plan, STORAGE_PET_TEST)) { removePetStateShards('test'); petTrialDataCache = null; }
+    if (Object.hasOwn(plan, STORAGE_PET_FULL)) {
+      petFullActiveCaretakerId = '';
+      try { localStorage.removeItem(STORAGE_PET_ACTIVE_CARETAKER); } catch (_) {}
+    }
     if (Object.hasOwn(plan, SCRIPT_ID + '_petLastRoute')) petRuntimeMode = plan[SCRIPT_ID + '_petLastRoute'];
     for (const [key, entry] of pendingPetStates) {
       if (Object.hasOwn(plan, entry.target.mode === 'test' ? STORAGE_PET_TEST : STORAGE_PET_FULL)) pendingPetStates.delete(key);
     }
     if (Object.hasOwn(plan, STORAGE_PROGRESS)) {
+      removeProgressShards();
       Object.values(progressSaveTimers).forEach(clearTimeout);
       progressSaveTimers = {};
       progressSaveCache = {};
@@ -8622,6 +9012,11 @@ export async function initWanbanXiaowu(options = {}) {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
       else if (key === STORAGE_SUMMARY_REQ) data.items[key] = localStorage.getItem(key) || '';
       else if (key === STORAGE_RECORDS) data.items[key] = records();
+      else if (key === STORAGE_PET_TEST) data.items[key] = petTrialState();
+      else if (key === STORAGE_PET_FULL) {
+        const full = petFullData();
+        data.items[key] = Object.assign({}, full, { activeCaretakerId:petFullActiveCaretaker(full)?.id || full.activeCaretakerId || '' });
+      }
       else if (key === STORAGE_PROGRESS) {
         data.items[key] = Object.assign({}, progress(), progressSaveCache);
         progressDeleteCache.forEach(game => { delete data.items[key][game]; });
@@ -9374,6 +9769,7 @@ export async function initWanbanXiaowu(options = {}) {
       if (mask && mask.parentNode) mask.remove();
       if (!gameStarted || !currentGame) return;
       gamePaused = false;
+      try { activeGameController?.resume?.(); } catch(e) {}
       gameActiveStartedAt = Date.now();
       startGameDurationRewardTimer();
       hideGamePauseOverlay();
@@ -9960,6 +10356,7 @@ export async function initWanbanXiaowu(options = {}) {
       charge = 0;
       chargeDir = 1;
       if (!seen.charge) { seen.charge = 1; speak('jump', 'charge'); }
+      scheduleJumpLoop();
     }
     function pointerUp(e) {
       if (!charging || dead) return;
@@ -10025,7 +10422,7 @@ export async function initWanbanXiaowu(options = {}) {
         transition = { t: 0, dx: 170 - platforms[0].x, dy: 440 - platforms[0].y };
       } else {
         dead = true;
-        clearInterval(jumpTimer);
+        clearTimeout(jumpTimer);
         jumpTimer = null;
         if (!seen.gameover) speak('jump', 'gameover');
         showGameOver('jump', '游戏结束', '本局分数：' + score + '分', null, { details });
@@ -10034,6 +10431,7 @@ export async function initWanbanXiaowu(options = {}) {
     function loop() {
       if (dead) return;
       if (gamePaused) return;
+      if (!charging && !flight && !transition && !particles.length) return;
       if (charging) {
         charge += chargeDir * .035;
         if (charge >= 1) { charge = 1; chargeDir = -1; }
@@ -10343,8 +10741,20 @@ export async function initWanbanXiaowu(options = {}) {
       jumpBgCache = { key:theme, canvas:off };
       return off;
     }
-    clearInterval(jumpTimer);
-    jumpTimer = setInterval(loop, 32);
+    function jumpActive(){ return charging || !!flight || !!transition || particles.length > 0; }
+    function scheduleJumpLoop(){
+      if(jumpTimer || dead || gamePaused || !save.isActive() || !jumpActive()) return;
+      jumpTimer = setTimeout(() => {
+        jumpTimer = null;
+        loop();
+        scheduleJumpLoop();
+      }, 32);
+    }
+    save.setLifecycle?.({
+      pause(){ if(jumpTimer){ clearTimeout(jumpTimer); jumpTimer=null; } },
+      resume(){ scheduleJumpLoop(); }
+    });
+    scheduleJumpLoop();
     draw();
     save();
   }
@@ -10633,7 +11043,13 @@ export async function initWanbanXiaowu(options = {}) {
     body.innerHTML = '<div class="wb-layout ' + layoutClass + '"><div class="wb-panel wb-game-main"><div class="wb-toolbar"><button class="wb-btn" id="wb-back">返回</button><div class="wb-stat"><span class="wb-pill wb-title-row"><span class="wb-game-title-text">' + esc(g.name) + '</span><button class="wb-rule-btn" id="wb-game-rules" title="游戏介绍" aria-label="游戏介绍" type="button">💡</button></span><span class="wb-pill" id="wb-score">本局：0</span><span class="wb-pill" id="wb-high">' + esc(scoreDisplay(id)) + '</span></div><div class="wb-actions">' + wordBankTools + lineTools + '<button class="wb-btn" id="wb-game-records">记录</button>' + pauseBtn + '<button class="wb-btn" id="wb-restart">重开</button></div></div><div class="wb-board-wrap wb-gamebox-' + esc(id) + '" id="wb-gamebox"><div class="wb-start-cover"><div>准备开始</div><button class="wb-btn primary" id="wb-start-cover-btn">开始游戏</button></div></div></div>' + companionPanel + '</div>';
     primeMessageNotifyBaseline();
     gameStarted = false; gamePaused = true;
-    qs('#wb-back').onclick = () => { stopGame(); currentGame = null; saveWindowState(currentTab, ''); syncPopupModeClass(); renderSelect(currentTab); };
+    qs('#wb-back').onclick = () => {
+      stopGame({ deferWrites:true });
+      currentGame = null;
+      syncPopupModeClass();
+      renderSelect(currentTab);
+      getHostWindow().setTimeout(() => saveWindowState(currentTab, ''), 0);
+    };
     qs('#wb-start-cover-btn').onclick = () => startCurrentGame(id);
     qs('#wb-game-rules').onclick = e => { e.stopPropagation(); showGameRules(id); };
     qs('#wb-game-records').onclick = () => showGameRecords(id);
@@ -10778,7 +11194,7 @@ export async function initWanbanXiaowu(options = {}) {
       root:qs('#wb-gamebox'),
       document:getHostDocument(),
       window:getHostWindow(),
-      save:(state, force) => saveProgress(id, state, force ? { immediate:true } : undefined),
+      save:(state, force) => saveProgress(id, state, force && !deferImmediateProgressWrites ? { immediate:true } : undefined),
       clear:() => clearProgress(id),
       setScore:value => setScore(id, value),
       finish:(title, scoreText, result, meta) => showGameOver(id, title, scoreText, result, meta),
@@ -10801,6 +11217,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (!gamePaused) {
       try { activeGameController?.save?.(); } catch(e) {}
       commitGameActiveDuration(true);
+      try { activeGameController?.pause?.(); } catch(e) {}
       gamePaused = true;
       if (randomLineTimer) clearTimeout(randomLineTimer);
       randomLineTimer = null;
@@ -11574,8 +11991,11 @@ function showGameRecords(game, page) {
     const sc = scores();
     if (g.mode === 'double') {
       const cur = sc[game] && typeof sc[game] === 'object' ? sc[game] : { user: sc[game] || 0, ta: 0 };
-      if (value > (cur.user || 0)) cur.user = value;
-      sc[game] = cur; saveScores(sc);
+      if (value > (cur.user || 0)) {
+        cur.user = value;
+        sc[game] = cur;
+        saveScores(sc);
+      }
       const h = qs('#wb-high'); if (h) h.textContent = scoreDisplay(game);
     } else {
       const old = sc[game] || 0;
@@ -11603,7 +12023,7 @@ function showGameRecords(game, page) {
     function cardHTML(c, hidden){ if(hidden) return '<div class="wb-bj-card back"></div>'; const red=c.s==='♥'||c.s==='♦'; return '<div class="wb-bj-card '+(red?'red':'')+'"><div class="corner"><span>'+c.r+'</span><span>'+c.s+'</span></div><div class="pip">'+c.s+'</div></div>'; }
     function save(force){ if(!over) saveProgress('blackjack', Object.assign({}, st, { peek:false, lastDraw:null }), force ? { immediate:true } : undefined); }
     save = registerLegacyGameSave('blackjack', save);
-    function draw(){ const target=st.target; const root=qs('.wb-bj',box); if(root) root.classList.toggle('show-points',!!st.showPoints); const toggle=qs('#bj-point-toggle',box); if(toggle){ toggle.textContent=st.showPoints?'隐藏点数':'显示点数'; toggle.classList.toggle('active',!!st.showPoints); } qs('#bj-level').textContent='第'+st.level+'关'; qs('#bj-target').textContent='目标 '+target; qs('#bj-total').textContent='总分 '+String(st.total).replace(/\B(?=(\d{3})+(?!\d))/g,','); qs('#bj-personality').textContent=st.level>=8?'认真起来了':(st.level>=3?st.personality:''); qs('#bj-char-score').textContent=st.charScore+' / '+target; qs('#bj-user-score').textContent=st.userScore+' / '+target; qs('#bj-char-fill').style.width=Math.min(100,st.charScore/target*100)+'%'; qs('#bj-user-fill').style.width=Math.min(100,st.userScore/target*100)+'%'; qs('#bj-user-streak').textContent=st.userStreak>=2?'🔥 ×'+st.userStreak:''; qs('#bj-char-streak').textContent=st.charStreak>=2?'🔥 ×'+st.charStreak:''; const reveal=st.phase==='char'||st.phase==='settle'||st.peek||st.charDone; qs('#bj-char-hand').innerHTML=st.char.map((c,i)=>cardHTML(c,i===1&&!reveal)).join(''); qs('#bj-user-hand').innerHTML=st.user.map(c=>cardHTML(c,false)).join(''); const uv=handValue(st.user), cv=handValue(st.char); const up=qs('#bj-user-points'), cp=qs('#bj-char-points'); up.textContent=uv.bust?'爆牌 '+uv.total:(uv.total===21?'21!':uv.total); up.className='wb-bj-points '+scoreClass(uv); cp.textContent=reveal?(cv.bust?'爆牌 '+cv.total:(cv.total===21?'21!':charName+' · '+cv.total)):(st.char[0]?'可见：'+handValue([st.char[0]]).total:'?'); cp.className='wb-bj-points '+(reveal?scoreClass(cv):''); const playerOn=st.phase==='player'&&!busy&&!over; qs('#bj-hit').disabled=!playerOn; qs('#bj-stand').disabled=!playerOn; [['hint',2],['peek',1],['undo',1],['protect',st.level>=3?1:0]].forEach(([k])=>{ const btn=qs('[data-tool="'+k+'"]',box); if(btn) btn.disabled=busy||over||(st.tools?.[k]||0)<=0||(k!=='undo'&&st.phase!=='player')||(k==='undo'&&!st.lastDraw)||(k==='protect'&&st.protectReady); const badge=qs('#bj-'+k+'-left'); if(badge) badge.textContent=st.tools?.[k]||0; }); const p=qs('[data-tool="protect"]',box); if(p) p.classList.toggle('ready',!!st.protectReady); if(!busy) save(); }
+    function draw(){ const target=st.target; const root=qs('.wb-bj',box); if(root) root.classList.toggle('show-points',!!st.showPoints); const toggle=qs('#bj-point-toggle',box); if(toggle){ toggle.textContent=st.showPoints?'隐藏点数':'显示点数'; toggle.classList.toggle('active',!!st.showPoints); } qs('#bj-level').textContent='第'+st.level+'关'; qs('#bj-target').textContent='目标 '+target; qs('#bj-total').textContent='总分 '+String(st.total).replace(/\B(?=(\d{3})+(?!\d))/g,','); qs('#bj-personality').textContent=st.level>=8?'认真起来了':(st.level>=3?st.personality:''); qs('#bj-char-score').textContent=st.charScore+' / '+target; qs('#bj-user-score').textContent=st.userScore+' / '+target; qs('#bj-char-fill').style.width=Math.min(100,st.charScore/target*100)+'%'; qs('#bj-user-fill').style.width=Math.min(100,st.userScore/target*100)+'%'; qs('#bj-user-streak').textContent=st.userStreak>=2?'🔥 ×'+st.userStreak:''; qs('#bj-char-streak').textContent=st.charStreak>=2?'🔥 ×'+st.charStreak:''; const reveal=st.phase==='char'||st.phase==='settle'||st.peek||st.charDone; patchElementHTML(qs('#bj-char-hand'),st.char.map((c,i)=>cardHTML(c,i===1&&!reveal)).join('')); patchElementHTML(qs('#bj-user-hand'),st.user.map(c=>cardHTML(c,false)).join('')); const uv=handValue(st.user), cv=handValue(st.char); const up=qs('#bj-user-points'), cp=qs('#bj-char-points'); up.textContent=uv.bust?'爆牌 '+uv.total:(uv.total===21?'21!':uv.total); up.className='wb-bj-points '+scoreClass(uv); cp.textContent=reveal?(cv.bust?'爆牌 '+cv.total:(cv.total===21?'21!':charName+' · '+cv.total)):(st.char[0]?'可见：'+handValue([st.char[0]]).total:'?'); cp.className='wb-bj-points '+(reveal?scoreClass(cv):''); const playerOn=st.phase==='player'&&!busy&&!over; qs('#bj-hit').disabled=!playerOn; qs('#bj-stand').disabled=!playerOn; [['hint',2],['peek',1],['undo',1],['protect',st.level>=3?1:0]].forEach(([k])=>{ const btn=qs('[data-tool="'+k+'"]',box); if(btn) btn.disabled=busy||over||(st.tools?.[k]||0)<=0||(k!=='undo'&&st.phase!=='player')||(k==='undo'&&!st.lastDraw)||(k==='protect'&&st.protectReady); const badge=qs('#bj-'+k+'-left'); if(badge) badge.textContent=st.tools?.[k]||0; }); const p=qs('[data-tool="protect"]',box); if(p) p.classList.toggle('ready',!!st.protectReady); if(!busy) save(); }
     function setStatus(t){ const el=qs('#bj-status'); if(el) el.textContent=t; }
     function toastMid(t){ const el=getHostDocument().createElement('div'); el.className='wb-bj-float'; el.textContent=t; qs('.wb-bj-table',box).appendChild(el); setTimeout(()=>el.remove(),1350); }
     function gain(who,text){ const el=getHostDocument().createElement('div'); el.className='wb-bj-gain'; el.textContent=text; qs(who==='user'?'#bj-user-score':'#bj-char-score',box).appendChild(el); setTimeout(()=>el.remove(),520); }
@@ -11701,6 +12121,15 @@ function showGameRecords(game, page) {
     let st = null, selected = null, busy = false, over = false, timer = null, lastTick = Date.now(), hintPair = null, linePath = null, lineKind = '', idle8 = false, idle15 = false, frozenLeft = 0, warned30 = false, pendingRemovals = 0, fadingTiles = new Map();
     const timedToolMarkup = '<button class="wb-link-tool" data-tool="freeze"><i>❄</i><span class="name">冻结</span><span class="badge" id="ll-freeze-left">1</span></button><button class="wb-link-tool" data-tool="magic"><i>✦</i><span class="name">消除</span><span class="badge" id="ll-magic-left">0</span></button>';
     box.innerHTML = '<div class="wb-link"><div class="wb-link-top"><div class="wb-link-level"><small>当前关卡</small><b id="ll-level">第 1 关</b></div><div class="wb-link-progress"><div id="ll-progress-text">本关 0 / 1800</div><div class="wb-link-bar"><div class="wb-link-fill" id="ll-fill"></div></div></div><div class="wb-link-total"><small>累计总分</small><b id="ll-total">0</b></div><div class="wb-link-time" id="ll-time">⏱ 01:30</div></div><div class="wb-link-boardwrap"><div class="wb-link-board" id="ll-board"></div></div><div class="wb-link-tools' + (noTimeLimit ? ' simple' : '') + '"><button class="wb-link-tool" data-tool="hint"><i>💡</i><span class="name">提示</span><span class="badge" id="ll-hint-left">2</span></button><button class="wb-link-tool" data-tool="shuffle"><i>⇄</i><span class="name">洗牌</span><span class="badge" id="ll-shuffle-left">1</span></button>' + (noTimeLimit ? '' : timedToolMarkup) + '</div><div class="wb-link-rule" id="ll-rule">本关规则：完全静止</div></div>';
+    const linkBoard = qs('#ll-board', box);
+    const handleLinkTile = event => {
+      const tile = event.target.closest('.wb-link-tile');
+      if (!tile || !linkBoard.contains(tile)) return;
+      event.preventDefault();
+      clickTile(+tile.dataset.r, +tile.dataset.c);
+    };
+    linkBoard.onpointerdown = handleLinkTile;
+    linkBoard.onclick = event => { if (!getHostWindow().PointerEvent) handleLinkTile(event); };
     qsa('.wb-link-tool', box).forEach(b => b.onclick = () => useTool(b.dataset.tool));
     function detailsBase(){ return { score:0, level:1, maxCombo:0, comboTimeBonus:0, comboTimeAwards:0, hintUsed:0, shuffleUsed:0, freezeUsed:0, magicUsed:0, deadShuffles:0, deadShufflesInLevel:0, fastClear:false, lastSecond:false, completedAll:false, clearLevels:0, reviveUsed:0 }; }
     function updateBest(){ const key=SCRIPT_ID + '_linklinkBest_v1', old=safeObject(loadJSON(key,{})); saveJSON(key,{ score:Math.max(Number(old.score||0),st.totalScore||0), level:Math.max(Number(old.level||0),st.level||1), maxCombo:Math.max(Number(old.maxCombo||0),st.maxCombo||0) }); }
@@ -11731,6 +12160,7 @@ function showGameRecords(game, page) {
       let best=null, bestAdj=Infinity;
       for(let tries=0;tries<120;tries++){ const b=placePaired(lv.rows,lv.cols,lv.tiles,lv.icons,stones), legal=countLegalPairs(b).length, adj=adjacentSameScore(b,lv.rows,lv.cols); if(legal>=3&&adj<bestAdj){ best=b; bestAdj=adj; if(adj<=1) break; } if(!best&&legal>0) best=b; }
       st.board=best || placePaired(lv.rows,lv.cols,lv.tiles,lv.icons,stones);
+      if(noTimeLimit) stopLinkTimer();
       speak('linklink','start'); if(lv.mode==='randomFixed'||lv.mode==='switch5') showToast('本关规则：' + MODE_TEXT[st.mode]); draw(); setScore('linklink', st.totalScore); lastTick=Date.now(); save(true);
     }
     function randomMode(except){ const arr=MODES.filter(x=>x!==except); return arr[Math.floor(Math.random()*arr.length)]; }
@@ -11749,8 +12179,10 @@ function showGameRecords(game, page) {
     }
     st=state ? Object.assign(newState(), state, { selected:null }) : newState();
     if(noTimeLimit) st.timeLeft = st.initialTime = Infinity;
-    st.reviveLeft = Math.max(0, Math.min(5, Number(st.reviveLeft == null ? 5 : st.reviveLeft))); if(!st.details) st.details=detailsBase(); if(!st.tools) st.tools={hint:2,shuffle:1,freeze:noTimeLimit?0:1,magic:noTimeLimit?0:(st.level>=5?1:0)}; if(noTimeLimit){ st.tools.freeze=0; st.tools.magic=0; } if(!st.used) st.used={hint:0,shuffle:0,freeze:0,magic:0}; if(state && st.board && st.board.length){ st.rows=st.rows||st.board.length; st.cols=st.cols||(st.board[0]||[]).length; st.level=Math.max(1,Number(st.level||1)); const lv=LEVELS[levelIndex(st.level)]; st.target=st.target||lv.target||Math.floor(lv.tiles/2)*100; st.initialTime=noTimeLimit?Infinity:(st.initialTime||lv.time); st.mode=st.mode||lv.mode||'none'; draw(); setScore('linklink', st.totalScore||0); } else startLevel(1); timer=setInterval(tick,noTimeLimit?500:250); linkLinkTimer=timer; save(true);
-    function tick(){ if(currentGame!=='linklink'||over){ clearInterval(timer); if(linkLinkTimer===timer) linkLinkTimer=null; return; } const now=Date.now(), dt=Math.min(.35,(now-lastTick)/1000); lastTick=now; if(gamePaused||busy) return; if(frozenLeft>0){ frozenLeft=Math.max(0,frozenLeft-dt); drawTools(); return; } if(!noTimeLimit){ st.timeLeft=Math.max(0,st.timeLeft-dt); if(st.timeLeft<=30&&!warned30){ warned30=true; speak('linklink','time_30'); } } if(st.lastSuccessAt){ const idle=(now-st.lastSuccessAt)/1000; if(idle>=8&&!idle8){ idle8=true; speak('linklink','random'); } if(idle>=15&&!idle15){ idle15=true; const h=qs('[data-tool="hint"]',box); h&&h.classList.add('hint'); setTimeout(()=>h&&h.classList.remove('hint'),900); } }
+    st.reviveLeft = Math.max(0, Math.min(5, Number(st.reviveLeft == null ? 5 : st.reviveLeft))); if(!st.details) st.details=detailsBase(); if(!st.tools) st.tools={hint:2,shuffle:1,freeze:noTimeLimit?0:1,magic:noTimeLimit?0:(st.level>=5?1:0)}; if(noTimeLimit){ st.tools.freeze=0; st.tools.magic=0; } if(!st.used) st.used={hint:0,shuffle:0,freeze:0,magic:0}; if(state && st.board && st.board.length){ st.rows=st.rows||st.board.length; st.cols=st.cols||(st.board[0]||[]).length; st.level=Math.max(1,Number(st.level||1)); const lv=LEVELS[levelIndex(st.level)]; st.target=st.target||lv.target||Math.floor(lv.tiles/2)*100; st.initialTime=noTimeLimit?Infinity:(st.initialTime||lv.time); st.mode=st.mode||lv.mode||'none'; draw(); setScore('linklink', st.totalScore||0); } else startLevel(1); startLinkTimer(); save.setLifecycle?.({ pause:stopLinkTimer, resume:startLinkTimer }); save(true);
+    function startLinkTimer(){ if(timer||over||gamePaused||(noTimeLimit&&!st?.lastSuccessAt)) return; lastTick=Date.now(); timer=setInterval(tick,noTimeLimit?1000:250); linkLinkTimer=timer; }
+    function stopLinkTimer(){ if(timer) clearInterval(timer); if(linkLinkTimer===timer) linkLinkTimer=null; timer=null; }
+    function tick(){ if(currentGame!=='linklink'||over){ stopLinkTimer(); return; } const now=Date.now(), dt=Math.min(.35,(now-lastTick)/1000); lastTick=now; if(gamePaused||busy) return; if(frozenLeft>0){ frozenLeft=Math.max(0,frozenLeft-dt); drawTools(); return; } if(!noTimeLimit){ st.timeLeft=Math.max(0,st.timeLeft-dt); if(st.timeLeft<=30&&!warned30){ warned30=true; speak('linklink','time_30'); } } if(st.lastSuccessAt){ const idle=(now-st.lastSuccessAt)/1000; if(idle>=8&&!idle8){ idle8=true; speak('linklink','random'); } if(idle>=15&&!idle15){ idle15=true; const h=qs('[data-tool="hint"]',box); h&&h.classList.add('hint'); setTimeout(()=>h&&h.classList.remove('hint'),900); if(noTimeLimit) stopLinkTimer(); } }
       if(!noTimeLimit){ drawTop(); save(); if(st.timeLeft<=0 && tilesLeft()>0) fail(); } }
     function inRange(r,c){ return r>=-1&&r<=st.rows&&c>=-1&&c<=st.cols; }
     function passable(r,c,b,a,z){ if(r===a.r&&c===a.c) return true; if(r===z.r&&c===z.c) return true; if(r<0||r>=st.rows||c<0||c>=st.cols) return true; return !b[r][c]; }
@@ -11764,7 +12196,7 @@ function showGameRecords(game, page) {
     function pathStats(path){ let turns=Math.max(0,path.length-2), len=0, outside=false; for(let i=0;i<path.length-1;i++){ len+=Math.abs(path[i].r-path[i+1].r)+Math.abs(path[i].c-path[i+1].c); } path.forEach(p=>{ if(p.r<0||p.r>=st.rows||p.c<0||p.c>=st.cols) outside=true; }); return {turns,len,outside,between:Math.max(0,len-1)}; }
     async function clickTile(r,c){ if((busy&&pendingRemovals<=0)||over||gamePaused) return; const v=st.board[r]?.[c]; if(!v||v==='#') return; const cur={r,c}; if(selected&&selected.r===r&&selected.c===c){ selected=null; draw(); return; } if(!selected){ selected=cur; draw(); return; } if(st.board[selected.r][selected.c]!==v){ selected=cur; draw(); return; } const path=findPath(selected,cur); if(!path){ markBad(selected,cur); speakMaybe('linklink','wrong',.35); selected=cur; draw(); return; } await removePair(selected,cur,path,false); }
     async function removePair(a,b,path,magic){ if(busy||over) return; const av=st.board[a.r]?.[a.c], bv=st.board[b.r]?.[b.c]; if(!av||!bv||av==='#'||bv==='#') return; hintPair=null; selected=null; linePath=path; const activePath=path; lineKind=magic?'magic':''; draw(); await delay(110); if(st.board[a.r]?.[a.c]!==av||st.board[b.r]?.[b.c]!==bv) return; fadingTiles.set(a.r+','+a.c,av); fadingTiles.set(b.r+','+b.c,bv); st.board[a.r][a.c]=null; st.board[b.r][b.c]=null; pendingRemovals++; const now=Date.now(), ps=pathStats(path); let gain=100; if(!magic){ gain += ps.turns===0?30:(ps.turns===1?20:10); if(ps.outside) gain+=10; gain += Math.min(20, ps.between*2); if(st.lastSuccessAt){ const gap=(now-st.lastSuccessAt)/1000; if(gap<=1.2) gain+=50; else if(gap<=2.5) gain+=25; st.combo = gap<=3 ? st.combo+1 : 1; } else st.combo=1; gain += Math.min(100, Math.max(0, st.combo-1)*10); addComboTimeBonus(st.combo); } else st.combo=Math.max(0,st.combo||0);
-      st.maxCombo=Math.max(st.maxCombo,st.combo||0); st.details.maxCombo=Math.max(st.details.maxCombo||0,st.maxCombo); st.levelScore+=gain; st.totalScore+=gain; st.pairsCleared++; if(!magic) st.lastSuccessAt=now; idle8=idle15=false; if(linePath===activePath) linePath=null; if(!magic){ if(ps.turns===0) speakMaybe('linklink','straight',.25); if(ps.turns===2) speakMaybe('linklink','two_turn',.35); if(ps.outside) speakMaybe('linklink','outside',.5); if(st.combo===5) speak('linklink','combo_5'); if(st.combo===10) speak('linklink','combo_10'); if(st.combo===20) speak('linklink','combo_20'); showCombo(st.combo); }
+      st.maxCombo=Math.max(st.maxCombo,st.combo||0); st.details.maxCombo=Math.max(st.details.maxCombo||0,st.maxCombo); st.levelScore+=gain; st.totalScore+=gain; st.pairsCleared++; if(!magic) st.lastSuccessAt=now; idle8=idle15=false; if(noTimeLimit) startLinkTimer(); if(linePath===activePath) linePath=null; if(!magic){ if(ps.turns===0) speakMaybe('linklink','straight',.25); if(ps.turns===2) speakMaybe('linklink','two_turn',.35); if(ps.outside) speakMaybe('linklink','outside',.5); if(st.combo===5) speak('linklink','combo_5'); if(st.combo===10) speak('linklink','combo_10'); if(st.combo===20) speak('linklink','combo_20'); showCombo(st.combo); }
       draw(); save(); setTimeout(()=>{ fadingTiles.delete(a.r+','+a.c); fadingTiles.delete(b.r+','+b.c); pendingRemovals=Math.max(0,pendingRemovals-1); draw(); if(pendingRemovals===0) settleAfterRemovals(); },220); }
     async function settleAfterRemovals(){ if(busy||over||pendingRemovals>0) return; const lv=LEVELS[levelIndex()], willMove=lv.mode!=='none'; if(willMove){ selected=null; await delay(20); applyAfterMove(); draw(); await delay(55); } await ensurePlayable(); if(tilesLeft()===0) await levelClear(); draw(); save(); }
     function speakMaybe(g,e,p){ if(Math.random()<p) speak(g,e); }
@@ -11805,7 +12237,7 @@ function showGameRecords(game, page) {
     function markBad(a,b){ draw(); [a,b].forEach(p=>{ const el=qs('.wb-link-tile[data-r="'+p.r+'"][data-c="'+p.c+'"]',box); if(el){ el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),200); } }); }
     function drawTop(){ qs('#ll-level',box).textContent='第 ' + st.level + ' 关'; qs('#ll-progress-text',box).textContent='本关 ' + st.levelScore + ' / ' + st.target; qs('#ll-total',box).textContent=String(st.totalScore).replace(/\B(?=(\d{3})+(?!\d))/g, ','); const fill=qs('#ll-fill',box); fill.style.width=Math.min(100,st.levelScore/st.target*100)+'%'; fill.classList.toggle('done',st.levelScore>=st.target); const t=qs('#ll-time',box), left=Math.ceil(st.timeLeft), bonusActive=Date.now()<comboBonusFlashUntil; if(noTimeLimit){ t.textContent='∞ 不限时'; t.className='wb-link-time'; return; } t.textContent=(frozenLeft>0?'❄ ':'⏱ ') + String(Math.floor(left/60)).padStart(2,'0') + ':' + String(left%60).padStart(2,'0') + (bonusActive&&comboBonusFlash?(' +' + comboBonusFlash + '秒'):''); t.className='wb-link-time ' + (bonusActive?'bonus ':'' ) + (frozenLeft>0?'freeze':left<=10?'danger':left<=30?'warn':''); }
     function drawTools(){ ['hint','shuffle','freeze','magic'].forEach(k=>{ const el=qs('#ll-'+k+'-left',box); if(el) el.textContent=k==='freeze'&&frozenLeft>0?Math.ceil(frozenLeft):st.tools[k]; const btn=qs('[data-tool="'+k+'"]',box); if(btn) btn.disabled=(st.tools[k]||0)<=0||(k==='freeze'&&frozenLeft>0); }); }
-    function draw(){ drawTop(); drawTools(); const rule=qs('#ll-rule',box), lv=LEVELS[levelIndex()]; if(rule) rule.textContent='本关规则：' + (lv.mode==='none'?'完全静止':MODE_TEXT[st.mode]||lv.name); const board=qs('#ll-board',box); board.style.setProperty('--ll-cols',st.cols); board.style.setProperty('--ll-rows',st.rows); board.style.setProperty('--ll-ratio',st.cols/st.rows); let html=''; for(let r=0;r<st.rows;r++) for(let c=0;c<st.cols;c++){ const key=r+','+c, fading=fadingTiles.get(key), v=st.board[r][c] || fading, sel=!fading&&selected&&selected.r===r&&selected.c===c, hp=!fading&&hintPair&&(hintPair.a.r===r&&hintPair.a.c===c||hintPair.b.r===r&&hintPair.b.c===c); html += '<button class="wb-link-tile '+(!v?'empty':v==='#'?'stone':fading?'gone':sel?'sel':hp?'hint':'')+'" data-r="'+r+'" data-c="'+c+'">'+(v&&v!=='#'?v:'')+'</button>'; } board.innerHTML=html; qsa('.wb-link-tile',board).forEach(el=>{ const r=+el.dataset.r,c=+el.dataset.c; el.onpointerdown=e=>{ e.preventDefault(); clickTile(r,c); }; el.onclick=e=>{ if(getHostWindow().PointerEvent) return; e.preventDefault(); clickTile(r,c); }; }); renderLinkLine(board); }
+    function draw(){ drawTop(); drawTools(); const rule=qs('#ll-rule',box), lv=LEVELS[levelIndex()]; if(rule) rule.textContent='本关规则：' + (lv.mode==='none'?'完全静止':MODE_TEXT[st.mode]||lv.name); linkBoard.style.setProperty('--ll-cols',st.cols); linkBoard.style.setProperty('--ll-rows',st.rows); linkBoard.style.setProperty('--ll-ratio',st.cols/st.rows); let html=''; for(let r=0;r<st.rows;r++) for(let c=0;c<st.cols;c++){ const key=r+','+c, fading=fadingTiles.get(key), v=st.board[r][c] || fading, sel=!fading&&selected&&selected.r===r&&selected.c===c, hp=!fading&&hintPair&&(hintPair.a.r===r&&hintPair.a.c===c||hintPair.b.r===r&&hintPair.b.c===c); html += '<button class="wb-link-tile '+(!v?'empty':v==='#'?'stone':fading?'gone':sel?'sel':hp?'hint':'')+'" data-r="'+r+'" data-c="'+c+'">'+(v&&v!=='#'?v:'')+'</button>'; } patchElementHTML(linkBoard, html); renderLinkLine(linkBoard); }
     function pointFor(board, p){
       const br=board.getBoundingClientRect();
       const clampR=Math.max(0,Math.min(st.rows-1,p.r)), clampC=Math.max(0,Math.min(st.cols-1,p.c));
@@ -11849,12 +12281,42 @@ function showGameRecords(game, page) {
     }
     function initial(){ let blocks=[], ones=0; for(let r=6;r<10;r++){ const bs=rowBlocks(r,{needOne:ones<2}); bs.forEach(b=>{ if(b.len===1) ones++; blocks.push(b); }); } return { blocks, score:0, moves:0, combo:0, tools:{thunder:3,stardust:3,hammer:3}, noOneRows:0, fourRows:0, details:detailBase(), seen:{}, over:false }; }
     st=state&&Array.isArray(state.blocks)?Object.assign(initial(),state):initial(); st.tools=Object.assign({thunder:3,stardust:3,hammer:3},st.tools||{}); st.details=Object.assign(detailBase(),st.details||{}); st.seen=st.seen||{}; normalizeStartBoard();
-    let busy=false, over=false, selectedTool='', drag=null;
+    let busy=false, over=false, selectedTool='', drag=null, turkeyCell=0;
+    let turkeyPushFrame=0, turkeyPushTimer=0, turkeyPushResolve=null;
+    const turkeyView = getHostWindow();
     box.innerHTML='<div class="wb-turkey"><div class="wb-turkey-top"><div class="wb-turkey-stats"><div class="wb-turkey-stat"><small>分数</small><b id="tk-score">0</b></div><div class="wb-turkey-stat"><small>消除</small><b id="tk-lines">0</b></div><div class="wb-turkey-stat"><small>连击</small><b id="tk-combo">0</b></div><div class="wb-turkey-stat"><small>移动</small><b id="tk-moves">0</b></div></div><div class="wb-turkey-danger"><div class="wb-turkey-danger-bar" id="tk-danger"></div><span id="tk-danger-text">安全</span></div><div class="wb-turkey-hint" id="tk-hint"></div></div><div class="wb-turkey-board" id="tk-board"></div><div class="wb-turkey-tools"><button class="wb-turkey-tool" data-tool="thunder">☁ 云雷<span class="badge" id="tk-thunder">3</span></button><button class="wb-turkey-tool" data-tool="stardust">✦ 星尘<span class="badge" id="tk-stardust">3</span></button><button class="wb-turkey-tool" data-tool="hammer">🔨 粉碎<span class="badge" id="tk-hammer">3</span></button></div></div>';
+    const turkeyBoard = qs('#tk-board', box);
+    const turkeyBlockElements = new Map();
+    turkeyBoard.onclick = e => {
+      const el = e.target.closest('.wb-turkey-block');
+      if (!el || !turkeyBoard.contains(el)) return;
+      e.stopPropagation();
+      const block = st.blocks.find(x => x.id === el.dataset.id);
+      if (selectedTool && block) useTool(block);
+    };
+    turkeyBoard.onpointerdown = e => {
+      const el = e.target.closest('.wb-turkey-block');
+      if (el && turkeyBoard.contains(el)) startDrag(e, el);
+    };
     speak('turkey','start'); draw(); save(); setTimeout(draw,50);
     qsa('.wb-turkey-tool',box).forEach(b=>b.onclick=()=>chooseTool(b.dataset.tool));
     function save(){ if(!over) saveProgress('turkey', Object.assign({}, st, { selectedTool:'' })); }
-    save = registerLegacyGameSave('turkey', save);
+    save = registerLegacyGameSave('turkey', save, () => {
+      const doc=getHostDocument();
+      doc.removeEventListener('pointermove',moveDrag);
+      doc.removeEventListener('pointerup',endDrag);
+      turkeyView.removeEventListener('resize',onTurkeyResize);
+      finishTurkeyRowPush();
+      turkeyBlockElements.clear();
+    });
+    turkeyView.addEventListener('resize',onTurkeyResize,{passive:true});
+    function onTurkeyResize(){ finishTurkeyRowPush(); turkeyCell=0; if(save.isActive()) draw(); }
+    function turkeyCellSize(){
+      if(turkeyCell>0) return turkeyCell;
+      const width=turkeyBoard.getBoundingClientRect().width;
+      if(width>0) turkeyCell=width/W;
+      return turkeyCell||40;
+    }
     function grid(ignore){ const g=Array.from({length:H},()=>Array(W).fill(null)); st.blocks.forEach(b=>{ if(b.id===ignore) return; for(let c=b.col;c<b.col+b.len;c++) if(b.row>=0&&b.row<H&&c>=0&&c<W) g[b.row][c]=b; }); return g; }
     function highestRowFromBlocks(bs){ return bs.length?Math.min(...bs.map(b=>b.row)):H; }
     function highest(){ return highestRowFromBlocks(st.blocks); }
@@ -11869,32 +12331,81 @@ function showGameRecords(game, page) {
     async function animateThunder(blocks){
       if(!blocks || !blocks.length) return;
       blocks.forEach(b=>{ const el=qs('.wb-turkey-block[data-id="'+b.id+'"]'); if(el) el.classList.add('shatter'); });
-      const board=qs('#tk-board'), rect=board&&board.getBoundingClientRect(), cell=rect ? rect.width/W : 32;
+      const board=turkeyBoard, cell=turkeyCellSize();
       if(board) blocks.forEach(b=>{ for(let i=0;i<Math.max(4,b.len*3);i++){ const pt=getHostDocument().createElement('i'); pt.className='wb-turkey-particle'; pt.style.left=((b.col+Math.random()*b.len)*cell)+'px'; pt.style.top=((b.row+Math.random())*cell)+'px'; pt.style.setProperty('--c', b.color); pt.style.setProperty('--dx',(Math.random()*70-35)+'px'); pt.style.setProperty('--dy',(Math.random()*60-30)+'px'); board.appendChild(pt); setTimeout(()=>pt.remove(),460); } });
       await delay(340);
     }
     function gravity(){ let moved=false, any=true; while(any){ any=false; const bs=st.blocks.slice().sort((a,b)=>b.row-a.row); for(const b of bs){ if(b.row>=H-1) continue; const g=grid(b.id); let ok=true; for(let c=b.col;c<b.col+b.len;c++) if(g[b.row+1]?.[c]) ok=false; if(ok){ b.row++; moved=any=true; } } } return moved; }
     function fullRows(){ const g=grid(); const rows=[]; for(let r=0;r<H;r++) if(g[r].every(Boolean)) rows.push(r); return rows; }
     function occupiedRows(){ return new Set(st.blocks.map(b=>b.row).filter(r=>r>=0&&r<H)).size; }
-    async function settle(countCombo){ let chain=0,total=0,maxR=0; gravity(); draw(); await delay(120); let rows=fullRows(); while(rows.length){ chain++; maxR=Math.max(maxR,rows.length); flashRows(rows); await delay(180); particleRows(rows); const set=new Set(rows); st.blocks=st.blocks.flatMap(b=>{ if(set.has(b.row)) return []; const overlap=[]; for(let c=b.col;c<b.col+b.len;c++) overlap.push(c); return [b]; }); const base=100*rows.length*rows.length, mult=1+(chain-1)*.5; st.score+=Math.round(base*mult); st.details.clearedLines+=rows.length; total+=rows.length; st.details.maxChain=Math.max(st.details.maxChain,chain); st.details.maxClear=Math.max(st.details.maxClear,rows.length); if(!st.seen.first_clear){st.seen.first_clear=1;speak('turkey','first_clear');} if(rows.length===2)speak('turkey','clear_2'); if(rows.length>=3)speak('turkey','clear_3'); if(chain>=3)speak('turkey','chain_3'); drawClearing(rows); await delay(210); gravity(); draw(); await delay(120); rows=fullRows(); }
+    function turkeyIsActive(){ return turkeyBoard.isConnected&&currentGame==='turkey'&&save.isActive(); }
+    async function settle(countCombo){ let chain=0,total=0,maxR=0; gravity(); draw(); await delay(120); if(!turkeyIsActive()) return total; let rows=fullRows(); while(rows.length){ chain++; maxR=Math.max(maxR,rows.length); flashRows(rows); await delay(180); if(!turkeyIsActive()) return total; particleRows(rows); const set=new Set(rows), clearing=st.blocks.filter(b=>set.has(b.row)); drawClearing(clearing); st.blocks=st.blocks.filter(b=>!set.has(b.row)); const base=100*rows.length*rows.length, mult=1+(chain-1)*.5; st.score+=Math.round(base*mult); st.details.clearedLines+=rows.length; total+=rows.length; st.details.maxChain=Math.max(st.details.maxChain,chain); st.details.maxClear=Math.max(st.details.maxClear,rows.length); if(!st.seen.first_clear){st.seen.first_clear=1;speak('turkey','first_clear');} if(rows.length===2)speak('turkey','clear_2'); if(rows.length>=3)speak('turkey','clear_3'); if(chain>=3)speak('turkey','chain_3'); await delay(210); if(!turkeyIsActive()) return total; gravity(); draw(); await delay(120); if(!turkeyIsActive()) return total; rows=fullRows(); }
       if(countCombo){ if(total){ st.combo++; st.details.noClearStreak=0; if(st.combo>=2){ st.score+=50*(st.combo-1); showCombo(st.combo); } if(st.combo>=5) speak('turkey','combo_5'); } else { st.combo=0; st.details.noClearStreak++; if(st.details.noClearStreak>=8) speak('turkey','no_clear_8'); } st.details.maxCombo=Math.max(st.details.maxCombo,st.combo); }
       if(st.score>=1000&&!st.seen.s1000){st.seen.s1000=1;speak('turkey','score_1000');} if(st.score>=5000&&!st.seen.s5000){st.seen.s5000=1;speak('turkey','score_5000');} if(st.score>=3000&&!Object.keys(st.details.toolsUsed||{}).length) st.details.noTool3000=true; return total; }
     function addGeneratedRow(row){ const bs=rowBlocks(row); const hasOne=bs.some(b=>b.len===1), occ=bs.reduce((a,b)=>a+b.len,0); st.noOneRows=hasOne?0:(st.noOneRows||0)+1; st.fourRows=bs.some(b=>b.len===4)?((st.fourRows||0)+1):0; const bad=!hasOne&&occ>=6; st.details.badRows=(st.details.badRows||[]).concat(bad?1:0).slice(-5); if(st.details.badRows.length===5&&st.details.badRows.filter(Boolean).length>=4) st.details.badLuck=true; st.blocks.push(...bs); }
     function addRow(){ const topBefore=highest(); st.blocks.forEach(b=>b.row--); const needOne=st.noOneRows>=4 || highest()<=1; const bs=rowBlocks(9,{needOne}); const hasOne=bs.some(b=>b.len===1), occ=bs.reduce((a,b)=>a+b.len,0); st.noOneRows=hasOne?0:(st.noOneRows||0)+1; st.fourRows=bs.some(b=>b.len===4)?((st.fourRows||0)+1):0; const bad=!hasOne&&occ>=6; st.details.badRows=(st.details.badRows||[]).concat(bad?1:0).slice(-5); if(st.details.badRows.length===5&&st.details.badRows.filter(Boolean).length>=4) st.details.badLuck=true; st.blocks.push(...bs); if(st.blocks.some(b=>b.row<0)){ gameOver(); return; } if(topBefore===0&&!over) speak('turkey','top_row'); else if(highest()<=2&&!st.seen.top3){ st.seen.top3=1; speak('turkey','top_3'); } }
     function normalizeStartBoard(){ gravity(); if(!st.blocks.length) for(let r=7;r<10;r++) addGeneratedRow(r); }
     function refillToThreeRows(){ gravity(); const rows=Array.from(new Set(st.blocks.map(b=>b.row))).sort((a,b)=>a-b); const keepRows=rows.slice(-1); if(keepRows.length){ st.blocks=st.blocks.filter(b=>b.row===keepRows[0]).map(b=>Object.assign(b,{row:7})); for(let r=8;r<10;r++) addGeneratedRow(r); } else { st.blocks=[]; for(let r=7;r<10;r++) addGeneratedRow(r); } }
-    async function refillIfAlmostClear(){ if(over) return false; gravity(); if(occupiedRows()>1) return false; st.score+=300; st.details.amazingClear=true; st.details.clearAllCount=(st.details.clearAllCount||0)+1; showCombo('竟然全部消除 +300'); for(let attempt=0;attempt<3&&!over&&occupiedRows()<=1;attempt++){ refillToThreeRows(); draw(); await delay(360); await settle(false); gravity(); } if(!over&&occupiedRows()<=1){ refillToThreeRows(); draw(); } return true; }
-    async function afterMove(wasTop){ const cleared=await settle(true); if(wasTop&&cleared>=2&&!over) st.details.clutch=true; const refilled=cleared ? await refillIfAlmostClear() : false; if(!refilled){ addRow(); draw(); if(!over){ await delay(360); await settle(false); await refillIfAlmostClear(); } } draw(); save(); }
+    async function refillIfAlmostClear(){ if(over) return false; gravity(); if(occupiedRows()>1) return false; st.score+=300; st.details.amazingClear=true; st.details.clearAllCount=(st.details.clearAllCount||0)+1; showCombo('竟然全部消除 +300'); for(let attempt=0;attempt<3&&!over&&occupiedRows()<=1;attempt++){ refillToThreeRows(); draw(); await delay(360); if(!turkeyIsActive()) return true; await settle(false); if(!turkeyIsActive()) return true; gravity(); } if(!over&&occupiedRows()<=1){ refillToThreeRows(); draw(); } return true; }
+    async function afterMove(wasTop){ const cleared=await settle(true); if(!turkeyIsActive()) return; if(wasTop&&cleared>=2&&!over) st.details.clutch=true; const refilled=cleared ? await refillIfAlmostClear() : false; if(!turkeyIsActive()) return; if(!refilled){ addRow(); if(!over){ await animateTurkeyRowPush(); if(!turkeyIsActive()) return; await settle(false); if(!turkeyIsActive()) return; await refillIfAlmostClear(); if(!turkeyIsActive()) return; } } draw(); save(); }
     function gameOver(){ over=true; setScore('turkey',Math.max(scores().turkey||0,st.score)); speak('turkey','gameover'); draw(); setTimeout(()=>showGameOver('turkey','游戏结束','本局分数：'+st.score+'分，消除'+st.details.clearedLines+'行',{outcome:'score',score:st.score},{details:Object.assign({},st.details,{score:st.score,moves:st.moves})}),350); }
-    function draw(){ const board=qs('#tk-board'); if(!board) return; const rect=board.getBoundingClientRect(); const cell=(rect.width||320)/W; board.style.setProperty('--tk-cell',cell+'px'); const high=highest(), filled=high>=H?0:H-high, dangerClass=high<=0?'critical':high<=1?'danger':high<=3?'warn':'safe'; qs('#tk-danger').className='wb-turkey-danger-bar '+dangerClass; qs('#tk-danger').innerHTML=Array.from({length:10},(_,i)=>'<span class="'+(i<filled?'on':'')+'"></span>').join(''); qs('#tk-danger-text').textContent=dangerClass==='safe'?'安全':dangerClass==='warn'?'注意':'危险'; qs('#tk-hint').textContent=toolHint(); [['#tk-score',st.score],['#tk-lines',st.details.clearedLines],['#tk-combo',st.combo||0],['#tk-moves',st.moves||0],['#tk-thunder',st.tools.thunder],['#tk-stardust',st.tools.stardust],['#tk-hammer',st.tools.hammer]].forEach(([a,b])=>{const el=qs(a);if(el)el.textContent=b;}); qsa('.wb-turkey-tool',box).forEach(b=>{b.classList.toggle('active',selectedTool===b.dataset.tool); b.disabled=(st.tools[b.dataset.tool]||0)<=0;}); board.innerHTML=st.blocks.map(b=>'<div class="wb-turkey-block '+(selectedTool==='hammer'&&b.len<=1?'dim':'')+'" data-id="'+b.id+'" style="--c:'+b.color+';left:'+(b.col*cell+2)+'px;top:'+(b.row*cell+2)+'px;width:'+(b.len*cell-4)+'px"><span class="wb-turkey-face">'+faceFor(b)+'</span></div>').join(''); qsa('.wb-turkey-block',board).forEach(el=>{el.onclick=e=>{e.stopPropagation(); const b=st.blocks.find(x=>x.id===el.dataset.id); if(selectedTool&&b) useTool(b);}; el.onpointerdown=startDrag;}); }
-    function startDrag(e){ if(busy||over||gamePaused||selectedTool) return; const b=st.blocks.find(x=>x.id===e.currentTarget.dataset.id); if(!b) return; e.preventDefault(); const board=qs('#tk-board'), rect=board.getBoundingClientRect(), cell=rect.width/W; drag={id:b.id,startX:e.clientX,startCol:b.col,col:b.col,cell}; e.currentTarget.classList.add('sel'); getHostDocument().addEventListener('pointermove',moveDrag,{passive:false}); getHostDocument().addEventListener('pointerup',endDrag,{once:true}); }
+    function draw(){ const board=turkeyBoard; if(!board?.isConnected) return; const cell=turkeyCellSize(); board.style.setProperty('--tk-cell',cell+'px'); const high=highest(), filled=high>=H?0:H-high, dangerClass=high<=0?'critical':high<=1?'danger':high<=3?'warn':'safe'; qs('#tk-danger').className='wb-turkey-danger-bar '+dangerClass; patchElementHTML(qs('#tk-danger'), Array.from({length:10},(_,i)=>'<span class="'+(i<filled?'on':'')+'"></span>').join('')); qs('#tk-danger-text').textContent=dangerClass==='safe'?'安全':dangerClass==='warn'?'注意':'危险'; qs('#tk-hint').textContent=toolHint(); [['#tk-score',st.score],['#tk-lines',st.details.clearedLines],['#tk-combo',st.combo||0],['#tk-moves',st.moves||0],['#tk-thunder',st.tools.thunder],['#tk-stardust',st.tools.stardust],['#tk-hammer',st.tools.hammer]].forEach(([a,b])=>{const el=qs(a);if(el)el.textContent=b;}); qsa('.wb-turkey-tool',box).forEach(b=>{b.classList.toggle('active',selectedTool===b.dataset.tool); b.disabled=(st.tools[b.dataset.tool]||0)<=0;}); renderTurkeyBlocks(cell); }
+    function renderTurkeyBlocks(cell){
+      const live=new Set(st.blocks.map(block=>block.id));
+      turkeyBlockElements.forEach((element,id)=>{ if(!live.has(id)){ element.remove(); turkeyBlockElements.delete(id); } });
+      st.blocks.forEach(block=>{
+        let element=turkeyBlockElements.get(block.id);
+        if(!element){
+          element=getHostDocument().createElement('div');
+          element.className='wb-turkey-block';
+          element.dataset.id=block.id;
+          const face=getHostDocument().createElement('span');
+          face.className='wb-turkey-face';
+          element.appendChild(face);
+          turkeyBlockElements.set(block.id,element);
+          turkeyBoard.appendChild(element);
+        }
+        element.classList.toggle('dim',selectedTool==='hammer'&&block.len<=1);
+        if(!drag||drag.id!==block.id) element.classList.remove('sel');
+        element.style.setProperty('--c',block.color);
+        element.style.left=(block.col*cell+2)+'px';
+        element.style.top=(block.row*cell+2)+'px';
+        element.style.width=(block.len*cell-4)+'px';
+        const face=element.firstElementChild, text=faceFor(block);
+        if(face&&face.textContent!==text) face.textContent=text;
+      });
+    }
+    function finishTurkeyRowPush(){
+      if(turkeyPushFrame){ turkeyView.cancelAnimationFrame(turkeyPushFrame); turkeyPushFrame=0; }
+      if(turkeyPushTimer){ clearTimeout(turkeyPushTimer); turkeyPushTimer=0; }
+      qsa('.wb-turkey-block.row-push',turkeyBoard).forEach(el=>el.classList.remove('row-push','run'));
+      const resolve=turkeyPushResolve; turkeyPushResolve=null; if(resolve) resolve();
+    }
+    function animateTurkeyRowPush(){
+      finishTurkeyRowPush();
+      draw();
+      const blocks=qsa('.wb-turkey-block',turkeyBoard);
+      if(!blocks.length) return Promise.resolve();
+      blocks.forEach(el=>el.classList.add('row-push'));
+      void turkeyBoard.offsetHeight;
+      return new Promise(resolve=>{
+        turkeyPushResolve=resolve;
+        turkeyPushFrame=turkeyView.requestAnimationFrame(()=>{
+          turkeyPushFrame=0;
+          if(!turkeyIsActive()||over){ finishTurkeyRowPush(); return; }
+          blocks.forEach(el=>{ if(el.isConnected) el.classList.add('run'); });
+          turkeyPushTimer=setTimeout(finishTurkeyRowPush,240);
+        });
+      });
+    }
+    function startDrag(e, target){ if(busy||over||gamePaused||selectedTool) return; const b=st.blocks.find(x=>x.id===target.dataset.id); if(!b) return; e.preventDefault(); const cell=turkeyCellSize(); drag={id:b.id,startX:e.clientX,startCol:b.col,col:b.col,cell}; target.classList.add('sel'); getHostDocument().addEventListener('pointermove',moveDrag,{passive:false}); getHostDocument().addEventListener('pointerup',endDrag,{once:true}); }
     function moveDrag(e){ if(!drag) return; e.preventDefault(); const b=st.blocks.find(x=>x.id===drag.id); if(!b) return; let col=drag.startCol+Math.round((e.clientX-drag.startX)/drag.cell); while(col<drag.col&&canAt(b,col)===false) col++; while(col>drag.col&&canAt(b,col)===false) col--; col=Math.max(0,Math.min(W-b.len,col)); drag.col=canAt(b,col)?col:drag.col; preview(b,drag.col,!canAt(b,col)); }
-    async function endDrag(){ getHostDocument().removeEventListener('pointermove',moveDrag); const d=drag; drag=null; qsa('.wb-turkey-preview').forEach(x=>x.remove()); const b=st.blocks.find(x=>x.id===d?.id); if(!b){draw();return;} if(d.col===b.col||!canAt(b,d.col)){ draw(); return; } busy=true; const wasTop=highest()===0; b.col=d.col; st.moves++; st.details.moves=st.moves; draw(); await delay(130); await afterMove(wasTop); busy=false; }
-    function preview(b,col,bad){ const board=qs('#tk-board'); if(!board) return; qsa('.wb-turkey-preview',board).forEach(x=>x.remove()); const cell=(board.getBoundingClientRect().width||320)/W; const el=getHostDocument().createElement('div'); el.className='wb-turkey-preview'+(bad?' bad':''); el.style.left=(col*cell+2)+'px'; el.style.top=(b.row*cell+2)+'px'; el.style.width=(b.len*cell-4)+'px'; board.appendChild(el); }
+    async function endDrag(){ getHostDocument().removeEventListener('pointermove',moveDrag); const d=drag; drag=null; qsa('.wb-turkey-preview').forEach(x=>x.remove()); const b=st.blocks.find(x=>x.id===d?.id); if(!b){draw();return;} if(d.col===b.col||!canAt(b,d.col)){ draw(); return; } busy=true; const wasTop=highest()===0; b.col=d.col; st.moves++; st.details.moves=st.moves; draw(); await delay(130); if(turkeyIsActive()) await afterMove(wasTop); busy=false; }
+    function preview(b,col,bad){ const board=turkeyBoard; if(!board) return; qsa('.wb-turkey-preview',board).forEach(x=>x.remove()); const cell=turkeyCellSize(); const el=getHostDocument().createElement('div'); el.className='wb-turkey-preview'+(bad?' bad':''); el.style.left=(col*cell+2)+'px'; el.style.top=(b.row*cell+2)+'px'; el.style.width=(b.len*cell-4)+'px'; board.appendChild(el); }
     function flash(id){ const el=qs('.wb-turkey-block[data-id="'+id+'"]'); if(el){el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),180);} }
-    function flashRows(rows){ const board=qs('#tk-board'), cell=(board.getBoundingClientRect().width||320)/W; rows.forEach(r=>{const el=getHostDocument().createElement('div'); el.className='wb-turkey-rowflash'; el.style.top=(r*cell)+'px'; board.appendChild(el); setTimeout(()=>el.remove(),220);}); }
-    function particleRows(rows){ const board=qs('#tk-board'), cell=(board.getBoundingClientRect().width||320)/W; rows.forEach(r=>{for(let i=0;i<10;i++){const el=getHostDocument().createElement('i'); el.className='wb-turkey-particle'; el.style.left=(Math.random()*W*cell)+'px'; el.style.top=(r*cell+Math.random()*cell)+'px'; el.style.setProperty('--c',COLORS[Math.floor(Math.random()*COLORS.length)]); el.style.setProperty('--dx',(Math.random()*60-30)+'px'); el.style.setProperty('--dy',(Math.random()*50-25)+'px'); board.appendChild(el); setTimeout(()=>el.remove(),450);}}); }
-    function drawClearing(rows){ const set=new Set(rows); qsa('.wb-turkey-block').forEach(el=>{const b=st.blocks.find(x=>x.id===el.dataset.id); if(b&&set.has(b.row)) el.classList.add('clear');}); }
+    function flashRows(rows){ const board=turkeyBoard, cell=turkeyCellSize(); rows.forEach(r=>{const el=getHostDocument().createElement('div'); el.className='wb-turkey-rowflash'; el.style.top=(r*cell)+'px'; board.appendChild(el); setTimeout(()=>el.remove(),220);}); }
+    function particleRows(rows){ const board=turkeyBoard, cell=turkeyCellSize(); rows.forEach(r=>{for(let i=0;i<10;i++){const el=getHostDocument().createElement('i'); el.className='wb-turkey-particle'; el.style.left=(Math.random()*W*cell)+'px'; el.style.top=(r*cell+Math.random()*cell)+'px'; el.style.setProperty('--c',COLORS[Math.floor(Math.random()*COLORS.length)]); el.style.setProperty('--dx',(Math.random()*60-30)+'px'); el.style.setProperty('--dy',(Math.random()*50-25)+'px'); board.appendChild(el); setTimeout(()=>el.remove(),450);}}); }
+    function drawClearing(blocks){ blocks.forEach(block=>turkeyBlockElements.get(block.id)?.classList.add('clear')); }
     function showCombo(n){ const board=qs('#tk-board'); if(!board) return; const el=getHostDocument().createElement('div'); el.className='wb-turkey-combo'; el.textContent=typeof n==='number' ? 'COMBO ×'+n : String(n); board.appendChild(el); setTimeout(()=>el.remove(),850); }
   }
 
@@ -11939,6 +12450,21 @@ function showGameRecords(game, page) {
     let selected = null, busy = false, over = false, drag = null, eliminateMode = false, hintMode = false;
     const undoStack = [];
     box.innerHTML = '<div class="wb-spider" id="wb-spider"><div class="wb-spider-top"><div class="wb-spider-stat"><small>分数</small><b id="sp-score">0</b></div><div class="wb-spider-stat"><small>完成</small><b id="sp-done-count">0副</b></div><div class="wb-spider-stat"><small>移动</small><b id="sp-moves">0</b></div><div class="wb-spider-stat"><small>最高列</small><b id="sp-height">0/30</b></div></div><div class="wb-spider-deckbar"><div class="wb-spider-dealinfo"><div class="wb-spider-countdown" id="sp-countdown">20 步后发牌</div><div class="wb-muted" id="sp-deal-hint"></div></div><div class="wb-spider-deckside"><div class="wb-spider-pilebox collect"><div class="wb-spider-collectpile empty" id="sp-collect-pile"></div></div><div class="wb-spider-pilebox"><div class="wb-spider-deckpile" aria-hidden="true"><span></span><span></span><span></span></div></div><button class="wb-spider-deck" id="sp-deck" type="button">发牌</button></div></div><div class="wb-spider-board" id="sp-board"></div><div class="wb-spider-tools"><button class="wb-spider-tool" id="sp-hint" type="button">提示</button><button class="wb-spider-tool" id="sp-undo" type="button">撤销</button><button class="wb-spider-tool" id="sp-eliminate" type="button">消除 <span class="left" id="sp-eliminate-left">5</span></button><button class="wb-spider-tool end" id="sp-end" type="button">结束</button></div><div class="wb-spider-done"><div class="wb-spider-done-head"><span id="sp-done-title">已完成牌组</span><span id="sp-done-total">共 0 副</span></div><div class="wb-spider-done-track" id="sp-done-track"></div></div></div>';
+    const hostDoc = getHostDocument();
+    const spiderRoot = qs('#wb-spider', box);
+    const boardElement = qs('#sp-board', box);
+    boardElement.innerHTML = Array.from({ length:10 }, (_, index) => '<div class="wb-spider-col" data-col="' + index + '"></div>').join('');
+    const columnElements = qsa('.wb-spider-col', boardElement);
+    const cardElements = new Map();
+    let collectSignature = '';
+    let completedSignature = '';
+    let resizeFrame = 0;
+    const ResizeObserverClass = getHostWindow().ResizeObserver || globalThis.ResizeObserver;
+    const resizeObserver = typeof ResizeObserverClass === 'function' ? new ResizeObserverClass(() => {
+      if (resizeFrame || busy || over || currentGame !== 'spider') return;
+      resizeFrame = getHostWindow().requestAnimationFrame(() => { resizeFrame = 0; draw(); });
+    }) : null;
+    resizeObserver?.observe(boardElement);
     speak('spider','start');
     draw(); save();
     setTimeout(()=>{ if(currentGame === 'spider') draw(); }, 60);
@@ -11947,13 +12473,34 @@ function showGameRecords(game, page) {
     qs('#sp-undo').onclick = () => undoMove();
     qs('#sp-eliminate').onclick = () => toggleEliminate();
     qs('#sp-end').onclick = () => requestEndSpiderGame();
-    qs('#sp-board').onclick = e => { if (e.target.id === 'sp-board') clearSelection(); };
-    getHostDocument().addEventListener('keydown', spiderKeydown);
+    boardElement.addEventListener('click', spiderBoardClick);
+    boardElement.addEventListener('pointerdown', spiderBoardPointerDown, { passive:false });
+    hostDoc.addEventListener('keydown', spiderKeydown);
     if (resumed && dealStepsLeft() === 0) setTimeout(resumeDueAutoDeal, 80);
     function spiderKeydown(e){ if(currentGame==='spider' && e.key === 'Escape') clearSelection(); }
     function save(){ if(!over) saveProgress('spider', Object.assign({}, st, { selected:null })); }
-    save = registerLegacyGameSave('spider', save);
-    function snapshot(){ return JSON.parse(JSON.stringify(Object.assign({}, st, { selected:null }))); }
+    save = registerLegacyGameSave('spider', save, () => {
+      resizeObserver?.disconnect();
+      if (resizeFrame) getHostWindow().cancelAnimationFrame(resizeFrame);
+      boardElement.removeEventListener('click', spiderBoardClick);
+      boardElement.removeEventListener('pointerdown', spiderBoardPointerDown);
+      hostDoc.removeEventListener('keydown', spiderKeydown);
+      hostDoc.removeEventListener('pointermove', moveDrag);
+      hostDoc.removeEventListener('pointerup', endDrag);
+      drag?.ghost?.remove();
+      drag = null;
+    });
+    function snapshot(){
+      return Object.assign({}, st, {
+        cols:st.cols.map(col => col.map(card => Object.assign({}, card))),
+        deck:st.deck.map(card => Object.assign({}, card)),
+        completed:st.completed.map(item => Object.assign({}, item)),
+        tools:Object.assign({}, st.tools),
+        details:Object.assign({}, st.details),
+        emptied:Object.assign({}, st.emptied),
+        selected:null,
+      });
+    }
     function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length > 80) undoStack.shift(); }
     function restoreState(next){ st = Object.assign(initial(), next || {}); st.cols = st.cols.map(col => (Array.isArray(col) ? col : []).map(c => Object.assign({}, c, { face:c.face !== false }))); st.deck = Array.isArray(st.deck) ? st.deck : makeBatch(); st.completed = Array.isArray(st.completed) ? st.completed : []; st.tools = Object.assign({ undo:1, eliminate:5 }, st.tools || {}); st.details = Object.assign({ mode:choice.id, hearts:0, spades:0, maxChain:0, deals:0, autoDeals:0, clutch:0, badDeals:0, badDealsTotal:0, emptyCols:0, maxEmptyCols:0, completed:0, moves:0, clearTable:false, undo:0, eliminate:0 }, st.details || {}); st.emptied = st.emptied || {}; st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)); }
     function undoMove(){ if(busy || over || gamePaused || !undoStack.length) return; restoreState(undoStack.pop()); selected=null; eliminateMode=false; hintMode=false; st.score=Math.max(0,Number(st.score||0)-2); st.details.undo=(st.details.undo||0)+1; speak('spider','undo'); showSpiderToast('已撤销，分数-2'); draw(); save(); }
@@ -11967,7 +12514,30 @@ function showGameRecords(game, page) {
     function canPlace(cards, to){ if(!cards || !cards.length) return false; if(st.cols[to].length + cards.length > MAX_COL) return false; const t = topCard(to); return !t || (t.face && t.rank === cards[0].rank + 1); }
     function legalTargets(cards, from){ return st.cols.map((_,i)=> i!==from && canPlace(cards, i)); }
     function isHelpfulMove(col, idx){ if(!isRun(col, idx)) return false; return legalTargets(st.cols[col].slice(idx), col).some(Boolean); }
-    function clearSelection(){ selected=null; draw(); }
+    function spiderBoardClick(e){
+      const card = e.target.closest?.('.wb-spider-card');
+      if(card && boardElement.contains(card)){
+        e.stopPropagation();
+        const col=+card.dataset.col, idx=+card.dataset.idx;
+        if(eliminateMode) selectEliminateRun(col,idx);
+        else if(selected && selected.col!==col) moveSelected(col);
+        else selectCard(col,idx);
+        return;
+      }
+      const column = e.target.closest?.('.wb-spider-col');
+      if(column && boardElement.contains(column)){
+        const col=+column.dataset.col;
+        if(eliminateMode) flashCol(col);
+        else if(selected) moveSelected(col);
+        return;
+      }
+      clearSelection();
+    }
+    function spiderBoardPointerDown(e){
+      const card = e.target.closest?.('.wb-spider-card');
+      if(card && boardElement.contains(card)) startDrag(e, card);
+    }
+    function clearSelection(){ if(!selected) return; selected=null; draw(); }
     function selectCard(col, idx){ if(busy || over || gamePaused) return; const arr=st.cols[col], card=arr[idx]; if(!card || !card.face) return; if(selected && selected.col===col && selected.idx===idx){ clearSelection(); return; } if(!isRun(col, idx)){ flashCard(col, idx); return; } hintMode=false; selected = { col, idx, cards: arr.slice(idx).map(c=>Object.assign({}, c)) }; draw(); }
     async function moveSelected(to){ if(!selected || busy || over || gamePaused) return; if(!canPlace(selected.cards, to)){ flashCol(to); return; } await doMove(selected.col, selected.idx, to); }
     async function doMove(from, idx, to){
@@ -11977,12 +12547,11 @@ function showGameRecords(game, page) {
       st.cols[to].push(...moving);
       selected = null;
       draw();
-      await delay(80);
+      await delay(45);
       st.moves++; st.details.moves = st.moves;
       st.score = Math.max(0, Number(st.score||0) - 1);
       st.stepsSinceDeal = Math.max(0, Number(st.stepsSinceDeal || 0)) + 1;
       await settle([from, to], true);
-      await settle([], false);
       if(canDealNow()) st.dealEmptyLock = false;
       await autoDealIfDue();
       checkOverflow();
@@ -12146,57 +12715,66 @@ function showGameRecords(game, page) {
       const targets=spiderDealColumns(st.deck.length, st.cols.length);
       if(!targets.length) return false;
       let forced=(st.details.badDeals || 0) >= 2 ? 2 : ((st.details.badDeals || 0) >= 1 ? 1 : 0);
+      const dealt=[];
       for(const i of targets){
         const c=drawDealCardForCol(i, forced>0);
         if(!c) break;
         if(forced>0) forced--;
-        await animateDealCard(i); st.cols[i].push(c); draw(); await delay(28);
+        st.cols[i].push(c);
+        dealt.push(i);
       }
-      const deckPile = qs('.wb-spider-deckpile');
-      if(deckPile){ deckPile.classList.add('dealt'); await delay(500); deckPile.classList.remove('dealt'); }
       st.details.deals=(st.details.deals||0)+1; st.stepsSinceDeal = 0; st.level = Math.max(1, Math.floor(st.completed.length / 4) + 1); st.dealEmptyLock=false; st.noStockNotice=false; resetEmptyRewardsAfterDeal(); speak('spider','deal');
       if(!hasAnyMove()){ st.details.badDeals=(st.details.badDeals||0)+1; st.details.badDealsTotal=(st.details.badDealsTotal||0)+1; if((st.details.badDeals||0)>=3) speak('spider','bad_deal'); } else st.details.badDeals=0;
-      draw(); await delay(280);
+      await animateDealCards(dealt);
+      draw();
+      const deckPile = qs('.wb-spider-deckpile');
+      if(deckPile){ deckPile.classList.add('dealt'); await delay(150); deckPile.classList.remove('dealt'); }
       return true;
     }
-    async function animateDealCard(i){
-      const deck = qs('.wb-spider-deckpile') || qs('#sp-deck'), board = qs('#sp-board');
-      if(!deck || !board) return;
+    async function animateDealCards(targets){
+      const deck = qs('.wb-spider-deckpile') || qs('#sp-deck');
+      if(!deck || !boardElement || !targets.length) return;
       const from = deck.getBoundingClientRect();
-      const cols = qsa('.wb-spider-col', board).map(x=>x.getBoundingClientRect());
-      const r = cols[i]; if(!r) return;
-      const fly = getHostDocument().createElement('div');
-      fly.className = 'wb-spider-fly';
-      fly.style.left = (from.left + from.width/2 - 13) + 'px';
-      fly.style.top = (from.top + from.height/2 - 18) + 'px';
-      fly.style.setProperty('--sp-fly-x', (r.left + r.width/2 - from.left - from.width/2) + 'px');
-      fly.style.setProperty('--sp-fly-y', (r.top + Math.min(18, r.height - 20) - from.top - from.height/2) + 'px');
-      getHostDocument().body.appendChild(fly);
-      setTimeout(()=>fly.remove(), 420);
-      await delay(120);
+      const rects = columnElements.map(column => column.getBoundingClientRect());
+      targets.forEach((column, order) => {
+        const r = rects[column]; if(!r) return;
+        const fly = hostDoc.createElement('div');
+        fly.className = 'wb-spider-fly';
+        fly.style.left = (from.left + from.width/2 - 13) + 'px';
+        fly.style.top = (from.top + from.height/2 - 18) + 'px';
+        fly.style.animationDelay = (order * 16) + 'ms';
+        fly.style.setProperty('--sp-fly-x', (r.left + r.width/2 - from.left - from.width/2) + 'px');
+        fly.style.setProperty('--sp-fly-y', (r.top + Math.min(18, r.height - 20) - from.top - from.height/2) + 'px');
+        hostDoc.body.appendChild(fly);
+        setTimeout(()=>fly.remove(), 380 + order * 16);
+      });
+      await delay(Math.min(260, 105 + targets.length * 16));
     }
     async function animateCollect(col, suit){
       const target = qs('#sp-collect-pile');
       if(!target) return;
       const to = target.getBoundingClientRect();
       const arr = st.cols[col] || [];
+      const flights=[];
       for(let idx=arr.length-1; idx>=Math.max(0, arr.length-13); idx--){
         const c = arr[idx];
         const el = qs('.wb-spider-card[data-col="'+col+'"][data-idx="'+idx+'"]');
         if(!c || !el) continue;
-        const from = el.getBoundingClientRect();
-        const fly = getHostDocument().createElement('div');
+        flights.push({ card:c, from:el.getBoundingClientRect() });
+      }
+      flights.forEach(({ card:c, from }, order) => {
+        const fly = hostDoc.createElement('div');
         fly.className = 'wb-spider-collect-fly' + (suit === 'H' ? ' red' : '');
         fly.innerHTML = faceInner(c);
         fly.style.left = from.left + 'px';
         fly.style.top = from.top + 'px';
+        fly.style.animationDelay = (order * 12) + 'ms';
         fly.style.setProperty('--sp-fly-x', (to.left + to.width/2 - from.left - 13) + 'px');
         fly.style.setProperty('--sp-fly-y', (to.top + to.height/2 - from.top - 18) + 'px');
-        getHostDocument().body.appendChild(fly);
-        setTimeout(()=>fly.remove(), 380);
-        await delay(38);
-      }
-      await delay(260);
+        hostDoc.body.appendChild(fly);
+        setTimeout(()=>fly.remove(), 380 + order * 12);
+      });
+      await delay(Math.min(420, 250 + flights.length * 12));
     }
     function selectEliminateRun(col, idx){
       if(busy || over || gamePaused || !eliminateMode || (st.tools.eliminate||0)<=0) return;
@@ -12244,17 +12822,59 @@ function showGameRecords(game, page) {
       for(let r=0;r<4;r++) for(let i=0;i<10;i++){ const c=st.deck.shift(); c.face = r===3; st.cols[i].push(c); }
       st.stepsSinceDeal = 0; st.noStockNotice=false; resetEmptyRewardsAfterDeal(); draw(); save();
     }
-    function cardHTML(c, col, idx, top, extra){
-      if(!c.face) return '<div class="wb-spider-card back '+(extra||'')+'" data-col="'+col+'" data-idx="'+idx+'" style="top:'+top+'px"></div>';
-      const red = c.suit === 'H';
-      return '<div class="wb-spider-card '+(red?'red ':'')+(extra||'')+'" data-col="'+col+'" data-idx="'+idx+'" style="top:'+top+'px">'+faceInner(c)+'</div>';
+    function updateSpiderCardElement(card, col, idx, top, extra){
+      let element = cardElements.get(card.id);
+      if(!element){
+        element = hostDoc.createElement('div');
+        cardElements.set(card.id, element);
+      }
+      const renderKey = card.face ? card.suit + ':' + card.rank : 'back';
+      if(element.dataset.renderKey !== renderKey){
+        element.dataset.renderKey = renderKey;
+        element.innerHTML = card.face ? faceInner(card) : '';
+      }
+      const classes = 'wb-spider-card ' + (!card.face ? 'back ' : (card.suit === 'H' ? 'red ' : '')) + (extra || '');
+      if(element.className !== classes.trim()) element.className = classes.trim();
+      const colText=String(col), idxText=String(idx), topText=top+'px';
+      const zText=String(extra.includes('selected') ? 80 : (extra.includes('hint-card') ? 70 : idx + 1));
+      if(element.dataset.cardId !== card.id) element.dataset.cardId = card.id;
+      if(element.dataset.col !== colText) element.dataset.col = colText;
+      if(element.dataset.idx !== idxText) element.dataset.idx = idxText;
+      if(element.style.top !== topText) element.style.top = topText;
+      if(element.style.zIndex !== zText) element.style.zIndex = zText;
+      const column = columnElements[col];
+      if(element.parentElement !== column) column.appendChild(element);
+      return element;
     }
-    function spacingForBoard(board){
-      const h = Math.max(120, board.clientHeight || 260);
-      const w = Math.max(260, board.clientWidth || 420);
-      const cardW = Math.min(44, Math.max(23, (w - 18) / 10));
+    function renderSpiderBoard(canDeal){
+      const legal = selected && !eliminateMode ? legalTargets(selected.cards, selected.col) : [];
+      const width = Math.max(260, boardElement.clientWidth || 420);
+      const availableHeight = Math.max(80, boardElement.clientHeight - 8);
+      const cardW = Math.min(44, Math.max(23, (width - 18) / 10));
       const cardH = cardW * 1.38;
-      return Math.max(3, Math.min(18, Math.floor((h - cardH - 10) / 29)));
+      const cardWidthText=cardW+'px';
+      if(spiderRoot.style.getPropertyValue('--sp-card-w') !== cardWidthText) spiderRoot.style.setProperty('--sp-card-w', cardWidthText);
+      const liveCards = new Set();
+      st.cols.forEach((col, index) => {
+        const column = columnElements[index];
+        const classes = 'wb-spider-col' + (legal[index]?' legal':'') + (st.dealEmptyLock&&!canDeal&&!col.length?' empty-warn':'') + (col.length>MAX_COL?' overflow':'');
+        if(column.className !== classes) column.className = classes;
+        const layout = spiderCardLayout(col, availableHeight, cardH);
+        const heightText=Math.max(80,layout.height)+'px';
+        if(column.style.height !== heightText) column.style.height=heightText;
+        col.forEach((card, cardIndex) => {
+          liveCards.add(card.id);
+          const extra = (selected && selected.col===index && cardIndex>=selected.idx ? 'selected ' : '')
+            + (eliminateMode && card.face && isRun(index,cardIndex) ? 'eliminate-choice ' : '')
+            + (hintMode && card.face && isHelpfulMove(index,cardIndex) ? 'hint-card' : '');
+          updateSpiderCardElement(card, index, cardIndex, layout.tops[cardIndex] || 0, extra);
+        });
+      });
+      for(const [id, element] of cardElements){
+        if(liveCards.has(id)) continue;
+        element.remove();
+        cardElements.delete(id);
+      }
     }
     function draw(){
       const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：' + st.score + '分';
@@ -12268,34 +12888,20 @@ function showGameRecords(game, page) {
       const hint=qs('#sp-deal-hint'); if(hint) hint.textContent = !canDeal ? '请先填满空列 · 底牌 '+st.deck.length+' 张' : (!hasStock ? '底牌 0 张 · 可继续发牌' : (partialDeal ? '底牌 '+st.deck.length+' 张 · 可直接发牌' : ('底牌 '+st.deck.length+' 张 · 已走 ' + Math.max(0, Number(st.stepsSinceDeal || 0)) + '/' + dealStepLimit() + ' 步')));
       const deck=qs('#sp-deck'); if(deck){ deck.className='wb-spider-deck' + (!canDeal ? ' blocked' : ''); deck.textContent = hasStock && leftSteps > 0 ? '提前发牌' : '发牌'; deck.disabled=!canDeal; }
       const deckPile=qs('.wb-spider-deckpile'); if(deckPile) deckPile.classList.toggle('empty', !hasStock);
-      const pile=qs('#sp-collect-pile'); if(pile){ const cap=Math.max(1, Math.floor(((pile.clientWidth || 36) + 7) / 16)); const shown=st.completed.slice(0, cap); pile.className='wb-spider-collectpile' + (!shown.length ? ' empty' : ''); pile.innerHTML = shown.length ? shown.map(d=>'<span class="wb-spider-collect-card '+(d.suit==='H'?'red':'')+'" title="第'+d.index+'副">'+faceInner({ rank:1, suit:d.suit })+'</span>').join('') : '<span class="wb-spider-collect-card">'+faceInner({ rank:1, suit:'S' })+'</span>'; }
+      const pile=qs('#sp-collect-pile'); if(pile){ const cap=Math.max(1, Math.floor(((pile.clientWidth || 36) + 7) / 16)); const shown=st.completed.slice(0, cap); const signature=shown.map(d=>d.suit+':'+d.index).join('|') || 'empty'; pile.className='wb-spider-collectpile' + (!shown.length ? ' empty' : ''); if(signature!==collectSignature){ collectSignature=signature; pile.innerHTML = shown.length ? shown.map(d=>'<span class="wb-spider-collect-card '+(d.suit==='H'?'red':'')+'" title="第'+d.index+'副">'+faceInner({ rank:1, suit:d.suit })+'</span>').join('') : '<span class="wb-spider-collect-card">'+faceInner({ rank:1, suit:'S' })+'</span>'; } }
       const hintBtn=qs('#sp-hint'); if(hintBtn) hintBtn.className='wb-spider-tool' + (hintMode ? ' hint-on' : '');
       const elim=qs('#sp-eliminate'); if(elim) elim.className='wb-spider-tool' + (eliminateMode ? ' active' : '');
       const elimLeft=qs('#sp-eliminate-left'); if(elimLeft) elimLeft.textContent=String(st.tools.eliminate || 0);
       [['#sp-score',st.score],['#sp-done-count',st.completed.length+'副'],['#sp-moves',st.moves||0],['#sp-height',maxH+'/30'],['#sp-done-total','共 '+st.completed.length+' 副']].forEach(([sel,val])=>{ const el=qs(sel); if(el) el.textContent=val; });
-      const board=qs('#sp-board'); if(board){
-        const legal = selected && !eliminateMode ? legalTargets(selected.cards, selected.col) : [];
-        const gap = spacingForBoard(board);
-        const cardW = Math.min(44, Math.max(23, ((board.clientWidth || 420) - 18) / 10));
-        qs('#wb-spider')?.style.setProperty('--sp-card-w', cardW + 'px');
-        const cardAreaH = (Math.max(maxH, 1) - 1) * gap + cardW * 1.38 + 4;
-        const colH = Math.max(80, Math.min(Math.max(80, board.clientHeight - 8), cardAreaH));
-        board.innerHTML = st.cols.map((col,i)=>{
-          let cls='wb-spider-col' + (legal[i]?' legal':'') + (st.dealEmptyLock&&!canDeal&&!col.length?' empty-warn':'') + (col.length>MAX_COL?' overflow':'');
-          const cards=col.map((c,idx)=> cardHTML(c,i,idx,idx*gap, (selected && selected.col===i && idx>=selected.idx ? 'selected ' : '') + (eliminateMode && c.face && isRun(i,idx) ? 'eliminate-choice ' : '') + (hintMode && c.face && isHelpfulMove(i,idx) ? 'hint-card' : ''))).join('');
-          return '<div class="'+cls+'" data-col="'+i+'" style="height:'+colH+'px">'+cards+'</div>';
-        }).join('');
-        qsa('.wb-spider-card', board).forEach(el=>{ el.onclick=e=>{ e.stopPropagation(); const col=+el.dataset.col, idx=+el.dataset.idx; if(eliminateMode) selectEliminateRun(col,idx); else if(selected && selected.col!==col) moveSelected(col); else selectCard(col,idx); }; el.onpointerdown=startDrag; });
-        qsa('.wb-spider-col', board).forEach(el=>{ el.onclick=e=>{ if(e.target!==el) return; const col=+el.dataset.col; if(eliminateMode) flashCol(col); else if(selected) moveSelected(col); }; });
-      }
-      const track=qs('#sp-done-track'); if(track){ track.innerHTML = st.completed.length ? st.completed.map(d=>'<button class="wb-spider-mini '+(d.suit==='H'?'red':'')+'" data-i="'+d.index+'" title="第 '+d.index+' 副\n花色：'+suitText(d.suit)+'\n等级：'+d.level+'\n分数：'+d.score+'"><span class="wb-spider-mini-main"><span>'+suitText(d.suit)+'</span><span>K→A</span><span>第'+d.index+'副</span></span></button>').join('') : '<div class="wb-spider-empty-done">还没有完成牌组</div>'; qsa('.wb-spider-mini', track).forEach(b=>b.onclick=()=>toast(b.title.replace(/\n/g,'；'))); }
+      renderSpiderBoard(canDeal);
+      const track=qs('#sp-done-track'); if(track){ const signature=st.completed.map(d=>d.suit+':'+d.index+':'+d.level+':'+d.score).join('|') || 'empty'; if(signature!==completedSignature){ completedSignature=signature; track.innerHTML = st.completed.length ? st.completed.map(d=>'<button class="wb-spider-mini '+(d.suit==='H'?'red':'')+'" data-i="'+d.index+'" title="第 '+d.index+' 副\n花色：'+suitText(d.suit)+'\n等级：'+d.level+'\n分数：'+d.score+'"><span class="wb-spider-mini-main"><span>'+suitText(d.suit)+'</span><span>K→A</span><span>第'+d.index+'副</span></span></button>').join('') : '<div class="wb-spider-empty-done">还没有完成牌组</div>'; qsa('.wb-spider-mini', track).forEach(b=>b.onclick=()=>toast(b.title.replace(/\n/g,'；'))); } }
     }
-    function flashCard(col,idx){ draw(); const el=qs('.wb-spider-card[data-col="'+col+'"][data-idx="'+idx+'"]'); if(el){ el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),240); } }
+    function flashCard(col,idx){ const el=qs('.wb-spider-card[data-col="'+col+'"][data-idx="'+idx+'"]'); if(el){ el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),240); } }
     function flashCol(col){ const el=qs('.wb-spider-col[data-col="'+col+'"]'); if(el){ el.classList.add('illegal'); setTimeout(()=>el.classList.remove('illegal'),240); } }
     function showSpiderToast(text){ const root=qs('#wb-spider'); if(!root) return; const el=getHostDocument().createElement('div'); el.className='wb-spider-toast'; el.textContent=text; root.appendChild(el); setTimeout(()=>el.remove(),1500); }
-    function startDrag(e){
+    function startDrag(e, cardElement){
       if(busy || over || gamePaused || eliminateMode || e.button===2 || e.pointerType==='touch') return;
-      const el=e.currentTarget, col=+el.dataset.col, idx=+el.dataset.idx;
+      const el=cardElement, col=+el.dataset.col, idx=+el.dataset.idx;
       if(!isRun(col,idx)) return;
       e.preventDefault(); selectCard(col,idx);
       const cards=st.cols[col].slice(idx); const ghost=getHostDocument().createElement('div'); ghost.className='wb-spider-stack ghost';
@@ -12303,8 +12909,8 @@ function showGameRecords(game, page) {
       getHostDocument().body.appendChild(ghost); drag={ from:col, idx, ghost, cards, dx:0, dy:0 };
       moveDrag(e); getHostDocument().addEventListener('pointermove', moveDrag, { passive:false }); getHostDocument().addEventListener('pointerup', endDrag, { once:true });
     }
-    function moveDrag(e){ if(!drag) return; e.preventDefault(); drag.ghost.style.left=(e.clientX - 24)+'px'; drag.ghost.style.top=(e.clientY - 20)+'px'; const target=colFromPoint(e.clientX,e.clientY); qsa('.wb-spider-col').forEach(x=>x.classList.remove('legal','illegal')); if(target>=0 && target!==drag.from){ const el=qs('.wb-spider-col[data-col="'+target+'"]'); if(el) el.classList.add(canPlace(drag.cards,target)?'legal':'illegal'); } }
-    async function endDrag(e){ getHostDocument().removeEventListener('pointermove', moveDrag); if(!drag) return; const d=drag; d.ghost.remove(); drag=null; const target=colFromPoint(e.clientX,e.clientY); qsa('.wb-spider-col').forEach(x=>x.classList.remove('legal','illegal')); if(target>=0 && target!==d.from && canPlace(d.cards,target)) await doMove(d.from,d.idx,target); else draw(); }
+    function moveDrag(e){ if(!drag) return; e.preventDefault(); drag.ghost.style.left=(e.clientX - 24)+'px'; drag.ghost.style.top=(e.clientY - 20)+'px'; const target=colFromPoint(e.clientX,e.clientY); columnElements.forEach(x=>x.classList.remove('legal','illegal')); if(target>=0 && target!==drag.from){ const el=columnElements[target]; if(el) el.classList.add(canPlace(drag.cards,target)?'legal':'illegal'); } }
+    async function endDrag(e){ hostDoc.removeEventListener('pointermove', moveDrag); if(!drag) return; const d=drag; d.ghost.remove(); drag=null; const target=colFromPoint(e.clientX,e.clientY); columnElements.forEach(x=>x.classList.remove('legal','illegal')); if(target>=0 && target!==d.from && canPlace(d.cards,target)) await doMove(d.from,d.idx,target); else draw(); }
     function colFromPoint(x,y){ const el=getHostDocument().elementFromPoint(x,y); const col=el && el.closest ? el.closest('.wb-spider-col') : null; return col ? +col.dataset.col : -1; }
   }
 
@@ -12335,7 +12941,8 @@ function showGameRecords(game, page) {
     let pieces = Array.isArray(state?.pieces) ? state.pieces.map(p => p && { shape:p.shape, color:p.color, used:!!p.used }) : [];
     let details = Object.assign({ score, clearedLines:0, placements:0, maxClear:0, regenUsed:0, hammerUsed:0, lowSpaceCount:0, toolExhaustLose:false, lastToolPlacement:-1 }, state?.details || {});
     let seen = Object.assign({ scoreMilestone:Math.floor(score / 1000), lowTick:'' }, state?.seen || {});
-    let hammerMode = false, dragging = null, hover = null, W = 360, H = 520, board = { x:20, y:20, size:320, cell:32 }, slots = [], over = false;
+    let hammerMode = false, dragging = null, hover = null, W = 360, H = 520, board = { x:20, y:20, size:320, cell:32 }, slots = [], over = false, pointerFrame = 0;
+    const game1010View = getHostWindow();
     const rand = n => Math.floor(Math.random() * n);
     const normalizePiece = p => p && Array.isArray(p.shape) ? p : makePiece();
     function makePiece() { return { shape:shapes[rand(shapes.length)].map(x => x.slice()), color:palette[rand(palette.length)], used:false }; }
@@ -12357,7 +12964,11 @@ function showGameRecords(game, page) {
     }
     function blocked() { return pieces.filter(p => p && !p.used).some(p => !pieceFits(p)); }
     function save() { saveProgress('game1010', { grid, pieces, score, regen, hammers, details, seen }); }
-    save = registerLegacyGameSave('game1010', save, () => getHostWindow().removeEventListener('resize', onResize));
+    save = registerLegacyGameSave('game1010', save, () => {
+      game1010View.removeEventListener('resize', onResize);
+      if (pointerFrame) game1010View.cancelAnimationFrame(pointerFrame);
+      pointerFrame = 0;
+    });
     function addScore(add) {
       if (!add) return;
       score += add; details.score = score; setScore('game1010', score);
@@ -12515,6 +13126,18 @@ function showGameRecords(game, page) {
       showGameOver('game1010', '游戏结束', '本局分数：' + score + '分，消除' + (details.clearedLines || 0) + '行列，放置' + (details.placements || 0) + '块', null, Object.assign({ score }, details, { details }));
     }
     function pointer(e) { const r=c.getBoundingClientRect(), t=e.touches&&e.touches[0] || e.changedTouches&&e.changedTouches[0] || e; return { x:t.clientX-r.left, y:t.clientY-r.top }; }
+    function schedulePointerDraw() {
+      if (pointerFrame) return;
+      pointerFrame = game1010View.requestAnimationFrame(() => {
+        pointerFrame = 0;
+        if (save.isActive() && dragging) draw();
+      });
+    }
+    function flushPointerDraw() {
+      if (!pointerFrame) return;
+      game1010View.cancelAnimationFrame(pointerFrame);
+      pointerFrame = 0;
+    }
     function boardCell(x, y) { return { c:Math.floor((x - board.x) / board.cell), r:Math.floor((y - board.y) / board.cell) }; }
     function hammerAt(x, y) {
       const pos = boardCell(x, y);
@@ -12539,15 +13162,16 @@ function showGameRecords(game, page) {
       const p = pointer(e); dragging.x = p.x; dragging.y = p.y;
       const topLeftX = p.x - dragging.ox - dragging.unit * 1.25, topLeftY = p.y - dragging.oy + dragging.unit * .8;
       hover = boardCell(topLeftX + dragging.unit * .45, topLeftY + dragging.unit * .45);
-      e.preventDefault(); draw();
+      e.preventDefault(); schedulePointerDraw();
     });
     c.addEventListener('pointerup', e => {
       if (!dragging) return;
+      flushPointerDraw();
       const d = dragging, h = hover; dragging = null; hover = null;
       if (h && placePiece(d.index, h.r, h.c)) { e.preventDefault(); return; }
       e.preventDefault(); draw();
     });
-    c.addEventListener('pointercancel', () => { dragging = null; hover = null; draw(); });
+    c.addEventListener('pointercancel', () => { flushPointerDraw(); dragging = null; hover = null; draw(); });
     qs('#wb-1010-regen').onclick = () => {
       if (gamePaused || over || regen <= 0) return;
       regen--; details.regenUsed++; details.lastToolPlacement = details.placements || 0; newBatch(); hammerMode = false; speak('game1010','tool');
@@ -12576,7 +13200,7 @@ function showGameRecords(game, page) {
     let popping = [];
     let score = Number(state?.score || 0), shots = Number(state?.shots || 0), pushes = Number(state?.pushes || 0), shotsSincePush = Number(state?.shotsSincePush ?? (Number(state?.shots || 0) % Math.max(5, 10 - Math.floor(Number(state?.pushes || 0) / 2)))), bombs = Math.max(0, Math.min(5, Number(state?.bombs == null ? 5 : state.bombs)));
     let current = state?.current || '', next = state?.next || '', armedBomb = !!state?.armedBomb;
-    let flying = null, aiming = false, resolving = false, aimAngle = 0, over = false, raf = 0, lastT = 0, finishTurnTimer = null;
+    let flying = null, aiming = false, resolving = false, aimAngle = 0, over = false, raf = 0, aimRaf = 0, lastT = 0, finishTurnTimer = null, pendingTurnFinish = null;
     let seen = Object.assign({ aim:false, dangerTick:0, scoreMilestone:Math.floor(score/1000) }, state?.seen || {});
     let details = Object.assign({ shots:0, pushes:0, cleared:0, dropTotal:0, dangerCount:0, bombUsed:0, bombBad:false, highStreak:0, maxHighStreak:0, amazingClear:false, clearAllCount:0 }, state?.details || {});
     const cap = row => N;
@@ -12633,8 +13257,27 @@ function showGameRecords(game, page) {
     save = registerLegacyGameSave('paopao', save, () => {
       over = true;
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(aimRaf);
+      raf = 0;
+      aimRaf = 0;
       clearTimeout(finishTurnTimer);
       getHostWindow().removeEventListener('resize', onResize);
+    });
+    save.setLifecycle?.({
+      pause() {
+        if (raf) cancelAnimationFrame(raf);
+        if (aimRaf) cancelAnimationFrame(aimRaf);
+        raf = 0;
+        aimRaf = 0;
+        lastT = 0;
+        if (finishTurnTimer) clearTimeout(finishTurnTimer);
+        finishTurnTimer = null;
+      },
+      resume() {
+        lastT = 0;
+        if (pendingTurnFinish && !finishTurnTimer) finishTurnTimer = setTimeout(pendingTurnFinish, 0);
+        ensureAnimationFrame();
+      }
     });
     function updateScore(add) {
       if (!add) return;
@@ -12732,6 +13375,12 @@ function showGameRecords(game, page) {
       const shouldPush = shotsSincePush >= pushInterval();
       const finishTurn = () => {
         if (over) return;
+        if (gamePaused) {
+          finishTurnTimer = null;
+          return;
+        }
+        finishTurnTimer = null;
+        pendingTurnFinish = null;
         if (shouldPush) pushDown();
         if (over) return;
         if (bubbles.length <= 5) pushDown();
@@ -12741,6 +13390,7 @@ function showGameRecords(game, page) {
         if (over) return;
         save(); updateBombUI(); draw();
       };
+      pendingTurnFinish = finishTurn;
       if (shouldPush && (clearCount || dropCount || bombRemoved || popping.length)) finishTurnTimer = setTimeout(finishTurn, 360);
       else finishTurn();
     }
@@ -12823,11 +13473,8 @@ function showGameRecords(game, page) {
       if (flying) drawBubble(flying.x, flying.y, flying.bomb ? 'bomb' : flying.color, 1);
     }
     function update(dt) {
-      if (over || !save.isActive()) return;
-      if (gamePaused) {
-        raf = requestAnimationFrame(t => { lastT = t; update(0); });
-        return;
-      }
+      raf = 0;
+      if (over || gamePaused || !save.isActive()) return;
       if (flying) {
         const sp = Math.max(560, D * 20), step = sp * dt / 1000;
         const maxSubStep = Math.max(2, D * .16);
@@ -12845,17 +13492,24 @@ function showGameRecords(game, page) {
       falling = falling.filter(f => f.y < H + D);
       popping.forEach(p => { p.life += dt; });
       popping = popping.filter(p => p.life < 280);
-      draw();
-      raf = requestAnimationFrame(t => { const d = lastT ? t - lastT : 16; lastT = t; update(d); });
+      if (flying || falling.length || popping.length) draw();
+      ensureAnimationFrame();
+    }
+    function ensureAnimationFrame() {
+      if (raf || over || gamePaused || !save.isActive() || (!flying && !falling.length && !popping.length)) return;
+      raf = requestAnimationFrame(t => { const d = lastT ? Math.min(50, t - lastT) : 16; lastT = t; update(d); });
     }
     function pointerPos(e) { const r=c.getBoundingClientRect(), t=e.touches&&e.touches[0] || e.changedTouches&&e.changedTouches[0] || e; return { x:t.clientX-r.left, y:t.clientY-r.top }; }
     function setAim(e) { const p=pointerPos(e), dx=p.x-launch.x, dy=launch.y-p.y; aimAngle = Math.max(-1.22, Math.min(1.22, Math.atan2(dx, Math.max(20, dy)))); if(!seen.aim){ seen.aim=true; speak('paopao','aim'); } }
+    function scheduleAimDraw(){ if(aimRaf) return; aimRaf=requestAnimationFrame(()=>{ aimRaf=0; if(aiming&&!over&&save.isActive()) draw(); }); }
+    function cancelAimDraw(){ if(aimRaf) cancelAnimationFrame(aimRaf); aimRaf=0; }
     function startAim(e){ if(gamePaused||over||flying||resolving) return; aiming=true; setAim(e); e.preventDefault(); draw(); }
-    function moveAim(e){ if(!aiming) return; setAim(e); e.preventDefault(); draw(); }
+    function moveAim(e){ if(!aiming) return; setAim(e); e.preventDefault(); scheduleAimDraw(); }
     function fire(e){
       if(!aiming||gamePaused||over||flying||resolving) return;
       setAim(e);
       aiming = false;
+      cancelAimDraw();
       const shotColor = current, shotBomb = armedBomb;
       flying = { x:launch.x, y:launch.y, vx:Math.sin(aimAngle), vy:-Math.cos(aimAngle), color:shotColor, bomb:shotBomb };
       current = next;
@@ -12865,14 +13519,15 @@ function showGameRecords(game, page) {
       updateBombUI();
       save();
       draw();
+      ensureAnimationFrame();
     }
     function updateBombUI(){ const el=qs('#wb-paopao-bombs'); if(el) el.textContent=bombs; const btn=qs('#wb-paopao-bomb'); if(btn){ btn.disabled=over||flying||resolving||bombs<=0; btn.classList.toggle('primary', armedBomb); } updateSwapUI(); }
     function updateSwapUI(){ const btn=qs('#wb-paopao-swap'); if(btn){ const disabled=over||flying||resolving||aiming||armedBomb; btn.disabled=disabled; btn.style.opacity=disabled ? '.32' : '.9'; btn.style.cursor=disabled ? 'default' : 'pointer'; } }
-    c.addEventListener('pointerdown', startAim); c.addEventListener('pointermove', moveAim); c.addEventListener('pointerup', fire); c.addEventListener('pointercancel', () => aiming=false);
+    c.addEventListener('pointerdown', startAim); c.addEventListener('pointermove', moveAim); c.addEventListener('pointerup', fire); c.addEventListener('pointercancel', () => { aiming=false; cancelAimDraw(); draw(); });
     qs('#wb-paopao-bomb').onclick = () => { if(gamePaused||over||flying||resolving||bombs<=0) return; armedBomb = !armedBomb; if(armedBomb){ bombs--; speak('paopao','bomb'); } else bombs++; updateBombUI(); save(); draw(); };
     qs('#wb-paopao-swap').onclick = e => { e.preventDefault(); if(gamePaused||over||flying||resolving||aiming||armedBomb) return; const old=current; current=next; next=old || randomColor(); updateSwapUI(); save(); draw(); };
     resize(); updateBombUI(); setScore('paopao', score); checkDanger(); save(); draw();
-    raf = requestAnimationFrame(t => { lastT = t; update(16); });
+    ensureAnimationFrame();
     function onResize() { if (save.isActive()) { resize(); draw(); } }
     getHostWindow().addEventListener('resize', onResize, { passive:true });
   }
@@ -12927,8 +13582,12 @@ function showGameRecords(game, page) {
       btn.onclick = e => { if(getHostWindow().PointerEvent) return; press(e); };
     });
     function snakeDelay(){ return Math.max(90, 160 - Math.floor(score / 10) * 6); }
-    function scheduleSnake(){ if(!dead) snakeTimer = setTimeout(stepSnake, snakeDelay()); }
-    function stepSnake(){ if(dead) return; if(gamePaused){ scheduleSnake(); return; } dir = next; const h = {x: snake[0].x + dir.x, y: snake[0].y + dir.y}; const hitWall=h.x<0||h.y<0||h.x>=n||h.y>=n, hitBody=snake.some(s=>s.x===h.x&&s.y===h.y); if(hitWall||hitBody){ dead=true; snakeStats.deathReason = hitWall ? '撞墙' : '撞身子'; speak('snake','gameover'); showGameOver('snake', '游戏结束', '本局分数：' + score + '分', null, { score, details:snakeStats }); return; } const nearWall=h.x<=1||h.y<=1||h.x>=n-2||h.y>=n-2, nearSelf=snake.slice(1).some(s=>Math.abs(s.x-h.x)+Math.abs(s.y-h.y)<=1); if((nearWall||nearSelf) && Math.random()<.08) speak('snake','close_call'); snake.unshift(h); if(h.x===food.x&&food.y===h.y){ score += 10; setScore('snake', score); const eaten = score/10; snakeStats.fruits = eaten; snakeStats.maxTurnsBetweenFruits = Math.max(snakeStats.maxTurnsBetweenFruits || 0, snakeStats.turnsSinceFruit || 0); snakeStats.turnsSinceFruit = 0; if(eaten===1) speak('snake','eat_1'); if([5,10,20].includes(eaten)) speak('snake','eat_'+eaten); if(eaten>1 && eaten%4===0) speak('snake','speed_up'); food=randFood(); } else { if(Math.abs(h.x-food.x)+Math.abs(h.y-food.y)<=2) snakeStats.nearFoodPasses = (snakeStats.nearFoodPasses || 0) + 1; snake.pop(); } draw(); save(); scheduleSnake(); }
+    function scheduleSnake(){ if(!dead && !gamePaused && !snakeTimer) snakeTimer = setTimeout(stepSnake, snakeDelay()); }
+    function stepSnake(){ snakeTimer=null; if(dead||gamePaused) return; dir = next; const h = {x: snake[0].x + dir.x, y: snake[0].y + dir.y}; const hitWall=h.x<0||h.y<0||h.x>=n||h.y>=n, hitBody=snake.some(s=>s.x===h.x&&s.y===h.y); if(hitWall||hitBody){ dead=true; snakeStats.deathReason = hitWall ? '撞墙' : '撞身子'; speak('snake','gameover'); showGameOver('snake', '游戏结束', '本局分数：' + score + '分', null, { score, details:snakeStats }); return; } const nearWall=h.x<=1||h.y<=1||h.x>=n-2||h.y>=n-2, nearSelf=snake.slice(1).some(s=>Math.abs(s.x-h.x)+Math.abs(s.y-h.y)<=1); if((nearWall||nearSelf) && Math.random()<.08) speak('snake','close_call'); snake.unshift(h); if(h.x===food.x&&food.y===h.y){ score += 10; setScore('snake', score); const eaten = score/10; snakeStats.fruits = eaten; snakeStats.maxTurnsBetweenFruits = Math.max(snakeStats.maxTurnsBetweenFruits || 0, snakeStats.turnsSinceFruit || 0); snakeStats.turnsSinceFruit = 0; if(eaten===1) speak('snake','eat_1'); if([5,10,20].includes(eaten)) speak('snake','eat_'+eaten); if(eaten>1 && eaten%4===0) speak('snake','speed_up'); food=randFood(); } else { if(Math.abs(h.x-food.x)+Math.abs(h.y-food.y)<=2) snakeStats.nearFoodPasses = (snakeStats.nearFoodPasses || 0) + 1; snake.pop(); } draw(); save(); scheduleSnake(); }
+    save.setLifecycle?.({
+      pause(){ if(snakeTimer){ clearTimeout(snakeTimer); snakeTimer=null; } },
+      resume(){ scheduleSnake(); }
+    });
     scheduleSnake();
     function draw(){
       const night = isNightTheme();
@@ -12976,6 +13635,11 @@ function showGameRecords(game, page) {
     let clearLeft = Number.isInteger(state?.clearLeft) ? state.clearLeft : 2;
     let undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     let clearMode = false;
+    const grid2048 = qs('#wb-2048', box);
+    grid2048.onclick = event => {
+      const tile = event.target.closest('.wb-tile.clearable');
+      if (tile && grid2048.contains(tile)) clearTile(+tile.dataset.i);
+    };
     if (!state?.board) { add(); add(); }
     draw(); save();
     getHostDocument().onkeydown = e => { const dirs = {ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',a:'left',d:'right',w:'up',s:'down'}; if(dirs[e.key]){ e.preventDefault(); move(dirs[e.key]); } };
@@ -12996,7 +13660,7 @@ function showGameRecords(game, page) {
     function rows(dir){ const r=[]; for(let y=0;y<N;y++) r.push(Array.from({length:N},(_,x)=>y*N+x)); if(dir==='right') r.forEach(a=>a.reverse()); if(dir==='up'||dir==='down'){ r.length=0; for(let x=0;x<N;x++) r.push(Array.from({length:N},(_,y)=>y*N+x)); if(dir==='down') r.forEach(a=>a.reverse()); } return r; }
     function move(dir){ if (gamePaused) return; clearMode=false; const old=board.join(','), before=snapshot(), merged=[]; rows(dir).forEach(idx=>{ let vals=idx.map(i=>board[i]).filter(Boolean); for(let i=0;i<vals.length-1;i++) if(vals[i]===vals[i+1]){ vals[i]*=2; score+=vals[i]; merged.push(vals[i]); details.mergeCounts[vals[i]] = (details.mergeCounts[vals[i]] || 0) + 1; vals.splice(i+1,1); } while(vals.length<N) vals.push(0); idx.forEach((p,i)=>board[p]=vals[i]); }); if(board.join(',')!==old){ undoStack.push(before); if(undoStack.length > 3) undoStack.shift(); if(!seen.move){ seen.move=1; speak('game2048','move'); } const hit=merged.filter(v=>[64,128,256,512,1024,2048,4096,8192,16384,32768,65536].includes(v)).sort((a,b)=>b-a)[0]; if(hit > 2048) speak('game2048','tile_big'); else if(hit && DEFAULT_LINES.game2048['tile_'+hit]) speak('game2048','tile_'+hit); add(); const filled=board.filter(Boolean).length, crowded = Math.max(0, TOTAL - (N === 6 ? 5 : 1)); if(details.wasCrowded && filled<=Math.max(11, TOTAL - N - 1)){ details.crisisResolves++; details.wasCrowded=false; } if(filled>=crowded) details.wasCrowded=true; if(!seen.stuck && filled>=Math.max(13, TOTAL - N)){ seen.stuck=1; speak('game2048','stuck'); } if(!seen.gameover && !board.includes(0)){ seen.gameover=1; speak('game2048','gameover'); } draw(); save(); } if(!board.includes(0) && !canMove()) { if(!seen.gameover){ seen.gameover=1; speak('game2048','gameover'); save(); } details.finalCounts = board.reduce((m,v)=>{ if(v) m[v]=(m[v]||0)+1; return m; }, {}); const finalScore = scoreWithChoice('game2048', score, choice); showGameOver('game2048', '游戏结束', '本局分数：' + finalScore + '分（' + choice.title + '）', null, { maxTile: Math.max(...board), rawScore:score, difficulty:choice.title, details }); } }
     function canMove(){ return rows('left').some(idx=>idx.some((p,i)=>i<N-1 && board[p]===board[idx[i+1]])) || rows('up').some(idx=>idx.some((p,i)=>i<N-1 && board[p]===board[idx[i+1]])); }
-    function draw(){ setScore('game2048', scoreWithChoice('game2048', score, choice)); const mb=qs('#wb-2048-mode', box); if(mb) mb.textContent='模式：' + controlModeLabel(controlMode); const grid=qs('#wb-2048'); grid.style.setProperty('--wb-2048-size', String(N)); grid.innerHTML=board.map((v,i)=>'<button type="button" class="wb-tile' + (clearMode && v ? ' clearable' : '') + '" data-i="' + i + '" style="background:' + tileColor(v) + ';font-size:' + (v>=10000?16:v>999?22:28) + 'px" ' + (!clearMode || !v ? 'disabled' : '') + '>' + (v||'') + '</button>').join(''); qsa('.wb-tile.clearable', grid).forEach(btn=>btn.onclick=()=>clearTile(+btn.dataset.i)); const ub=qs('#wb-2048-undo-left', box); if(ub) ub.textContent=String(undoLeft); const cb=qs('#wb-2048-clear-left', box); if(cb) cb.textContent=String(clearLeft); const undo=qs('#wb-2048-undo', box); if(undo) undo.disabled=gamePaused || undoLeft<=0 || !undoStack.length; const clear=qs('#wb-2048-clear', box); if(clear){ clear.disabled=gamePaused || clearLeft<=0 || !board.some(Boolean); clear.classList.toggle('active', clearMode); } }
+    function draw(){ setScore('game2048', scoreWithChoice('game2048', score, choice)); const mb=qs('#wb-2048-mode', box); if(mb) mb.textContent='模式：' + controlModeLabel(controlMode); grid2048.style.setProperty('--wb-2048-size', String(N)); patchElementHTML(grid2048, board.map((v,i)=>'<button type="button" class="wb-tile' + (clearMode && v ? ' clearable' : '') + '" data-i="' + i + '" style="background:' + tileColor(v) + ';font-size:' + (v>=10000?16:v>999?22:28) + 'px" ' + (!clearMode || !v ? 'disabled' : '') + '>' + (v||'') + '</button>').join('')); const ub=qs('#wb-2048-undo-left', box); if(ub) ub.textContent=String(undoLeft); const cb=qs('#wb-2048-clear-left', box); if(cb) cb.textContent=String(clearLeft); const undo=qs('#wb-2048-undo', box); if(undo) undo.disabled=gamePaused || undoLeft<=0 || !undoStack.length; const clear=qs('#wb-2048-clear', box); if(clear){ clear.disabled=gamePaused || clearLeft<=0 || !board.some(Boolean); clear.classList.toggle('active', clearMode); } }
     function tileColor(v){ return ({0:'#cdc0b6',2:'#eee4da',4:'#ead8c7',8:'#efb07e',16:'#ec9368',32:'#e87865',64:'#e95f51',128:'#e4c16d',256:'#dfb954',512:'#d7ac3f',1024:'#cfa02f',2048:'#9ccbbb',4096:'#8f7ad8',8192:'#6aa6d8',16384:'#5eb6a1',32768:'#9f7aea',65536:'#f59e0b'})[v] || '#40342f'; }
   }
 
@@ -13007,11 +13671,12 @@ function showGameRecords(game, page) {
     let details = state?.details || { rounds:0, userBlocks:{2:0,3:0,4:0}, charBlocks:{2:0,3:0,4:0} };
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-board3-panel"><div class="wb-actions wb-cheat-row">' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-board3">' + b.map((_,i)=>'<button class="wb-cell" data-i="'+i+'"></button>').join('') + '</div></div>';
+    const ticCells = qsa('.wb-cell', box);
     if (!state?.b && state?.firstMover) speakFirstMover('tictactoe', state.firstMover);
     if (!state?.b && state?.firstMover === 'ta') ai();
     draw(); save();
     qs('#wb-cheat', box).onclick = cheatUndo;
-    qsa('.wb-cell', box).forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; pushUndo(); markFirstMoverUserAction(); if(bestTic(b,'O')===i) details.userBlocks[2]++; b[i]='X'; details.rounds=b.filter(Boolean).length; const userSpoke = i===4 || [0,2,6,8].includes(i); if(i===4) speak('tictactoe','user_center'); else if([0,2,6,8].includes(i)) speak('tictactoe','user_corner'); draw(); if(done()) return; ai(userSpoke); draw(); if(!done()) save(); });
+    ticCells.forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; pushUndo(); markFirstMoverUserAction(); if(bestTic(b,'O')===i) details.userBlocks[2]++; b[i]='X'; details.rounds=b.filter(Boolean).length; const userSpoke = i===4 || [0,2,6,8].includes(i); if(i===4) speak('tictactoe','user_center'); else if([0,2,6,8].includes(i)) speak('tictactoe','user_corner'); draw(); if(done()) return; ai(userSpoke); draw(); if(!done()) save(); });
     function snapshot(){ return { b:b.slice(), taMoves, nextCharLineAt, details:cloneCheatState(details) }; }
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('tictactoe', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
@@ -13020,7 +13685,7 @@ function showGameRecords(game, page) {
     function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); speak('tictactoe','char_next'); return true; } return false; }
     function ai(skipLine){ const i = bestTic(b,'O') ?? bestTic(b,'X') ?? [4,0,2,6,8,1,3,5,7].find(i=>!b[i]); if(i!=null){ const block = bestTic(b,'X')===i; if(block) details.charBlocks[2]++; let spoke = !!skipLine; if(!spoke && block && Math.random()<.5){ spoke = true; speak('tictactoe','ai_block'); } b[i]='O'; details.rounds=b.filter(Boolean).length; if(!spoke) maybeCharNext(); } }
     function done(){ const w=winner3(b); if(w||b.every(Boolean)){ over=true; const rounds=b.filter(Boolean).length, meta={ lastMoveWin:rounds>=8, details:Object.assign(details,{rounds}) }; if(w==='X'){ { const curScore = scores().tictactoe; setScore('tictactoe', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('tictactoe','user_win'); showGameOver('tictactoe', '你赢了', '本局分数：1胜，回合数：'+rounds, 'user_win', meta); } else if(w==='O') { speak('tictactoe','user_lose'); showGameOver('tictactoe', '游戏结束', '本局分数：0胜（失败），回合数：'+rounds, 'ta_win', meta); } else { speak('tictactoe','draw'); showGameOver('tictactoe', '平局', '本局分数：0胜（平局），回合数：'+rounds, 'draw', meta); } return true; } return false; }
-	    function draw(){ qsa('.wb-cell', box).forEach((c,i)=>c.textContent=b[i]); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over); }
+	    function draw(){ ticCells.forEach((c,i)=>c.textContent=b[i]); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over); }
   }
   function bestTic(b, m){ const wins=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]; for(const w of wins){ const vals=w.map(i=>b[i]); if(vals.filter(v=>v===m).length===2 && vals.includes('')) return w[vals.indexOf('')]; } return null; }
   function winner3(b){ const wins=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]; for(const w of wins) if(b[w[0]]&&b[w[0]]===b[w[1]]&&b[w[1]]===b[w[2]]) return b[w[0]]; return ''; }
@@ -13029,24 +13694,57 @@ function showGameRecords(game, page) {
     if (choiceForState('gomoku', state).id === 'endless') { startEndlessGomoku(state); return; }
     const box = qs('#wb-gamebox'), n=15;
     let b = Array.isArray(state?.b) && state.b.length === n*n ? state.b : Array(n*n).fill(''), over=false;
+    let turn = state?.turn === 'ta' || (!state?.b && state?.firstMover === 'ta') ? 'ta' : 'user';
+    let aiTimer=0, pendingUserSpoke=false;
     let lastCharMove = Number.isInteger(state?.lastCharMove) ? state.lastCharMove : -1;
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     let details = state?.details || { rounds:0, userBlocks:{2:0,3:0,4:0}, charBlocks:{2:0,3:0,4:0} };
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-with-info"><div class="wb-gomoku-info wb-gomoku-info-normal"><div class="wb-gomoku-stat"><span>轮到</span><b id="wb-gomoku-turn">你</b></div><div class="wb-gomoku-stat"><span>执棋</span><b id="wb-gomoku-stock">你 黑</b></div><div class="wb-gomoku-stat"><span>规则</span><b id="wb-gomoku-captured">五连胜</b></div>' + cheatButtonCompactHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
+    const gomokuCells = qsa('.wb-gcell', box);
     if (!state?.b && state?.firstMover) speakFirstMover('gomoku', state.firstMover);
-    if (!state?.b && state?.firstMover === 'ta') { const first = bestGomoku(b,n,true); if(first>=0){ b[first]='W'; lastCharMove=first; maybeCharNext(); } }
     draw(); save();
     qs('#wb-cheat', box).onclick = cheatUndo;
-    qsa('.wb-gcell', box).forEach(cell => cell.onclick = () => { const i=+cell.dataset.i; if(gamePaused||over||b[i]) return; pushUndo(); markFirstMoverUserAction(); const userBlock=blockRank(b,n,i,'W',4); if(userBlock>=2) details.userBlocks[userBlock] = (details.userBlocks[userBlock] || 0) + 1; b[i]='B'; details.rounds=b.filter(Boolean).length; const pat=gomokuPattern(b,n,i,'B'); let userEvent = ''; if(pat) userEvent = pat; else if(lineScore(b,n,i,'B')>=125) userEvent = 'user_three'; const userSpoke = !!userEvent && Math.random()<.5; if(userSpoke) speak('gomoku', userEvent); draw(); if(done('B')) return; const ai=bestGomoku(b,n,userSpoke); const aiSpoke = !!bestGomoku.lastSpoke; if(ai>=0){ const charBlock=blockRank(b,n,ai,'B',4); if(charBlock>=2) details.charBlocks[charBlock] = (details.charBlocks[charBlock] || 0) + 1; b[ai]='W'; lastCharMove=ai; details.rounds=b.filter(Boolean).length; if(!userSpoke && !aiSpoke){ const threat = lineScore(b,n,ai,'W')>=80; if(threat) speak('gomoku','ai_threat'); else maybeCharNext(); } draw(); if(!done('W')) save(); } });
-    function snapshot(){ return { b:b.slice(), lastCharMove, taMoves, nextCharLineAt, details:cloneCheatState(details) }; }
+    gomokuCells.forEach(cell => cell.onclick = () => {
+      const i=+cell.dataset.i;
+      if(gamePaused||over||turn!=='user'||b[i]) return;
+      pushUndo(); markFirstMoverUserAction();
+      const userBlock=blockRank(b,n,i,'W',4);
+      if(userBlock>=2) details.userBlocks[userBlock] = (details.userBlocks[userBlock] || 0) + 1;
+      b[i]='B'; details.rounds=b.filter(Boolean).length;
+      const pat=gomokuPattern(b,n,i,'B');
+      const userEvent=pat || (lineScore(b,n,i,'B')>=125 ? 'user_three' : '');
+      pendingUserSpoke=!!userEvent && Math.random()<.5;
+      if(pendingUserSpoke) speak('gomoku', userEvent);
+      draw();
+      if(done('B')) return;
+      turn='ta'; draw(); save(); scheduleAi();
+    });
+    function snapshot(){ return { b:b.slice(), turn, lastCharMove, taMoves, nextCharLineAt, details:cloneCheatState(details) }; }
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
-	    function cheatUndo(){ if(gamePaused||over||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('gomoku', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; lastCharMove=Number.isInteger(s.lastCharMove) ? s.lastCharMove : -1; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
-	    function save(){ saveProgress('gomoku', Object.assign({ b, lastCharMove, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }, choiceSavePatch('gomoku', choiceForState('gomoku', state)))); }
-    save = registerLegacyGameSave('gomoku', save);
+	    function cheatUndo(){ if(gamePaused||over||turn!=='user'||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('gomoku', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ b=s.b; turn=s.turn||'user'; lastCharMove=Number.isInteger(s.lastCharMove) ? s.lastCharMove : -1; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
+	    function save(){ saveProgress('gomoku', Object.assign({ b, turn, lastCharMove, taMoves, nextCharLineAt, details, cheatLeft, cheatAttempted, undoStack }, choiceSavePatch('gomoku', choiceForState('gomoku', state)))); }
+    save = registerLegacyGameSave('gomoku', save, clearAiTimer);
+    save.setLifecycle?.({ pause:clearAiTimer, resume:()=>{ if(turn==='ta') scheduleAi(350); } });
+    if(turn==='ta') scheduleAi(state?.b ? 350 : 850);
     function maybeCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ speak('gomoku','char_next'); nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
+    function clearAiTimer(){ if(aiTimer){ clearTimeout(aiTimer); aiTimer=0; } }
+    function scheduleAi(wait=850){
+      if(aiTimer||over||turn!=='ta'||!save.isActive()) return;
+      aiTimer=setTimeout(()=>{ aiTimer=0; if(!save.isActive()||over||gamePaused||turn!=='ta') return; playAi(); },wait);
+    }
+    function playAi(){
+      const userSpoke=pendingUserSpoke, ai=bestGomoku(b,n,userSpoke), aiSpoke=!!bestGomoku.lastSpoke;
+      pendingUserSpoke=false;
+      if(ai<0){ turn='user'; draw(); save(); return; }
+      const charBlock=blockRank(b,n,ai,'B',4);
+      if(charBlock>=2) details.charBlocks[charBlock] = (details.charBlocks[charBlock] || 0) + 1;
+      b[ai]='W'; lastCharMove=ai; details.rounds=b.filter(Boolean).length;
+      if(!userSpoke&&!aiSpoke){ const threat=lineScore(b,n,ai,'W')>=80; if(threat) speak('gomoku','ai_threat'); else maybeCharNext(); }
+      turn='user'; draw(); if(!done('W')) save();
+    }
     function done(m){ const rounds=b.filter(Boolean).length; details.rounds=rounds; details.gomokuMode='normal'; const meta={gomokuMode:'normal', details}; if(winG(b,n,m)){ over=true; if(m==='B'){ { const curScore = scores().gomoku; setScore('gomoku', ((curScore && typeof curScore === 'object' ? curScore.user : curScore) || 0) + 1); } speak('gomoku','user_win'); showGameOver('gomoku', '你赢了', '回合数：' + rounds, 'user_win', meta); } else { speak('gomoku','user_lose'); showGameOver('gomoku', '游戏结束', '回合数：' + rounds + '（失败）', 'ta_win', meta); } return true; } if(b.every(Boolean)){ over=true; speak('gomoku','draw'); showGameOver('gomoku', '平局', '回合数：' + rounds + '（平局）', 'draw', meta); return true; } return false; }
-	    function draw(){ const turnEl=qs('#wb-gomoku-turn', box); if(turnEl) turnEl.textContent='你'; const roleEl=qs('#wb-gomoku-stock', box); if(roleEl) roleEl.innerHTML='你 黑<br>' + esc(displayCharNameForGame('gomoku') || 'TA') + ' 白'; qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (i===lastCharMove && b[i]==='W' ? ' char-last' : ''); }); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over); }
+	    function draw(){ const turnEl=qs('#wb-gomoku-turn', box); if(turnEl) turnEl.textContent=turn==='ta'?(displayCharNameForGame('gomoku')||'TA')+'思考中':'你'; const roleEl=qs('#wb-gomoku-stock', box); if(roleEl) roleEl.innerHTML='你 黑<br>' + esc(displayCharNameForGame('gomoku') || 'TA') + ' 白'; gomokuCells.forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (i===lastCharMove && b[i]==='W' ? ' char-last' : ''); }); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||turn!=='user'); }
   }
   function startEndlessGomoku(state) {
     const box = qs('#wb-gamebox'), n=15, choice = choiceForState('gomoku', state);
@@ -13064,10 +13762,11 @@ function showGameRecords(game, page) {
     let details = state?.details || { rounds:0, userCaptures:0, charCaptures:0, userRecycles:0, charRecycles:0 };
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-gomoku-panel wb-gomoku-endless-panel"><div class="wb-gomoku-info wb-gomoku-info-endless"><div class="wb-gomoku-stat"><span>轮到</span><b id="wb-gomoku-turn"></b></div><div class="wb-gomoku-stat"><span>余子</span><b id="wb-gomoku-stock"></b></div><div class="wb-gomoku-stat"><span>吃子</span><b id="wb-gomoku-captured"></b></div><button type="button" class="wb-btn wb-gomoku-stock-btn" id="wb-gomoku-stock-settings">棋子数 <b id="wb-gomoku-stock-limit"></b></button>' + cheatButtonCompactHTML(cheatLeft) + '</div><div class="wb-gomoku">' + b.map((_,i)=>'<button class="wb-gcell" data-i="'+i+'"></button>').join('') + '</div></div>';
+    const gomokuCells = qsa('.wb-gcell', box);
     if (!state?.b && state?.firstMover) speakFirstMover('gomoku', state.firstMover);
     draw(); save();
     if(turn === 'ta' || pendingEat === 'ta') setTimeout(resumeTaTurn, state?.b ? 260 : 850);
-    qsa('.wb-gcell', box).forEach(cell => cell.onclick = () => {
+    gomokuCells.forEach(cell => cell.onclick = () => {
       const i=+cell.dataset.i;
       if(gamePaused||over||turn!=='user'||actionBusy) return;
       markFirstMoverUserAction();
@@ -13219,12 +13918,12 @@ function showGameRecords(game, page) {
       const stockLocked = rounds >= 3 || over;
       if (stockButton) stockButton.style.display = stockLocked ? 'none' : '';
       qs('.wb-gomoku-info-endless', box)?.classList.toggle('stock-locked', stockLocked);
-      qsa('.wb-gcell', box).forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (i===lastCharMove && b[i]==='W' ? ' char-last' : '') + (pendingEat === 'user' && !actionBusy && b[i] === 'W' ? ' eatable' : '') + (highlightLine.includes(i) ? ' recycle' : '') + (highlightEat === i ? ' eaten' : ''); });
+      gomokuCells.forEach((c,i)=>{ c.className='wb-gcell' + (b[i]==='B'?' black':b[i]==='W'?' white':'') + (i===lastCharMove && b[i]==='W' ? ' char-last' : '') + (pendingEat === 'user' && !actionBusy && b[i] === 'W' ? ' eatable' : '') + (highlightLine.includes(i) ? ' recycle' : '') + (highlightEat === i ? ' eaten' : ''); });
 	      refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||actionBusy);
     }
   }
   function bestGomoku(b,n,silent){ bestGomoku.lastSpoke = false; const empty=b.map((v,i)=>v?'':i).filter(v=>v!==''); if(empty.length===n*n){ const c=Math.floor(n/2); return c*n+c; } const win=empty.find(i=>gomokuMoveWins(b,n,i,'W')); if(win!=null) return win; const block=empty.find(i=>gomokuMoveWins(b,n,i,'B')); if(block!=null){ if(!silent){ bestGomoku.lastSpoke = true; speak('gomoku','ai_block'); } return block; } let best=-1, bestScore=-1; for(const i of empty){ let score=gomokuMoveScore(b,n,i,'W')*1.12 + gomokuMoveScore(b,n,i,'B')*.96 + gomokuCenterScore(n,i); if(score>bestScore){ bestScore=score; best=i; } } if(bestScore>=180 && !silent){ bestGomoku.lastSpoke = true; speak('gomoku','ai_block'); } return best; }
-  function gomokuMoveWins(b,n,i,m){ b[i]=m; const ok=winG(b,n,m); b[i]=''; return ok; }
+  function gomokuMoveWins(b,n,i,m){ b[i]=m; const ok=!!fiveLine(b,n,m,i).length; b[i]=''; return ok; }
   function gomokuCenterScore(n,i){ const x=i%n,y=Math.floor(i/n), c=(n-1)/2; return Math.max(0, 18 - (Math.abs(x-c)+Math.abs(y-c))*2); }
   function gomokuMoveScore(b,n,i,m){
     const x=i%n,y=Math.floor(i/n), dirs=[[1,0],[0,1],[1,1],[1,-1]];
@@ -13285,6 +13984,11 @@ function showGameRecords(game, page) {
     let details = state?.details || { turnGains:[] };
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-territory-panel"><div class="wb-territory-info"><span class="wb-pill" id="wb-territory-turn"></span><span class="wb-pill" id="wb-territory-score"></span>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-territory-board" id="wb-territory-board"></div></div>';
+    const territoryBoard = qs('#wb-territory-board', box);
+    territoryBoard.onclick = event => {
+      const edge = event.target.closest('.wb-territory-edge');
+      if (edge && territoryBoard.contains(edge)) human(edge.dataset.k, +edge.dataset.r, +edge.dataset.c);
+    };
     draw(); save();
     qs('#wb-cheat', box).onclick = cheatUndo;
     if (!state?.turn && state?.firstMover) speakFirstMover('territory', state.firstMover);
@@ -13310,7 +14014,7 @@ function showGameRecords(game, page) {
     function human(kind,r,c){ if(over||busy||turn!=='user') return; if(!isLegalEdge(kind,r,c)){ toast('要贴着已有线继续画'); return; } pushUndo(); markFirstMoverUserAction(); let userEvent = cellsFor(kind,r,c).some(([x,y]) => !owner[y][x] && sideCount(x,y) === 2) ? 'danger' : ''; const gained=applyEdge(kind,r,c,'user'); details.turnGains.push({side:'user', gain:gained}); if(gained){ chain += gained; if(!userEvent) userEvent = chain > 1 ? 'chain' : 'capture'; } else { chain = 0; if(!userEvent) userEvent = 'edge'; turn='ta'; } let spoke = !!userEvent && Math.random()<.5; if(spoke) speak('territory', userEvent); if(checkNoSafe(spoke)) spoke = true; draw(); save(); if(done()) return; if(turn==='ta'){ busy=true; setTimeout(() => robot(spoke), 520); } }
     function robot(skipLine){ if(over||turn!=='ta'||currentGame!=='territory') return; const edges=legalEdges(); if(!edges.length){ done(); return; } const completions=edges.filter(wouldComplete), safe=edges.filter(isSafe); const pool=completions.length ? completions : (safe.length ? safe : edges); const e=pool[Math.floor(Math.random()*pool.length)]; const charNext = shouldCharNext(); let spoke = !!skipLine; const gained=applyEdge(e[0],e[1],e[2],'ta'); details.turnGains.push({side:'ta', gain:gained}); if(checkNoSafe(spoke)) spoke = true; if(gained){ if(!spoke){ spoke = true; speak('territory','ta_capture'); } draw(); save(); if(done()) return; setTimeout(() => robot(spoke), 520); return; } turn='user'; chain=0; if(!spoke) speak('territory', charNext ? 'char_next' : 'user_turn'); busy=false; draw(); save(); done(); }
     function done(){ if(allEdges().length) return false; over=true; const charLabel=role; const rounds=claimedEdges().length, text='本局：你 '+userScore+' 格，'+charLabel+' '+taScore+' 格，回合数：'+rounds, meta={ userScore, taScore, details }; if(userScore>taScore){ const cur=scores().territory; setScore('territory', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('territory','user_win'); showGameOver('territory','你赢了',text,'user_win',meta); } else if(taScore>userScore){ addTaWin('territory'); speak('territory','user_lose'); showGameOver('territory','游戏结束',text,'ta_win',meta); } else { speak('territory','draw'); showGameOver('territory','平局',text,'draw',meta); } return true; }
-	    function draw(){ const charLabel=role; const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userScore + '/' + charLabel + taScore; const t=qs('#wb-territory-turn'); if(t) t.textContent=(turn==='user'?'你的回合':charLabel+'的回合') + (claimedEdges().length ? '，贴着已有线' : ''); const s=qs('#wb-territory-score'); if(s) s.textContent='你 '+userScore+' / '+charLabel+' '+taScore; refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy); const board=qs('#wb-territory-board'); if(!board) return; const cells=[]; for(let gy=0;gy<N*2+1;gy++) for(let gx=0;gx<N*2+1;gx++){ if(gy%2===0&&gx%2===0) cells.push('<div class="wb-territory-dot"></div>'); else if(gy%2===0){ const r=gy/2,c=(gx-1)/2,val=h[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('h',r,c); cells.push('<button class="wb-territory-edge h'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="h" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else if(gx%2===0){ const r=(gy-1)/2,c=gx/2,val=v[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('v',r,c); cells.push('<button class="wb-territory-edge v'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="v" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else { const x=(gx-1)/2,y=(gy-1)/2,o=owner[y][x]; cells.push('<div class="wb-territory-cell '+(o||'')+'">'+(o==='user'?'你':o==='ta'?charLabel:'')+'</div>'); } } board.innerHTML=cells.join(''); qsa('.wb-territory-edge', board).forEach(btn => btn.onclick = () => human(btn.dataset.k, +btn.dataset.r, +btn.dataset.c)); }
+	    function draw(){ const charLabel=role; const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userScore + '/' + charLabel + taScore; const t=qs('#wb-territory-turn'); if(t) t.textContent=(turn==='user'?'你的回合':charLabel+'的回合') + (claimedEdges().length ? '，贴着已有线' : ''); const s=qs('#wb-territory-score'); if(s) s.textContent='你 '+userScore+' / '+charLabel+' '+taScore; refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy); const board=territoryBoard; if(!board) return; const cells=[]; for(let gy=0;gy<N*2+1;gy++) for(let gx=0;gx<N*2+1;gx++){ if(gy%2===0&&gx%2===0) cells.push('<div class="wb-territory-dot"></div>'); else if(gy%2===0){ const r=gy/2,c=(gx-1)/2,val=h[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('h',r,c); cells.push('<button class="wb-territory-edge h'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="h" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else if(gx%2===0){ const r=(gy-1)/2,c=gx/2,val=v[r][c], legal=!val&&turn==='user'&&!busy&&isLegalEdge('v',r,c); cells.push('<button class="wb-territory-edge v'+(val?' claimed '+val:'')+(legal?' legal':'')+'" data-k="v" data-r="'+r+'" data-c="'+c+'" '+(!legal?'disabled':'')+'></button>'); } else { const x=(gx-1)/2,y=(gy-1)/2,o=owner[y][x]; cells.push('<div class="wb-territory-cell '+(o||'')+'">'+(o==='user'?'你':o==='ta'?charLabel:'')+'</div>'); } } patchElementHTML(board, cells.join('')); }
   }
 
   function startOldMaid(state) {
@@ -13325,6 +14029,11 @@ function showGameRecords(game, page) {
     if (!userHand || !taHand) deal();
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-oldmaid"><div class="wb-oldmaid-status"><span id="wb-oldmaid-status"></span>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-oldmaid-reveal" id="wb-oldmaid-reveal"></div><div class="wb-oldmaid-zone"><div class="wb-muted">' + esc(role) + '的手牌</div><div class="wb-oldmaid-hand backs" id="wb-oldmaid-ta"></div></div><div class="wb-oldmaid-zone"><div class="wb-muted">你的手牌</div><div class="wb-oldmaid-hand" id="wb-oldmaid-user"></div></div><div class="wb-oldmaid-log" id="wb-oldmaid-log"></div></div>';
+    const oldMaidTaHand = qs('#wb-oldmaid-ta', box);
+    oldMaidTaHand.onclick = event => {
+      const card = event.target.closest('.wb-oldmaid-card');
+      if (card && oldMaidTaHand.contains(card)) human(+card.dataset.i);
+    };
     if (!state?.turn && state?.firstMover) speakFirstMover('oldmaid', state.firstMover); draw(); save();
     qs('#wb-cheat', box).onclick = cheatUndo;
     if (turn === 'ta' && phase === 'ta_thinking') { busy = true; setTimeout(robot, 900); }
@@ -13351,7 +14060,7 @@ function showGameRecords(game, page) {
       if (c === 'JOKER') return '<div class="wb-oldmaid-card joker '+(extra||'')+'"><img src="'+esc(OLDMAID_CARD_URL)+'" alt=""></div>';
       return '<div class="wb-oldmaid-card '+(extra||'')+'">'+esc(label(c))+'</div>';
     }
-	    function draw(){ const charLabel=role; const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; const st=qs('#wb-oldmaid-status'); if(st) st.textContent=(phase==='user_pick'?'你的回合':phase==='user_review'?'看牌':phase==='ta_review'?charLabel + '的回合':charLabel + '正在抽牌') + ' · 你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy); const reveal=qs('#wb-oldmaid-reveal'); if(reveal){ reveal.innerHTML=pending ? '<div class="wb-oldmaid-reveal-text">'+(pending.actor==='user'?'你抽到':charLabel + '抽走')+'</div>'+drawCardHTML(pending.card,'big')+'<button class="wb-btn primary" id="wb-oldmaid-next">'+(pending.actor==='user'?'丢对子并让' + charLabel + '抽':'知道了，继续')+'</button>' : ''; const nb=qs('#wb-oldmaid-next', reveal); if(nb) nb.onclick=pending.actor==='user'?continueUser:continueTa; } const ta=qs('#wb-oldmaid-ta'); if(ta){ ta.innerHTML=taHand.map((_,i)=>'<button class="wb-oldmaid-card back" data-i="'+i+'" '+(phase!=='user_pick'||turn!=='user'||busy?'disabled':'')+'>?</button>').join(''); qsa('.wb-oldmaid-card',ta).forEach(btn=>btn.onclick=()=>human(+btn.dataset.i)); } const user=qs('#wb-oldmaid-user'); if(user) user.innerHTML=userHand.map(c=>drawCardHTML(c)).join(''); const lg=qs('#wb-oldmaid-log'); if(lg) lg.innerHTML=log.map(esc).join('<br>'); }
+	    function draw(){ const charLabel=role; const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; const st=qs('#wb-oldmaid-status'); if(st) st.textContent=(phase==='user_pick'?'你的回合':phase==='user_review'?'看牌':phase==='ta_review'?charLabel + '的回合':charLabel + '正在抽牌') + ' · 你' + userHand.length + '张 / ' + charLabel + taHand.length + '张'; refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy); const reveal=qs('#wb-oldmaid-reveal'); if(reveal){ patchElementHTML(reveal,pending ? '<div class="wb-oldmaid-reveal-text">'+(pending.actor==='user'?'你抽到':charLabel + '抽走')+'</div>'+drawCardHTML(pending.card,'big')+'<button class="wb-btn primary" id="wb-oldmaid-next">'+(pending.actor==='user'?'丢对子并让' + charLabel + '抽':'知道了，继续')+'</button>' : ''); const nb=qs('#wb-oldmaid-next', reveal); if(nb) nb.onclick=pending.actor==='user'?continueUser:continueTa; } patchElementHTML(oldMaidTaHand,taHand.map((_,i)=>'<button class="wb-oldmaid-card back" data-i="'+i+'" '+(phase!=='user_pick'||turn!=='user'||busy?'disabled':'')+'>?</button>').join('')); const user=qs('#wb-oldmaid-user'); if(user) patchElementHTML(user,userHand.map(c=>drawCardHTML(c)).join('')); const lg=qs('#wb-oldmaid-log'); if(lg) patchElementHTML(lg,log.map(esc).join('<br>')); }
   }
 
   function startReversi(state) {
@@ -13364,6 +14073,11 @@ function showGameRecords(game, page) {
     let details = state?.details || { counts:[] };
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML='<div class="wb-reversi-panel"><div class="wb-reversi-info" id="wb-reversi-info"><span id="wb-reversi-text"></span>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-reversi" id="wb-reversi-board"></div></div>';
+    const reversiBoard = qs('#wb-reversi-board', box);
+    reversiBoard.onclick = event => {
+      const cell = event.target.closest('.wb-reversi-cell');
+      if (cell && reversiBoard.contains(cell) && turn === 'user' && !busy) place('user', +cell.dataset.i);
+    };
     if(!state?.turn&&state?.firstMover) speakFirstMover('reversi', state.firstMover); draw(); save(); if(turn==='ta') setTimeout(ai,700);
     function idx(x,y){return y*N+x;} function inside(x,y){return x>=0&&y>=0&&x<N&&y<N;}
     function flips(side,i){ if(board[i]) return []; const x=i%N,y=Math.floor(i/N), other=side==='user'?'ta':'user', out=[]; dirs.forEach(d=>{ const arr=[]; let cx=x+d[0],cy=y+d[1]; while(inside(cx,cy)&&board[idx(cx,cy)]===other){ arr.push(idx(cx,cy)); cx+=d[0]; cy+=d[1]; } if(arr.length&&inside(cx,cy)&&board[idx(cx,cy)]===side) out.push(...arr); }); return out; }
@@ -13442,7 +14156,7 @@ function showGameRecords(game, page) {
     }
     function ai(skipLine){ if(over||gamePaused||turn!=='ta') return; const moves=legal('ta'); if(!moves.length){ turn='user'; draw(); save(); return; } moves.sort((a,b)=>moveScore(b)-moveScore(a)); const spoke = !skipLine && isCorner(moves[0]); if(spoke) speak('reversi','corner'); place('ta', moves[0], skipLine || spoke); }
     function done(){ over=true; const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length, rounds=Math.max(0,u+t-4); const res=u>t?'user_win':(t>u?'ta_win':'draw'); if(!seen.endLine) speak('reversi', res==='ta_win' ? 'user_lose' : res); if(res==='user_win'){ const cur=scores().reversi; setScore('reversi',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); } else if(res==='ta_win') addTaWin('reversi'); showGameOver('reversi',res==='user_win'?'你赢了':(res==='draw'?'平局':'游戏结束'),'你'+u+'格 / '+role+t+'格，回合数：'+rounds,res,{userScore:u,taScore:t,comeback:!!seen.comeback,details}); return true; }
-	    function draw(){ const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length; qs('#wb-score').textContent='本局：你'+u+' / '+role+t; const info=qs('#wb-reversi-text', box); if(info) info.textContent=(turn==='user'?'你的回合':role+'思考中')+' · 你'+u+' / '+role+t; refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy); const leg=new Set(legal('user')); qs('#wb-reversi-board').innerHTML=board.map((v,i)=>'<button class="wb-reversi-cell '+v+(leg.has(i)&&turn==='user'?' legal':'')+'" data-i="'+i+'">'+(v?'<span></span>':'')+'</button>').join(''); qsa('.wb-reversi-cell',box).forEach(b=>b.onclick=()=>{ if(turn==='user'&&!busy) place('user',+b.dataset.i); }); }
+	    function draw(){ const u=board.filter(x=>x==='user').length,t=board.filter(x=>x==='ta').length; qs('#wb-score').textContent='本局：你'+u+' / '+role+t; const info=qs('#wb-reversi-text', box); if(info) info.textContent=(turn==='user'?'你的回合':role+'思考中')+' · 你'+u+' / '+role+t; refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy); const leg=new Set(legal('user')); patchElementHTML(reversiBoard, board.map((v,i)=>'<button class="wb-reversi-cell '+v+(leg.has(i)&&turn==='user'?' legal':'')+'" data-i="'+i+'">'+(v?'<span></span>':'')+'</button>').join('')); }
   }
 
   function startBombNumber(state) {
@@ -13451,6 +14165,11 @@ function showGameRecords(game, page) {
     const role = displayCharName();
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML='<div class="wb-bomb-panel"><div class="wb-bomb-info" id="wb-bomb-info"><span id="wb-bomb-text"></span>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-bomb-grid" id="wb-bomb-grid"></div><div class="wb-bomb-log" id="wb-bomb-log"></div></div>';
+    const bombGrid = qs('#wb-bomb-grid', box);
+    bombGrid.onclick = event => {
+      const cell = event.target.closest('.wb-bomb-cell.ok');
+      if (cell && bombGrid.contains(cell)) pick('user', +cell.dataset.n);
+    };
     if(!state?.turn&&state?.firstMover) speakFirstMover('bombnumber', state.firstMover); draw(); save(); if(turn==='ta') setTimeout(aiThink,900);
     function choices(){ return Array.from({length:100},(_,i)=>i+1).filter(n=>n>=low&&n<=high); }
     function rangeEvent(){ const len=choices().length; if(len===1) return 'doomed'; if(len>=80) return 'range_100_80'; if(len>=60) return 'range_80_60'; if(len>=40) return 'range_60_40'; if(len>=20) return 'range_40_20'; return 'range_20_0'; }
@@ -13486,17 +14205,22 @@ function showGameRecords(game, page) {
       if(turn==='ta') setTimeout(aiThink, 500 + Math.random() * 500);
     }
     function aiThink(){ if(over||gamePaused||turn!=='ta'||busy) return; const arr=choices(); const n=arr[Math.floor(arr.length/2 + (Math.random()-.5)*Math.max(1,arr.length/3))]||arr[0]; pick('ta', n); }
-	    function draw(){ const len=choices().length; qs('#wb-score').textContent='范围：'+low+'-'+high; const info=qs('#wb-bomb-text', box); if(info) info.textContent=(turn==='user'?'你的回合':role+(busy?'正在判断':'的回合'))+' · 可选 '+len+' 个'; refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy); qs('#wb-bomb-grid').innerHTML=Array.from({length:100},(_,i)=>{ const n=i+1, ok=n>=low&&n<=high, isChosen=chosen&&chosen.n===n, isBoom=exploding===n; return '<button class="wb-bomb-cell '+(ok?'ok':'off')+(isChosen?' chosen':'')+(isBoom?' boom':'')+'" data-n="'+n+'" '+(!ok||turn!=='user'||busy?'disabled':'')+'>'+(isBoom?'💣':n)+'</button>'; }).join(''); qs('#wb-bomb-log').innerHTML=log.slice(0,6).map(esc).join('<br>'); qsa('.wb-bomb-cell.ok',box).forEach(b=>b.onclick=()=>pick('user',+b.dataset.n)); }
+	    function draw(){ const len=choices().length; qs('#wb-score').textContent='范围：'+low+'-'+high; const info=qs('#wb-bomb-text', box); if(info) info.textContent=(turn==='user'?'你的回合':role+(busy?'正在判断':'的回合'))+' · 可选 '+len+' 个'; refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||busy); patchElementHTML(bombGrid, Array.from({length:100},(_,i)=>{ const n=i+1, ok=n>=low&&n<=high, isChosen=chosen&&chosen.n===n, isBoom=exploding===n; return '<button class="wb-bomb-cell '+(ok?'ok':'off')+(isChosen?' chosen':'')+(isBoom?' boom':'')+'" data-n="'+n+'" '+(!ok||turn!=='user'||busy?'disabled':'')+'>'+(isBoom?'💣':n)+'</button>'; }).join('')); patchElementHTML(qs('#wb-bomb-log'),log.slice(0,6).map(esc).join('<br>')); }
   }
 
   function startConnect4D(state) {
     const box=qs('#wb-gamebox'), S=7, dirs=[[1,0],[0,1],[1,1],[1,-1]];
     const role = displayCharName();
-    let grid=Array.isArray(state?.grid)?state.grid.slice():Array(S*S).fill(''), turn=state?.turn||(state?.firstMover==='ta'?'ta':'user'), over=false, dropping=null, aimCol=-1, aimX=0;
+    let grid=Array.isArray(state?.grid)?state.grid.slice():Array(S*S).fill(''), turn=state?.turn||(state?.firstMover==='ta'?'ta':'user'), over=false, dropping=null, aimCol=-1, aimX=0, aimPaint=0;
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     let details = state?.details || { rounds:0, userBlocks:{2:0,3:0,4:0}, charBlocks:{2:0,3:0,4:0} };
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML='<div class="wb-c4d-panel"><div class="wb-c4d-info" id="wb-c4d-info"><span id="wb-c4d-text"></span>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-c4d-mask"><div class="wb-c4d-stage" id="wb-c4d-stage"><div class="wb-c4d-drop-line"></div><div class="wb-c4d" id="wb-c4d-board"></div></div></div></div>';
+    const c4Board = qs('#wb-c4d-board', box), c4Stage = qs('#wb-c4d-stage', box), c4View = getHostWindow();
+    c4Board.onpointerdown=e=>{ if(turn!=='user'||gamePaused||dropping) return; const a=eventAim(e); aimCol=a.col; aimX=a.pct; c4Board.setPointerCapture?.(e.pointerId); draw(); e.preventDefault(); };
+    c4Board.onpointermove=e=>{ if(turn!=='user'||gamePaused||dropping||aimCol<0) return; const a=eventAim(e); aimCol=a.col; aimX=a.pct; scheduleAimPaint(); e.preventDefault(); };
+    c4Board.onpointerup=e=>{ if(turn!=='user'||dropping) return; cancelAimPaint(); const a=aimCol>=0?{ col:aimCol, pct:aimX }:eventAim(e); aimCol=-1; c4Board.releasePointerCapture?.(e.pointerId); draw(); place('user',a.col,a.pct); e.preventDefault(); };
+    c4Board.onpointercancel=()=>{ if(aimCol>=0){ cancelAimPaint(); aimCol=-1; draw(); } };
     if(!state?.turn&&state?.firstMover) speakFirstMover('connect4d', state.firstMover); draw(); save(); if(turn==='ta') setTimeout(ai,700);
     function id(x,y){return y*S+x;} function inside(x,y){return x>=0&&y>=0&&x<S&&y<S;}
     function landingRow(x){ for(let y=S-1;y>=0;y--) if(!grid[id(x,y)]) return y; return -1; }
@@ -13506,7 +14230,10 @@ function showGameRecords(game, page) {
 	    function pushUndo(){ cheatAttempted = false; undoStack = pushCheatUndo(undoStack, snapshot()); }
 	    function cheatUndo(){ if(gamePaused||over||dropping||cheatLeft<=0||!undoStack.length) return; if(cheatAttempted){ toastCheatAlreadyAttempted(); return; } cheatAttempted = true; if(cheatAttemptResult('connect4d', box, false) !== 'success'){ draw(); save(); return; } const snap=undoStack.pop(); restoreCheatSnapshot(snap, s=>{ grid=s.grid; turn=s.turn; taMoves=s.taMoves; nextCharLineAt=s.nextCharLineAt; details=s.details; }); aimCol=-1; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); }
 	    function save(){ if(!over) saveProgress('connect4d',{grid,turn,taMoves,nextCharLineAt,details,cheatLeft,cheatAttempted,undoStack}); }
-    save = registerLegacyGameSave('connect4d', save);
+    save = registerLegacyGameSave('connect4d', save, cancelAimPaint);
+    function eventAim(e){ const r=c4Board.getBoundingClientRect(); const pct=Math.max(0,Math.min(100,(e.clientX-r.left)/Math.max(1,r.width)*100)); return { pct, col:Math.max(0,Math.min(S-1,Math.floor(pct/100*S))) }; }
+    function scheduleAimPaint(){ if(aimPaint) return; aimPaint=c4View.requestAnimationFrame(()=>{ aimPaint=0; if(save.isActive()&&aimCol>=0&&!dropping) draw(); }); }
+    function cancelAimPaint(){ if(aimPaint) c4View.cancelAnimationFrame(aimPaint); aimPaint=0; }
     function shouldCharNext(){ taMoves++; if(taMoves >= nextCharLineAt){ nextCharLineAt = nextCharLineTurn(taMoves); return true; } return false; }
     function winner(side){ for(let y=0;y<S;y++) for(let x=0;x<S;x++) if(grid[id(x,y)]===side){ for(const d of dirs){ let ok=true; for(let k=1;k<4;k++){ const nx=x+d[0]*k,ny=y+d[1]*k; if(!inside(nx,ny)||grid[id(nx,ny)]!==side){ ok=false; break; } } if(ok) return true; } } return false; }
     function place(side,x,aimPct,skipLine){ const y=landingRow(x); if(y<0||over||gamePaused||dropping) return; if(side==='user'){ pushUndo(); markFirstMoverUserAction(); } const br=blockRank(grid,S,id(x,y),side==='user'?'ta':'user',4); if(br>=2){ const bucket=side==='user'?details.userBlocks:details.charBlocks; bucket[br]=(bucket[br]||0)+1; } aimCol=-1; dropping={x,y,side,t:0,aimX:aimPct}; const charNext = side === 'ta' ? shouldCharNext() : false; animateDrop(()=>{ grid[id(x,y)]=side; dropping=null; const rounds=grid.filter(Boolean).length; details.rounds=rounds; if(winner(side)){ over=true; const res=side==='user'?'user_win':'ta_win'; if(res==='user_win'){ const cur=scores().connect4d; setScore('connect4d',((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('connect4d','user_win'); } else { addTaWin('connect4d'); speak('connect4d','user_lose'); } showGameOver('connect4d',res==='user_win'?'你赢了':'游戏结束','本局：'+(res==='user_win'?'你连成四子':role+'连成四子')+'，回合数：'+rounds,res,{details}); return; } if(!legal().length){ over=true; speak('connect4d','draw'); showGameOver('connect4d','平局','棋盘填满，回合数：'+rounds,'draw',{details}); return; } if(side==='ta' && charNext && !skipLine) speak('connect4d','char_next'); turn=side==='user'?'ta':'user'; draw(); save(); if(turn==='ta') setTimeout(ai,700); }); }
@@ -13588,9 +14315,9 @@ function showGameRecords(game, page) {
         const v=grid[id(x,y)], full=landingRow(x)<0, active=(dropping&&dropping.x===x)||aimCol===x;
         html.push('<button class="wb-c4d-cell '+(v||'')+(full?' full':'')+(active?' aim':'')+'" data-x="'+x+'" '+(turn!=='user'||full||dropping?'disabled':'')+'>'+(v?'<span class="wb-c4d-disc '+v+'"></span>':'')+'</button>');
       }
-      const board=qs('#wb-c4d-board');
-      board.innerHTML=html.join('');
-      const stage=qs('#wb-c4d-stage');
+      const board=c4Board;
+      patchElementHTML(board, html.join(''));
+      const stage=c4Stage;
       if(stage){
         const old=qs('.wb-c4d-falling', stage); if(old) old.remove();
         if(aimCol>=0 && turn==='user' && !dropping){
@@ -13609,11 +14336,6 @@ function showGameRecords(game, page) {
           stage.appendChild(piece);
         }
       }
-      const eventAim=e=>{ const r=board.getBoundingClientRect(); const pct=Math.max(0,Math.min(100,(e.clientX-r.left)/Math.max(1,r.width)*100)); return { pct, col:Math.max(0,Math.min(S-1,Math.floor(pct/100*S))) }; };
-      board.onpointerdown=e=>{ if(turn!=='user'||gamePaused||dropping) return; const a=eventAim(e); aimCol=a.col; aimX=a.pct; board.setPointerCapture?.(e.pointerId); draw(); e.preventDefault(); };
-      board.onpointermove=e=>{ if(turn!=='user'||gamePaused||dropping||aimCol<0) return; const a=eventAim(e); aimCol=a.col; aimX=a.pct; draw(); e.preventDefault(); };
-      board.onpointerup=e=>{ if(turn!=='user'||dropping) return; const a=aimCol>=0?{ col:aimCol, pct:aimX }:eventAim(e); aimCol=-1; board.releasePointerCapture?.(e.pointerId); draw(); place('user',a.col,a.pct); e.preventDefault(); };
-      board.onpointercancel=()=>{ if(aimCol>=0){ aimCol=-1; draw(); } };
     }
   }
 
@@ -13651,6 +14373,13 @@ function showGameRecords(game, page) {
 	    let aiRecentMoves = Array.isArray(state?.aiRecentMoves) ? state.aiRecentMoves.slice(-8) : [];
 	    let aiTargetBlockPressure = 0;
     box.innerHTML = '<div class="wb-draughts-panel"><div class="wb-draughts-info"><span class="wb-pill" id="wb-draughts-turn"></span><span class="wb-pill" id="wb-draughts-score"></span>' + (masterMode ? '<button type="button" class="wb-btn primary" id="wb-draughts-end">结束</button>' : '') + cheatButtonHTML(cheatLeft) + '</div><div class="wb-draughts-board" id="wb-draughts-board"></div></div>';
+    const draughtsBoard = qs('#wb-draughts-board', box);
+    draughtsBoard.onclick = event => {
+      const target = event.target.closest('[data-piece],[data-dest]');
+      if (!target || !draughtsBoard.contains(target)) return;
+      if (target.dataset.piece != null) selectRed(+target.dataset.piece);
+      else moveTo(+target.dataset.dest);
+    };
     setScore('draughts', 0);
     qs('#wb-cheat', box).onclick = cheatUndo;
     const endBtn = qs('#wb-draughts-end', box);
@@ -13962,7 +14691,7 @@ function showGameRecords(game, page) {
 	      const outsideMoves = moves.filter(m => !isTarget('blue', m.from));
 	      if(outsideMoves.length && !aiTargetBlockPressure) moves = outsideMoves;
 	      pushUndo();
-		      const best = moves.sort((a,b)=>scoreMove(b)-scoreMove(a))[0];
+		      const best = moves.map(move => ({ move, score:scoreMove(move) })).sort((a,b)=>b.score-a.score)[0].move;
 	      aiRecentMoves.push(best.from + '>' + best.to);
 	      aiRecentMoves = aiRecentMoves.slice(-8);
 	      animateMove('blue', best.idx, best.path);
@@ -14007,7 +14736,7 @@ function showGameRecords(game, page) {
       return '';
     }
     function draw(){
-      const board = qs('#wb-draughts-board');
+      const board = draughtsBoard;
       const charLabel = displayCharName();
       const turnEl = qs('#wb-draughts-turn');
       const scoreEl = qs('#wb-draughts-score');
@@ -14018,16 +14747,14 @@ function showGameRecords(game, page) {
       if(end) end.disabled = gamePaused || over || busy || !masterActive || selected < 0 || masterPath.length < 2;
       if(!board) return;
       const occ = occMap(), dests = new Set(moveMap.keys());
-      board.innerHTML = points.map(p => {
+      patchElementHTML(board, points.map(p => {
         const item = occ.get(p.i), sel = item && item.side === 'red' && item.idx === selected, dest = dests.has(p.i), movingHere = moving && moving.pos === p.i;
         const left = 50 + p.x2 * 3.55, top = 50 + p.y * 5.6;
         const cls = ['wb-draughts-hole', zoneClass(p), item ? item.side : '', sel ? 'selected' : '', dest ? 'dest' : '', movingHere ? 'moving' : ''].filter(Boolean).join(' ');
         const disabled = item ? (item.side !== 'red' || turn !== 'red' || busy) : (!dest || busy || turn !== 'red');
         const attr = item ? 'data-piece="' + item.idx + '"' : (dest ? 'data-dest="' + p.i + '"' : '');
         return '<button type="button" class="' + cls + '" style="left:' + left.toFixed(2) + '%;top:' + top.toFixed(2) + '%;" ' + attr + ' ' + (disabled ? 'disabled' : '') + '>' + (item ? '<span></span>' : '') + '</button>';
-      }).join('');
-      qsa('[data-piece]', board).forEach(btn => btn.onclick = () => selectRed(+btn.dataset.piece));
-      qsa('[data-dest]', board).forEach(btn => btn.onclick = () => moveTo(+btn.dataset.dest));
+      }).join(''));
     }
   }
 
@@ -14045,6 +14772,11 @@ function showGameRecords(game, page) {
       open = [];
     }
     box.innerHTML = '<div class="wb-guess-panel wb-memory-panel"><div class="wb-guess-row"><span class="wb-pill" id="wb-memory-moves">步数：0</span><span class="wb-pill" id="wb-memory-pairs">配对：0/8</span></div><div class="wb-memory" id="wb-memory-board"></div></div>';
+    const memoryBoard = qs('#wb-memory-board', box);
+    memoryBoard.onclick = event => {
+      const card = event.target.closest('.wb-memory-card');
+      if (card && memoryBoard.contains(card)) flip(+card.dataset.i);
+    };
     draw(); save();
     function score(){ return Math.max(0, 1200 - moves * 25 + matched * 80); }
     function save(){
@@ -14056,7 +14788,7 @@ function showGameRecords(game, page) {
     save = registerLegacyGameSave('memory', save);
     function memoryCardFace(c){ return '<img class="wb-memory-img" src="' + esc(GAME_ICON_BASE + c.v + '.jpg') + '" alt="">'; }
     function memoryCardHTML(c,i){ return '<button class="wb-memory-card' + (c.open?' open':'') + (c.done?' done':'') + '" data-i="'+i+'"><span class="wb-memory-inner"><span class="wb-memory-face wb-memory-back"></span><span class="wb-memory-face wb-memory-front">' + memoryCardFace(c) + '</span></span></button>'; }
-    function draw(){ const board = qs('#wb-memory-board'); if (!board) return; qs('#wb-memory-moves').textContent = '步数：' + moves; qs('#wb-memory-pairs').textContent = '配对：' + matched + '/8'; setScore('memory', score()); board.innerHTML = cards.map(memoryCardHTML).join(''); qsa('.wb-memory-card', board).forEach(btn => btn.onclick = () => flip(+btn.dataset.i)); }
+    function draw(){ if (!memoryBoard) return; qs('#wb-memory-moves').textContent = '步数：' + moves; qs('#wb-memory-pairs').textContent = '配对：' + matched + '/8'; setScore('memory', score()); patchElementHTML(memoryBoard, cards.map(memoryCardHTML).join('')); }
     function flip(i){ if(gamePaused||busy||over||cards[i].done||cards[i].open||open.length>=2) return; if(moves===0&&open.length===0) speak('memory','first_flip'); details.flipCounts[i] = (details.flipCounts[i] || 0) + 1; details.maxFlipsForOneCard = Math.max(details.maxFlipsForOneCard || 0, details.flipCounts[i]); cards[i].open = true; open.push(i); draw(); if(open.length===2){ moves++; const a=cards[open[0]], b=cards[open[1]]; if(a.v===b.v){ const pairFlips = Math.max(details.flipCounts[open[0]] || 0, details.flipCounts[open[1]] || 0); if(pairFlips <= 1) details.firstTryPairs++; if(pairFlips >= 3) details.threePlusTryPairs++; a.done=b.done=true; matched++; combo++; open=[]; speak('memory', combo>=2?'combo':'match'); if(matched===4) speak('memory','half'); if(matched===7&&!seen.gameover){ seen.gameover=1; speak('memory','gameover'); } if(matched===8){ over=true; setScore('memory', score()); saveMemoryBestMoves(moves); if(!seen.gameover) speak('memory','gameover'); showGameOver('memory','配对完成','本局分数：'+score()+'分', null, { details }); return; } draw(); save(); } else { combo=0; speak('memory','miss'); busy=true; setTimeout(()=>{ if (!save.isActive()) return; cards[open[0]].open=false; cards[open[1]].open=false; open=[]; busy=false; draw(); save(); }, 650); } } else save(); }
   }
 
@@ -14078,12 +14810,13 @@ function showGameRecords(game, page) {
     function loadPlankHero(src){ const img = new Image(); img.onload = draw; img.src = src; return img; }
     function save(){ if(!over) saveProgress('plank', { score, bridge: phase === 'ready' || charging ? bridge : 0, gap, rightW, nextGap, nextW, seen, perfectStreak, bestPerfectStreak, details }); }
     save = registerLegacyGameSave('plank', save);
-    function startCharge(){ if(gamePaused||over||charging||phase!=='ready') return; charging=true; bridge=0; }
+    function startCharge(){ if(gamePaused||over||charging||phase!=='ready') return; charging=true; bridge=0; schedulePlankLoop(); }
     function endCharge(){ if(!charging||gamePaused||over) return; charging=false; if(!seen.gameover && (bridge < gap || bridge > gap + rightW)){ seen.gameover=1; speak('plank','gameover'); } phase='falling'; angle=0; }
     function nextPillar(){ score++; setScore('plank', score); if(score===10) speak('plank','score_10'); if(score===20) speak('plank','score_20'); if(score===30) speak('plank','score_30'); if(score===40) speak('plank','score_40'); if(score>=50&&score%10===0) speak('plank','score_50_plus'); if(Math.abs(bridge-gap-rightW/2)<10){ details.perfects++; perfectStreak++; bestPerfectStreak=Math.max(bestPerfectStreak, perfectStreak); speak('plank','perfect'); if(perfectStreak>=3 && !seen.perfectStreak){ seen.perfectStreak=1; speak('plank','perfect_streak'); } } else perfectStreak=0; gap=nextGap; rightW=nextW; nextGap=rand(80,190); nextW=rand(55,95); bridge=0; angle=0; walk=0; drop=0; scroll=0; phase='ready'; save(); }
-    function fail(){ const miss = failMode === 'short' ? gap - bridge : (failMode === 'long' ? bridge - (gap + rightW) : 0); if(miss > 0 && miss <= 10) details.nearMisses++; over=true; clearInterval(jumpTimer); jumpTimer=null; if(!seen.gameover) speak('plank','gameover'); showGameOver('plank','游戏结束','本局分数：'+score+'分', null, { perfectStreak: bestPerfectStreak, nearMiss: miss > 0 && miss <= 10, farMiss: miss >= 58, details }); }
+    function fail(){ const miss = failMode === 'short' ? gap - bridge : (failMode === 'long' ? bridge - (gap + rightW) : 0); if(miss > 0 && miss <= 10) details.nearMisses++; over=true; clearTimeout(jumpTimer); jumpTimer=null; if(!seen.gameover) speak('plank','gameover'); showGameOver('plank','游戏结束','本局分数：'+score+'分', null, { perfectStreak: bestPerfectStreak, nearMiss: miss > 0 && miss <= 10, farMiss: miss >= 58, details }); }
     function loop(){
       if(gamePaused||over) return;
+      if(phase==='ready'&&!charging) return;
       if(charging) bridge=Math.min(302, bridge+3.45);
       if(phase==='falling'){
         angle=Math.min(Math.PI/2, angle+0.095);
@@ -14327,7 +15060,16 @@ function showGameRecords(game, page) {
     shell.onpointercancel=endCharge;
     getHostDocument().onkeydown=e=>{ if(e.code==='Space'){ e.preventDefault(); startCharge(); } };
     getHostDocument().onkeyup=e=>{ if(e.code==='Space'){ e.preventDefault(); endCharge(); } };
-    clearInterval(jumpTimer); jumpTimer=setInterval(loop, 32);
+    function plankActive(){ return charging || phase !== 'ready'; }
+    function schedulePlankLoop(){
+      if(jumpTimer || over || gamePaused || !save.isActive() || !plankActive()) return;
+      jumpTimer=setTimeout(()=>{ jumpTimer=null; loop(); schedulePlankLoop(); },32);
+    }
+    save.setLifecycle?.({
+      pause(){ if(jumpTimer){ clearTimeout(jumpTimer); jumpTimer=null; } },
+      resume(){ schedulePlankLoop(); }
+    });
+    schedulePlankLoop();
   }
 
   function startUYangLe(state) {
@@ -14447,7 +15189,17 @@ function showGameRecords(game, page) {
     let shuffles = state?.shuffles || 0, moveouts = state?.moveouts || 0, moveMode = false, over = false, seen = state?.seen || {};
     let details = state?.details || { matches:0, shuffles, moveouts, badLuck:false, fullTraySurvived:false, endlessLayers:1 };
     let consecutiveShuffles = state?.consecutiveShuffles || 0;
+    let lastBlockedIds = new Set();
     box.innerHTML = '<div class="wb-uyangle-panel ' + (choice.compact ? 'wb-uyangle-hard' : '') + '"><div class="wb-uyangle-top"><span class="wb-pill" id="wb-uyangle-left"></span><span class="wb-pill" id="wb-uyangle-status"></span></div><div class="wb-uyangle-progress"><div class="wb-uyangle-progress-fill" id="wb-uyangle-progress-fill"></div><span id="wb-uyangle-progress-text"></span></div><div class="wb-uyangle-board" id="wb-uyangle-board"></div><div class="wb-uyangle-hold" id="wb-uyangle-hold"></div><div class="wb-uyangle-tray-wrap"><div class="wb-uyangle-tray" id="wb-uyangle-tray"></div></div><div class="wb-actions wb-uyangle-actions"><button type="button" class="wb-btn" id="wb-uyangle-moveout">移出 <span class="wb-sudoku-badge" id="wb-uyangle-move-badge">3</span></button><button type="button" class="wb-btn primary" id="wb-uyangle-shuffle">打乱 <span class="wb-sudoku-badge" id="wb-uyangle-shuffle-badge">0</span></button></div></div>';
+    const uyangleBoard = qs('#wb-uyangle-board', box), uyangleTray = qs('#wb-uyangle-tray', box), uyangleHold = qs('#wb-uyangle-hold', box);
+    uyangleBoard.onclick = event => {
+      const tile = event.target.closest('.wb-uyangle-tile:not(:disabled)');
+      if (tile && uyangleBoard.contains(tile)) pick(+tile.dataset.id);
+    };
+    uyangleTray.onclick = event => {
+      const card = event.target.closest('.wb-uyangle-mini.pickable');
+      if (card && uyangleTray.contains(card)) moveOut(+card.dataset.i);
+    };
     setScore('uyangle', 0); draw(); save();
     function save(){ if(!over) saveProgress('uyangle', Object.assign({ tiles, tray, hold, shuffles, moveouts, consecutiveShuffles, seen, details }, choiceSavePatch('uyangle', choice))); }
     save = registerLegacyGameSave('uyangle', save);
@@ -14507,14 +15259,25 @@ function showGameRecords(game, page) {
       const pad = 1;
       return a.left < b.right + pad && a.right > b.left - pad && a.top < b.bottom + pad && a.bottom > b.top - pad;
     }
-    function isBlocked(tile, board, metrics, boardMetrics){
-      const m = metrics || renderMetrics();
-      const bm = boardMetrics || uyangleBoardMetrics(board || qs('#wb-uyangle-board', box));
-      const rect = tileRectOnBoard(tile, m, bm);
-      return tiles.some(other => {
-        if(other.gone || other.layer <= tile.layer) return false;
-        return rectsOverlap(rect, tileRectOnBoard(other, m, bm));
+    function blockedLayout(active, metrics, boardMetrics){
+      const positions = new Map(), rects = new Map(), buckets = new Map(), blocked = new Set();
+      const cellW = Math.max(1, boardMetrics.tileW + 2), cellH = Math.max(1, boardMetrics.tileH + 2);
+      active.forEach(tile => {
+        positions.set(tile.id, renderPoint(tile, metrics));
+        rects.set(tile.id, tileRectOnBoard(tile, metrics, boardMetrics));
       });
+      active.slice().sort((a,b) => b.layer - a.layer).forEach(tile => {
+        const rect = rects.get(tile.id), candidates = new Set();
+        const x0=Math.floor(rect.left/cellW), x1=Math.floor(rect.right/cellW), y0=Math.floor(rect.top/cellH), y1=Math.floor(rect.bottom/cellH);
+        for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) (buckets.get(x+','+y)||[]).forEach(item=>candidates.add(item));
+        if(Array.from(candidates).some(item => item.tile.layer > tile.layer && rectsOverlap(rect,item.rect))) blocked.add(tile.id);
+        const item={ tile, rect };
+        for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+          const key=x+','+y, list=buckets.get(key)||[];
+          list.push(item); buckets.set(key,list);
+        }
+      });
+      return { blocked, positions };
     }
     function miniHTML(card, cls, attrs){
       return card ? '<button type="button" class="wb-uyangle-mini '+(cls || '')+'" '+(attrs || '')+'><img src="'+esc(iconUrl(card.icon))+'" alt=""></button>' : '';
@@ -14587,7 +15350,7 @@ function showGameRecords(game, page) {
     function pick(id){
       if(gamePaused || over || moveMode) return;
       const tile = tiles.find(t => t.id === id && !t.gone);
-      if(!tile || isBlocked(tile)) return;
+      if(!tile || lastBlockedIds.has(tile.id)) return;
       tile.gone = true;
       tray.push({ icon:tile.icon, id:'tray_' + tile.id + '_' + Date.now() });
       const beforeMatches = details.matches || 0;
@@ -14634,7 +15397,7 @@ function showGameRecords(game, page) {
       draw(); save();
     }
     function draw(){
-      const board = qs('#wb-uyangle-board', box), alive = activeTiles();
+      const board = uyangleBoard, alive = activeTiles();
       const cleared = Math.max(0, tiles.length - alive.length), progress = tiles.length ? Math.round(cleared / tiles.length * 100) : 0;
       qs('#wb-uyangle-left', box).textContent = endless ? '无尽模式' : ('剩余：' + alive.length);
       qs('#wb-uyangle-status', box).textContent = moveMode ? '选择要移出的槽牌' : ('槽位：' + tray.length + '/7');
@@ -14644,17 +15407,15 @@ function showGameRecords(game, page) {
       qs('#wb-uyangle-progress-text', box).textContent = endless ? ('已消除 ' + (details.matches || 0) + ' 组') : ('进度 ' + progress + '%');
       qs('#wb-uyangle-move-badge', box).textContent = String(Math.max(0, 3 - moveouts));
       qs('#wb-uyangle-shuffle-badge', box).textContent = String(Math.max(0, SHUFFLE_MAX - shuffles));
-      const metrics = renderMetrics(), boardMetrics = uyangleBoardMetrics(board);
+      const metrics = renderMetrics(), boardMetrics = uyangleBoardMetrics(board), layout = blockedLayout(alive, metrics, boardMetrics);
+      lastBlockedIds = layout.blocked;
       const minLayer = alive.length ? Math.min(...alive.map(t => Number(t.layer) || 0)) : 0;
-      board.innerHTML = alive.slice().sort((a,b) => a.layer - b.layer || a.id - b.id).map(t => {
-        const blocked = isBlocked(t, board, metrics, boardMetrics), pos = renderPoint(t, metrics);
+      patchElementHTML(board, alive.slice().sort((a,b) => a.layer - b.layer || a.id - b.id).map(t => {
+        const blocked = layout.blocked.has(t.id), pos = layout.positions.get(t.id);
         return '<button type="button" class="wb-uyangle-tile '+(blocked?'blocked':'')+'" data-id="'+t.id+'" style="left:'+pos.left+'%;top:'+pos.top+'%;z-index:'+(10 + (Number(t.layer) || 0) - minLayer)+';" '+(blocked?'disabled':'')+'><img src="'+esc(iconUrl(t.icon))+'" alt=""></button>';
-      }).join('');
-      qsa('.wb-uyangle-tile:not(:disabled)', board).forEach(btn => btn.onclick = () => pick(+btn.dataset.id));
-      qs('#wb-uyangle-hold', box).innerHTML = slotsHTML(hold, false, 3);
-      const trayEl = qs('#wb-uyangle-tray', box);
-      trayEl.innerHTML = slotsHTML(tray, moveMode, 7);
-      qsa('.wb-uyangle-mini.pickable', trayEl).forEach(btn => btn.onclick = () => moveOut(+btn.dataset.i));
+      }).join(''));
+      patchElementHTML(uyangleHold, slotsHTML(hold, false, 3));
+      patchElementHTML(uyangleTray, slotsHTML(tray, moveMode, 7));
       const moveBtn = qs('#wb-uyangle-moveout', box);
       moveBtn.disabled = moveouts >= 3 || !tray.length;
       moveBtn.classList.toggle('primary', moveMode);
@@ -14687,6 +15448,11 @@ function showGameRecords(game, page) {
     const levelEl = qs('#wb-popstar-level', box), scoreEl = qs('#wb-popstar-score', box), targetEl = qs('#wb-popstar-target', box), movesEl = qs('#wb-popstar-moves', box), leftEl = qs('#wb-popstar-left', box);
     const shuffleBtn = qs('#wb-popstar-shuffle', box), singleBtn = qs('#wb-popstar-single', box);
     const shuffleLeftEl = qs('#wb-popstar-shuffle-left', box), singleLeftEl = qs('#wb-popstar-single-left', box);
+    const popstarNodes = new Map();
+    boardEl.onclick = event => {
+      const cell = event.target.closest('.wb-popstar-cell');
+      if (cell && boardEl.contains(cell)) clickCell(+cell.dataset.r, +cell.dataset.c);
+    };
     const lowFx = isMobileHost() || ((getHostWindow().innerWidth || 800) <= 768);
     const fitPopStarStage = () => {
       const panelRect = panel.getBoundingClientRect();
@@ -14796,8 +15562,7 @@ function showGameRecords(game, page) {
     function scoreFor(n){ return n * n * 5 + bigClearBonus(n); }
     function remainingBonus(left){ return left === 0 ? 1000 : (left <= 5 ? 500 : (left <= 10 ? 200 : 0)); }
     function unusedMoveBonus(noMoves){ return noMoves && movesLeft > 0 ? movesLeft * 80 : 0; }
-    function centerOf(items){
-      const rect = stage.getBoundingClientRect();
+    function centerOf(items, rect){
       const avgR = items.reduce((s,x)=>s+x.r,0) / Math.max(1, items.length);
       const avgC = items.reduce((s,x)=>s+x.c,0) / Math.max(1, items.length);
       return { x:(avgC + .5) / N * rect.width, y:(avgR + .5) / N * rect.height };
@@ -14811,8 +15576,7 @@ function showGameRecords(game, page) {
       stage.appendChild(el);
       setTimeout(() => el.remove(), 850);
     }
-    function addShards(items){
-      const rect = stage.getBoundingClientRect();
+    function addShards(items, rect){
       const maxItems = lowFx ? Math.min(items.length, 12) : items.length;
       const shardEach = lowFx ? 2 : 5;
       const frag = getHostDocument().createDocumentFragment();
@@ -14840,27 +15604,28 @@ function showGameRecords(game, page) {
         const cell = board[r][c];
         if(!cell) continue;
         live.add(cell.id);
-        let el = qs('[data-popstar-id="' + cell.id + '"]', boardEl);
+        let el = popstarNodes.get(cell.id);
         if(!el){
           el = getHostDocument().createElement('button');
           el.type = 'button';
           el.dataset.popstarId = cell.id;
           el.innerHTML = '<span class="wb-popstar-block"><svg class="wb-popstar-star" viewBox="0 0 100 100" aria-hidden="true"><path d="' + starPath + '"></path></svg></span>';
+          popstarNodes.set(cell.id, el);
           boardEl.appendChild(el);
         }
+        el.dataset.r = r;
+        el.dataset.c = c;
         el.className = 'wb-popstar-cell';
         el.style.setProperty('--r', r);
         el.style.setProperty('--c', c);
         el.style.setProperty('--star-color', colorHex(cell.color));
         el.disabled = busy || gamePaused || over;
-        el.onclick = () => clickCell(r,c);
       }
-      qsa('.wb-popstar-cell', boardEl).forEach(el => {
-        if(!live.has(el.dataset.popstarId) && !el.classList.contains('removing')) el.remove();
+      popstarNodes.forEach((el, id) => {
+        if(!live.has(id) && !el.classList.contains('removing')) { el.remove(); popstarNodes.delete(id); }
       });
     }
     function drawUI(){
-      fitPopStarStage();
       const target = levelTarget(level), left = remainingCount();
       levelEl.textContent = '第 ' + level + ' 关';
       scoreEl.textContent = '分数 ' + score;
@@ -14908,14 +15673,18 @@ function showGameRecords(game, page) {
       }
     }
     function removeCells(items, points){
+      const rect = stage.getBoundingClientRect();
       items.forEach(item => {
-        const el = qs('[data-popstar-id="' + item.cell.id + '"]', boardEl);
-        if(el) el.classList.add('removing');
+        const id = item.cell.id, el = popstarNodes.get(id);
+        if(el){
+          el.classList.add('removing');
+          setTimeout(() => { if(el.classList.contains('removing')) el.remove(); popstarNodes.delete(id); }, 220);
+        }
         board[item.r][item.c] = null;
       });
-      addShards(items);
+      addShards(items, rect);
       if(points){
-        const p = centerOf(items);
+        const p = centerOf(items, rect);
         addScorePop('+' + points, p.x, p.y);
       }
     }
@@ -15139,6 +15908,23 @@ function showGameRecords(game, page) {
     let seen = state?.seen || {};
     let details = state?.details || { flags:0, correctFlags:0, openedSafe:0, openedAtBlast:0, hesitations:0, chordSuccesses:0, riskyChordSuccesses:0, unflaggedMines:0, won:false };
     box.innerHTML = '<div class="wb-mines-panel"><div class="wb-mines-top"><span class="wb-pill" id="wb-mines-left"></span><span class="wb-pill" id="wb-mines-opened"></span><span class="wb-pill" id="wb-mines-mode"></span></div><div class="wb-mines-board" id="wb-mines-board"></div><div class="wb-actions wb-mines-actions"><button type="button" class="wb-btn primary" id="wb-mines-open-mode">翻开</button><button type="button" class="wb-btn" id="wb-mines-flag-mode">插旗</button></div></div>';
+    const minesBoard = qs('#wb-mines-board', box);
+    minesBoard.onclick = event => {
+      const cell = event.target.closest('.wb-mines-cell');
+      if (!cell || !minesBoard.contains(cell)) return;
+      const i = +cell.dataset.i;
+      if (mode === 'flag' && cells[i] && cells[i].open) chord(i);
+      else if (mode === 'flag') cycleMark(i);
+      else openCell(i);
+    };
+    minesBoard.oncontextmenu = event => {
+      const cell = event.target.closest('.wb-mines-cell');
+      if (!cell || !minesBoard.contains(cell)) return;
+      event.preventDefault();
+      const i = +cell.dataset.i;
+      if(cells[i] && cells[i].open) chord(i);
+      else cycleMark(i);
+    };
     draw(); save();
 
     function save(){ if(!over) saveProgress('minesweeper', Object.assign({ cells, mode, started, clickCount, lastDecisionAt, seen, details }, choiceSavePatch('minesweeper', choice))); }
@@ -15268,31 +16054,18 @@ function showGameRecords(game, page) {
       setTimeout(() => { cells.forEach(c => c.pulse = false); draw(); }, 180);
     }
     function draw() {
-      const board = qs('#wb-mines-board', box);
-      board.style.setProperty('--wb-mines-size', String(W));
+      minesBoard.style.setProperty('--wb-mines-size', String(W));
       qs('#wb-mines-left', box).textContent = '剩余雷：' + remainingMines();
       qs('#wb-mines-opened', box).textContent = '已开：' + openedSafe() + '/' + SAFE;
       qs('#wb-mines-mode', box).textContent = mode === 'flag' ? '模式：插旗' : '模式：翻开';
       const openBtn = qs('#wb-mines-open-mode', box), flagBtn = qs('#wb-mines-flag-mode', box);
       openBtn.classList.toggle('primary', mode === 'open');
       flagBtn.classList.toggle('primary', mode === 'flag');
-      board.innerHTML = cells.map((c, i) => {
+      patchElementHTML(minesBoard, cells.map((c, i) => {
         const shown = c.open, cls = ['wb-mines-cell', shown ? 'open' : 'closed', c.mine && shown ? 'mine' : '', c.boom ? 'boom' : '', c.pulse ? 'pulse' : '', c.n && shown && !c.mine ? ('n' + c.n) : ''].filter(Boolean).join(' ');
         const text = shown ? (c.mine ? '✹' : (c.n ? String(c.n) : '')) : (c.mark === 1 ? '⚑' : (c.mark === 2 ? '?' : ''));
         return '<button type="button" class="' + cls + '" data-i="' + i + '" aria-label="扫雷格">' + text + '</button>';
-      }).join('');
-      qsa('.wb-mines-cell', board).forEach(btn => btn.onclick = () => {
-        const i = +btn.dataset.i;
-        if (mode === 'flag' && cells[i] && cells[i].open) chord(i);
-        else if (mode === 'flag') cycleMark(i);
-        else openCell(i);
-      });
-      qsa('.wb-mines-cell', board).forEach(btn => btn.oncontextmenu = e => {
-        e.preventDefault();
-        const i = +btn.dataset.i;
-        if(cells[i] && cells[i].open) chord(i);
-        else cycleMark(i);
-      });
+      }).join(''));
     }
     qs('#wb-mines-open-mode', box).onclick = () => { mode = 'open'; draw(); save(); };
     qs('#wb-mines-flag-mode', box).onclick = () => { mode = 'flag'; draw(); save(); };
@@ -15331,8 +16104,6 @@ function showGameRecords(game, page) {
     tick();
     draw();
     save();
-    if (shuerteTimer) clearInterval(shuerteTimer);
-    shuerteTimer = setInterval(tick, 100);
 
     function elapsedMs() { return elapsedBefore + (started && startAt ? Date.now() - startAt : 0); }
     function shuerteTimeText(ms) { return ((Math.max(0, Number(ms) || 0)) / 1000).toFixed(2) + '秒'; }
@@ -15340,6 +16111,17 @@ function showGameRecords(game, page) {
       if (!over) saveProgress('shuerte', Object.assign({ nums, next, score, combo, maxCombo, started, startAt, elapsedBefore:elapsedMs(), lastCorrectAt, feedback, tools, details }, choiceSavePatch('shuerte', choice)));
     }
     save = registerLegacyGameSave('shuerte', save);
+    function startShuerteTimer(){
+      if(shuerteTimer || over || gamePaused || !started) return;
+      if(started && !startAt) startAt=Date.now();
+      shuerteTimer=setInterval(tick,100);
+    }
+    function pauseShuerteTimer(){
+      if(started && startAt){ elapsedBefore=elapsedMs(); startAt=0; }
+      if(shuerteTimer){ clearInterval(shuerteTimer); shuerteTimer=null; }
+    }
+    save.setLifecycle?.({ pause:pauseShuerteTimer, resume:startShuerteTimer });
+    startShuerteTimer();
     function tick() {
       if (timeEl) timeEl.textContent = '用时：' + shuerteTimeText(elapsedMs());
     }
@@ -15390,7 +16172,7 @@ function showGameRecords(game, page) {
     }
     function clickCell(i, btn) {
       if (gamePaused || over || next > TOTAL) return;
-      if (!started) { started = true; startAt = Date.now(); lastCorrectAt = Date.now(); speak('shuerte','start'); }
+      if (!started) { started = true; startAt = Date.now(); lastCorrectAt = Date.now(); speak('shuerte','start'); startShuerteTimer(); }
       const v = nums[i];
       if (v === next) {
         const now = Date.now();
@@ -15843,7 +16625,7 @@ function showGameRecords(game, page) {
         speak('screw','tray_4');
       }
       if(!seen.first){ seen.first=1; }
-      drawUI(); draw(); save();
+      drawUI(); draw(); save(); scheduleScrewStep();
     }
     function clickAt(x,y){
       if(gamePaused||over) return;
@@ -15932,6 +16714,8 @@ function showGameRecords(game, page) {
     }
     function step(){
       if(over || gamePaused) return;
+      const activeBefore = panels.some(p => !p.gone && (p.falling || (!p.stuck && liveAnchors(p).length === 1 && !p.hangSettled)));
+      if(!activeBefore) return;
       panels.forEach(p => {
         if(p.gone) return;
         const anchors = liveAnchors(p);
@@ -15989,9 +16773,26 @@ function showGameRecords(game, page) {
       });
       if(panels.every(p => p.gone)) { if(endless) extendEndless(); else finish(); return; }
       maybeExtendEndless();
-      drawUI(); draw(); save();
+      drawUI(); draw();
+      const activeAfter = panels.some(p => !p.gone && (p.falling || (!p.stuck && liveAnchors(p).length === 1 && !p.hangSettled)));
+      if(!activeAfter) save();
     }
-    screwTimer = setInterval(step, 33);
+    function screwPhysicsActive(){
+      return panels.some(p => !p.gone && (p.falling || (!p.stuck && liveAnchors(p).length === 1 && !p.hangSettled)));
+    }
+    function scheduleScrewStep(){
+      if(screwTimer || over || gamePaused || !save.isActive() || !screwPhysicsActive()) return;
+      screwTimer = setTimeout(() => {
+        screwTimer = null;
+        step();
+        scheduleScrewStep();
+      }, 33);
+    }
+    save.setLifecycle?.({
+      pause(){ if(screwTimer){ clearTimeout(screwTimer); screwTimer=null; } },
+      resume(){ scheduleScrewStep(); }
+    });
+    scheduleScrewStep();
     function progressPct(){ return Math.round(panels.filter(p=>p.gone).length / panels.length * 100); }
     function drawUI(){
       const pct = progressPct();
@@ -16002,11 +16803,11 @@ function showGameRecords(game, page) {
       if(progressWrap) progressWrap.classList.toggle('wb-endless-counter', endless);
       qs('#wb-screw-progress-fill', box).style.width = endless ? '0%' : (pct + '%');
       qs('#wb-screw-progress-text', box).textContent = endless ? ('收纳盒子 ' + (details.matches || 0) + ' 个') : ('进度 ' + pct + '%');
-      qs('#wb-screw-boxes', box).innerHTML = boxes.map((b,i) => {
+      patchElementHTML(qs('#wb-screw-boxes', box), boxes.map((b,i) => {
         const col = colorById(b.color);
         return '<div class="wb-screw-box'+(i===0?' active':'')+'" style="--c:'+col.hex+'">' + [0,1,2].map(n => '<span class="wb-screw-box-hole">' + (n < b.fill ? '<i style="background:'+col.hex+'"></i>' : '') + '</span>').join('') + '</div>';
-      }).join('');
-      qs('#wb-screw-tray', box).innerHTML = Array.from({length:5},(_,i)=>'<div class="wb-screw-slot">' + (tray[i] ? '<span style="background:'+colorById(tray[i]).hex+'"></span>' : '') + '</div>').join('');
+      }).join(''));
+      patchElementHTML(qs('#wb-screw-tray', box), Array.from({length:5},(_,i)=>'<div class="wb-screw-slot">' + (tray[i] ? '<span style="background:'+colorById(tray[i]).hex+'"></span>' : '') + '</div>').join(''));
       const addBtn = qs('#wb-screw-addbox', box), left = Math.max(0, 3 - addBoxUses);
       if(addBtn){
         addBtn.disabled = left <= 0 || boxes.length >= 6 || boxIndex >= boxQueue.length;
@@ -16091,6 +16892,14 @@ function showGameRecords(game, page) {
     let selected = Number.isInteger((resume || state)?.selected) ? (resume || state).selected : -1, hints = (resume || state)?.hints || 0, over = false, seen = (resume || state)?.seen || {};
     let details = (resume || state)?.details || { hints:hints, edits:0, editCounts:{}, maxEditsOneCell:0, finalErrors:0 };
     box.innerHTML = '<div class="wb-sudoku-panel"><div class="wb-sudoku-top"><span class="wb-pill" id="wb-sudoku-clues"></span><span class="wb-pill" id="wb-sudoku-hints"></span></div><div id="wb-sudoku-board"></div><div class="wb-actions wb-sudoku-tools"><button type="button" class="wb-btn" id="wb-sudoku-erase">擦除</button><button type="button" class="wb-btn primary" id="wb-sudoku-hint">提示 <span class="wb-sudoku-badge" id="wb-sudoku-hint-badge">0</span></button></div><div class="wb-sudoku-nums">' + Array.from({length:9},(_,i)=>'<button type="button" class="wb-btn" data-n="'+(i+1)+'">'+(i+1)+'</button>').join('') + '</div></div>';
+    const sudokuBoard = qs('#wb-sudoku-board', box);
+    sudokuBoard.onclick = event => {
+      const cell = event.target.closest('[data-sudoku-cell]');
+      if (!cell || !sudokuBoard.contains(cell)) return;
+      selected=+cell.dataset.i;
+      draw();
+      save();
+    };
     draw(); save(true);
     function save(force){ if(!over) saveProgress('sudoku', Object.assign({ puzzle, solution, grid, selected, hints, seen, details }, choiceSavePatch('sudoku', choice)), force ? { immediate:true } : undefined); }
     save = registerLegacyGameSave('sudoku', save);
@@ -16106,19 +16915,18 @@ function showGameRecords(game, page) {
       return false;
     }
     function draw(){
-      const board = qs('#wb-sudoku-board', box);
       const full = grid.every(Boolean), errors = full ? solutionErrors() : 0;
       qs('#wb-sudoku-clues', box).textContent = full && errors ? '错误：' + errors + '格' : ('题面：' + puzzle.filter(Boolean).length + '格');
       qs('#wb-sudoku-hints', box).innerHTML = '提示：<b>' + hints + '</b>';
       const badge = qs('#wb-sudoku-hint-badge', box); if (badge) badge.textContent = String(hints);
-      board.className = 'wb-sudoku-board';
-      board.style.cssText = 'width:100%;max-width:min(390px,64cqh);max-height:100%;aspect-ratio:1/1;position:relative;box-sizing:border-box;border:2px solid var(--wb-text);background:var(--wb-text);overflow:hidden;flex:0 0 auto;';
+      sudokuBoard.className = 'wb-sudoku-board';
+      sudokuBoard.style.cssText = 'width:100%;max-width:min(390px,64cqh);max-height:100%;aspect-ratio:1/1;position:relative;box-sizing:border-box;border:2px solid var(--wb-text);background:var(--wb-text);overflow:hidden;flex:0 0 auto;';
       const selectedFixed = selected >= 0 && !!puzzle[selected];
       const theme = currentTheme();
       const mono = theme === 'mono', cardTheme = theme === 'card';
-      if(cardTheme) board.style.cssText = 'width:100%;max-width:min(390px,64cqh);max-height:100%;aspect-ratio:1/1;position:relative;box-sizing:border-box;border:2px solid rgba(245,201,104,.72);background:#F5C968;overflow:hidden;flex:0 0 auto;box-shadow:0 16px 34px rgba(0,0,0,.42),0 0 0 1px rgba(255,255,255,.04) inset;';
+      if(cardTheme) sudokuBoard.style.cssText = 'width:100%;max-width:min(390px,64cqh);max-height:100%;aspect-ratio:1/1;position:relative;box-sizing:border-box;border:2px solid rgba(245,201,104,.72);background:#F5C968;overflow:hidden;flex:0 0 auto;box-shadow:0 16px 34px rgba(0,0,0,.42),0 0 0 1px rgba(255,255,255,.04) inset;';
       const same = selectedFixed ? puzzle[selected] : 0, sr=row(selected), sc=col(selected);
-      board.innerHTML = Array.from({length:81},(_,i)=>{
+      patchElementHTML(sudokuBoard, Array.from({length:81},(_,i)=>{
         const r = row(i), c = col(i), v = grid[i] || 0;
         const fixed = !!puzzle[i], sel = i === selected, peer = selected >= 0 && (r === sr || c === sc);
         const sameNum = !!(same && fixed && puzzle[i] === same), wrong = !fixed && hasRuleConflict(i);
@@ -16131,13 +16939,12 @@ function showGameRecords(game, page) {
         const shadow = wrong ? 'box-shadow:inset 0 0 0 2px '+(cardTheme ? '#FF3048' : '#ef4444')+';' : (peer && !sameNum ? 'box-shadow:inset 0 0 0 999px '+(cardTheme ? 'rgba(201,24,43,.13)' : 'rgba(125,185,216,.10)')+';' : '');
         const cls = ['wb-sudoku-tile', fixed?'fixed':'mutable', sel?'sel':'', peer?'peer':'', sameNum?'same':'', wrong?'wrong':''].filter(Boolean).join(' ');
         return '<button type="button" data-sudoku-cell="1" data-i="'+i+'" class="'+cls+'" style="position:absolute;left:'+((c*100)/9)+'%;top:'+((r*100)/9)+'%;width:'+(100/9)+'%;height:'+(100/9)+'%;display:flex;align-items:center;justify-content:center;margin:0;padding:0;box-sizing:border-box;border-radius:0;font-weight:900;font-size:clamp(15px,3.1vh,24px);line-height:1;background:'+bg+';color:'+color+';'+border+outline+shadow+'">'+(v ? String(v) : '')+'</button>';
-      }).join('');
-      qsa('[data-sudoku-cell]', board).forEach(b=>b.onclick=()=>{ selected=+b.dataset.i; draw(); save(true); });
+      }).join(''));
     }
     function markEdit(i){ details.edits++; details.editCounts[i] = (details.editCounts[i] || 0) + 1; details.maxEditsOneCell = Math.max(details.maxEditsOneCell || 0, details.editCounts[i]); }
-    function input(n){ if(gamePaused||over||selected<0||puzzle[selected]) return; if(!seen.first){ seen.first=1; speak('sudoku','first_fill'); } markEdit(selected); grid[selected]=n; if(hasRuleConflict(selected)) speak('sudoku','conflict'); if(completeLine('r',row(selected))&&!seen['r'+row(selected)]){ seen['r'+row(selected)]=1; speak('sudoku','row_done'); } if(completeLine('c',col(selected))&&!seen['c'+col(selected)]){ seen['c'+col(selected)]=1; speak('sudoku','col_done'); } const blanks=grid.filter(v=>!v).length; if(blanks<=5&&!seen.near){ seen.near=1; speak('sudoku','nearly_done'); } const errors=solutionErrors(); maybeSudokuGameoverLine(blanks, errors); if(blanks===0) details.finalErrors = errors; draw(); save(true); if(blanks===0 && errors===0) done(); else if(blanks===0){ speak('sudoku','complete_error'); toast('已填满，当前错误 ' + errors + ' 格，可以继续修改'); } }
-    function erase(){ if(selected<0||puzzle[selected]) return; markEdit(selected); grid[selected]=0; speak('sudoku','erase'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(true); }
-    function hint(){ let i = selected>=0 && !puzzle[selected] && grid[selected]!==solution[selected] ? selected : -1; if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && v && v!==solution[k]); if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && !v); if(i<0) return; hints++; details.hints = hints; selected=i; markEdit(i); grid[i]=solution[i]; puzzle[i]=solution[i]; speak('sudoku', hints>5?'many_hints':'hint'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(true); if(grid.every(Boolean) && solutionErrors()===0) done(); }
+    function input(n){ if(gamePaused||over||selected<0||puzzle[selected]) return; if(!seen.first){ seen.first=1; speak('sudoku','first_fill'); } markEdit(selected); grid[selected]=n; if(hasRuleConflict(selected)) speak('sudoku','conflict'); if(completeLine('r',row(selected))&&!seen['r'+row(selected)]){ seen['r'+row(selected)]=1; speak('sudoku','row_done'); } if(completeLine('c',col(selected))&&!seen['c'+col(selected)]){ seen['c'+col(selected)]=1; speak('sudoku','col_done'); } const blanks=grid.filter(v=>!v).length; if(blanks<=5&&!seen.near){ seen.near=1; speak('sudoku','nearly_done'); } const errors=solutionErrors(); maybeSudokuGameoverLine(blanks, errors); if(blanks===0) details.finalErrors = errors; draw(); save(); if(blanks===0 && errors===0) done(); else if(blanks===0){ speak('sudoku','complete_error'); toast('已填满，当前错误 ' + errors + ' 格，可以继续修改'); } }
+    function erase(){ if(selected<0||puzzle[selected]) return; markEdit(selected); grid[selected]=0; speak('sudoku','erase'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(); }
+    function hint(){ let i = selected>=0 && !puzzle[selected] && grid[selected]!==solution[selected] ? selected : -1; if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && v && v!==solution[k]); if(i<0) i=grid.findIndex((v,k)=>!puzzle[k] && !v); if(i<0) return; hints++; details.hints = hints; selected=i; markEdit(i); grid[i]=solution[i]; puzzle[i]=solution[i]; speak('sudoku', hints>5?'many_hints':'hint'); maybeSudokuGameoverLine(grid.filter(v=>!v).length, solutionErrors()); draw(); save(); if(grid.every(Boolean) && solutionErrors()===0) done(); }
     function done(){ const duration = currentGameDurationMs(), finalScore = scoreWithChoice('sudoku', sudokuScore(duration, hints), choice); setScore('sudoku', finalScore); details.finalErrors = solutionErrors(); over=true; if(!seen.gameover) speak('sudoku','gameover'); showGameOver('sudoku','数独完成','本局分数：'+finalScore+'分（'+choice.title+'），求助'+hints+'次', null, { hints, score:finalScore, difficulty:choice.title, details }); }
     qs('#wb-sudoku-erase', box).onclick=erase; qs('#wb-sudoku-hint', box).onclick=hint; qsa('.wb-sudoku-nums .wb-btn', box).forEach(b=>b.onclick=()=>input(+b.dataset.n));
     getHostDocument().onkeydown=e=>{ if(/^[1-9]$/.test(e.key)) input(+e.key); if(e.key==='Backspace'||e.key==='Delete') erase(); };
@@ -16198,10 +17005,24 @@ function showGameRecords(game, page) {
     save = registerLegacyGameSave('watermelon', save, () => {
       destroyed = true;
       if (frameId !== null) view.cancelAnimationFrame(frameId);
+      frameId = null;
       if (dropTimer !== null) view.clearTimeout(dropTimer);
       cancelFruitCacheWarm();
       c.onclick = c.onpointerdown = c.onpointermove = c.onpointerup = c.onpointercancel = null;
       c.ontouchstart = c.ontouchmove = c.ontouchend = c.ontouchcancel = null;
+    });
+    save.setLifecycle?.({
+      pause() {
+        if (frameId !== null) view.cancelAnimationFrame(frameId);
+        frameId = null;
+        lastFrameAt = null;
+        accumulator = 0;
+      },
+      resume() {
+        lastFrameAt = null;
+        accumulator = 0;
+        if (!sleeping || aiming || needsDraw) ensureFrame();
+      }
     });
     setScore('watermelon', score); checkWarnings(); draw(); needsDraw = false; save();
     for(let i=0;i<3;i++){ cachedFruitCanvas(i,1); cachedFruitCanvas(i,.62); }
@@ -16267,7 +17088,7 @@ function showGameRecords(game, page) {
         lastDrawAt = now;
         needsDraw = false;
       }
-      if (!over && !destroyed && (!sleeping || aiming || gamePaused || doc.hidden)) ensureFrame();
+      if (!over && !destroyed && !gamePaused && !doc.hidden && (!sleeping || aiming)) ensureFrame();
     }
     function randNext(){ return Math.floor(Math.random()*3); }
     function clientX(e){ const r=c.getBoundingClientRect(); return Math.max(18, Math.min(W-18, (e.clientX-r.left) * W / r.width)); }
@@ -16629,11 +17450,37 @@ function showGameRecords(game, page) {
     let red = Array.isArray(state?.red) ? state.red.map(v => Number.isFinite(Number(v)) ? Number(v) : -1) : [-1,-1,-1,-1];
     let blue = Array.isArray(state?.blue) ? state.blue.map(v => Number.isFinite(Number(v)) ? Number(v) : -1) : [-1,-1,-1,-1];
     let turn = state?.turn || (state?.firstMover === 'ta' ? 'blue' : 'red'), dice = state?.dice || 0, rolled = !!state?.rolled, busy=false, over=false, redSixStreak = state?.redSixStreak || 0, blueSixStreak = state?.blueSixStreak || 0, turnCount = state?.turnCount || 0, diceRolling=false, diceRollingSide='', diceTimer=null, diceAutoTimer=null, diceStopper=null, diceFace=dice || 1;
-	    let details = state?.details || { userCaptures:0, charCaptures:0, userMaxSixStreak:redSixStreak || 0, charMaxSixStreak:blueSixStreak || 0, loserHangar:0, loserOnBoard:0 };
+    let details = state?.details || { userCaptures:0, charCaptures:0, userMaxSixStreak:redSixStreak || 0, charMaxSixStreak:blueSixStreak || 0, loserHangar:0, loserOnBoard:0 };
     details.userFlights = Number(details.userFlights || 0);
     details.charFlights = Number(details.charFlights || 0);
 	    let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-ludo-panel"><div class="wb-ludo-info"><span class="wb-pill" id="wb-ludo-turn"></span><span class="wb-ludo-dice" id="wb-ludo-dice"></span><button class="wb-btn primary" id="wb-ludo-roll">掷骰</button>' + cheatButtonHTML(cheatLeft) + '</div><div class="wb-ludo" id="wb-ludo-board"></div></div>';
+    const ludoBoard = qs('#wb-ludo-board', box);
+    const ludoDice = qs('#wb-ludo-dice', box);
+    patchElementHTML(ludoDice, Array.from({length:9}, () => '<span></span>').join(''));
+    const ludoDiceNodes = Array.from(ludoDice.children);
+    const ludoDicePatterns = { 1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] };
+    const ludoCells = [];
+    for(let y=0;y<11;y++) for(let x=0;x<11;x++){
+      let cls='wb-ludo-cell';
+      if(path.some(p=>p[0]===x&&p[1]===y)) cls+=' path';
+      if(starts.red.some(p=>p[0]===x&&p[1]===y)||finish.red.some(p=>p[0]===x&&p[1]===y)) cls+=' home-red';
+      if(starts.blue.some(p=>p[0]===x&&p[1]===y)||finish.blue.some(p=>p[0]===x&&p[1]===y)) cls+=' home-blue';
+      cls+=flightCellClass(x,y);
+      ludoCells.push('<div class="'+cls+'" data-x="'+x+'" data-y="'+y+'"></div>');
+    }
+    patchElementHTML(ludoBoard, ludoCells.join('')+flightLayerHTML());
+    const pieceNodes = { red:[], blue:[] };
+    ['red','blue'].forEach(side => {
+      for(let i=0;i<4;i++){
+        const piece=getHostDocument().createElement('button');
+        piece.type='button'; piece.textContent=i+1;
+        let tapped=false;
+        const tap=e=>{ e.preventDefault(); if(tapped) return; tapped=true; moveRed(i); setTimeout(()=>{ tapped=false; },260); };
+        piece.onclick=tap; piece.onpointerup=tap;
+        pieceNodes[side].push(piece);
+      }
+    });
     setScore('ludo', 0); draw(); save();
     if (!state?.turn && state?.firstMover) speakFirstMover('ludo', state.firstMover);
     qs('#wb-ludo-roll').onclick = () => { if(diceRolling && diceRollingSide==='red' && diceStopper) { diceStopper(true); return; } if(turn==='red' && !rolled && !busy && !gamePaused) rollRed(); };
@@ -16647,11 +17494,13 @@ function showGameRecords(game, page) {
 	    function save(){ if(!over) saveProgress('ludo', { red, blue, turn, dice, rolled, redSixStreak, blueSixStreak, turnCount, details, cheatLeft, cheatAttempted, undoStack }); }
     save = registerLegacyGameSave('ludo', save);
     function roll(){ return 1 + Math.floor(Math.random()*6); }
-    function diceDotsHTML(v){
-      const dots = { 1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] }[v] || [];
-      return Array.from({length:9},(_,i)=>dots.includes(i)?'<span class="wb-ludo-dot"></span>':'<span></span>').join('');
+    function setDiceDisplay(v, rolling){
+      const dots = ludoDicePatterns[v] || [];
+      ludoDiceNodes.forEach((node, index) => node.classList.toggle('wb-ludo-dot', dots.includes(index)));
+      ludoDice.classList.toggle('rolling', !!rolling);
+      ludoDice.classList.toggle('one', v===1);
+      ludoDice.classList.toggle('empty', !v);
     }
-    function setDiceDisplay(v, rolling){ const d=qs('#wb-ludo-dice'); if(d){ d.innerHTML=v ? diceDotsHTML(v) : ''; d.classList.toggle('rolling', !!rolling); d.classList.toggle('one', v===1); } }
     function animateDice(side, autoMs, done){
       if(diceRolling) return;
       diceRolling = true;
@@ -16760,8 +17609,8 @@ function showGameRecords(game, page) {
       };
     }
     function flightLayerHTML(){ const parts=[]; ['red','blue'].forEach(side=>{ ludoFlights.filter(f=>f.line).forEach(f=>{ const a=posCoord(side,f.from,0), b=posCoord(side,f.to,0), p=flightCornerPoints(a,b); parts.push('<line class="wb-ludo-flight-line '+side+'" x1="'+p.x1+'" y1="'+p.y1+'" x2="'+p.x2+'" y2="'+p.y2+'"></line>'); }); }); return '<svg class="wb-ludo-flight-layer" viewBox="0 0 11 11" preserveAspectRatio="none" aria-hidden="true">'+parts.join('')+'</svg>'; }
-	    function draw(){ const board=qs('#wb-ludo-board'); const cells=[]; const charLabel=displayCharName(); for(let y=0;y<11;y++) for(let x=0;x<11;x++){ let cls='wb-ludo-cell'; if(path.some(p=>p[0]===x&&p[1]===y)) cls+=' path'; if(starts.red.some(p=>p[0]===x&&p[1]===y)||finish.red.some(p=>p[0]===x&&p[1]===y)) cls+=' home-red'; if(starts.blue.some(p=>p[0]===x&&p[1]===y)||finish.blue.some(p=>p[0]===x&&p[1]===y)) cls+=' home-blue'; cls+=flightCellClass(x,y); cells.push('<div class="'+cls+'" data-x="'+x+'" data-y="'+y+'"></div>'); } board.innerHTML=cells.join('')+flightLayerHTML(); addPieces('red',red); addPieces('blue',blue); const t=qs('#wb-ludo-turn'); if(t) t.textContent=turn==='red'?'你的回合':charLabel+'的回合'; setDiceDisplay(dice, diceRolling); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||diceRolling||busy); const rb=qs('#wb-ludo-roll'); if(rb){ const userRolling=diceRolling&&diceRollingSide==='red'; const charRolling=diceRolling&&diceRollingSide==='blue'; rb.disabled=gamePaused || charRolling || (turn!=='red' && !userRolling) || (rolled && !userRolling) || (busy && !userRolling); rb.textContent=userRolling ? '停止' : (charRolling ? charLabel + '掷骰中' : '掷骰'); } }
-    function addPieces(side,arr){ const moves=side==='red'&&turn==='red'&&rolled ? legal(red,dice) : []; arr.forEach((p,i)=>{ const xy=posCoord(side,p,i); const cell=qs('.wb-ludo-cell[data-x="'+xy[0]+'"][data-y="'+xy[1]+'"]'); if(!cell) return; const b=getHostDocument().createElement('button'); b.type='button'; const can=moves.includes(i); b.className='wb-ludo-piece '+(side==='red'?'red':'blue')+(can?' can':''); b.disabled=side!=='red'||!can; b.textContent=i+1; let tapped=false; const tap=e=>{ e.preventDefault(); if(tapped) return; tapped=true; moveRed(i); setTimeout(()=>{ tapped=false; }, 260); }; b.onclick=tap; b.onpointerup=tap; cell.appendChild(b); }); }
+	    function draw(){ const charLabel=displayCharName(); addPieces('red',red); addPieces('blue',blue); const t=qs('#wb-ludo-turn'); if(t) t.textContent=turn==='red'?'你的回合':charLabel+'的回合'; setDiceDisplay(dice, diceRolling); refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused||over||diceRolling||busy); const rb=qs('#wb-ludo-roll'); if(rb){ const userRolling=diceRolling&&diceRollingSide==='red'; const charRolling=diceRolling&&diceRollingSide==='blue'; rb.disabled=gamePaused || charRolling || (turn!=='red' && !userRolling) || (rolled && !userRolling) || (busy && !userRolling); rb.textContent=userRolling ? '停止' : (charRolling ? charLabel + '掷骰中' : '掷骰'); } }
+    function addPieces(side,arr){ const moves=side==='red'&&turn==='red'&&rolled ? legal(red,dice) : []; arr.forEach((p,i)=>{ const xy=posCoord(side,p,i); const cell=qs('.wb-ludo-cell[data-x="'+xy[0]+'"][data-y="'+xy[1]+'"]',ludoBoard); if(!cell) return; const piece=pieceNodes[side][i], can=moves.includes(i); piece.className='wb-ludo-piece '+(side==='red'?'red':'blue')+(can?' can':''); piece.disabled=side!=='red'||!can; if(piece.parentElement!==cell) cell.appendChild(piece); }); }
   }
 
   function startGuessNumber(state) {
@@ -16777,7 +17626,7 @@ function showGameRecords(game, page) {
     save = registerLegacyGameSave('guessnumber', save);
     function hintText(guess, nums, pos){ return '数字对 ' + nums + ' 个，位置对 ' + pos + ' 个。'; }
     function submit(){ if(gamePaused||over) return; const input=qs('#wb-num-guess'); const g=(input.value||'').trim(); if(!/^\d{4}$/.test(g) || new Set(g).size!==4){ toast('请输入四位不重复数字'); return; } tries++; let pos=0, nums=0; for(let i=0;i<4;i++){ if(g[i]===answer[i]) pos++; if(answer.includes(g[i])) nums++; } const text=hintText(g, nums, pos); history.unshift({ guess:g, nums, pos, text }); input.value=''; if(pos===4){ over=true; const cur=scores().guessnumber; setScore('guessnumber', ((cur&&typeof cur==='object'?cur.user:cur)||0)+1); speak('guessnumber','user_win'); draw(); showGameOver('guessnumber','你猜中了','猜数次数：'+tries+'次', 'user_win', { tries, details:{ guesses:history.slice().reverse().map(x=>({ guess:x.guess, nums:x.nums, pos:x.pos })) } }); return; } if(tries>=6) speak('guessnumber','many_tries'); else speak('guessnumber', pos>=3||nums>=4?'very_close':(pos>=2||nums>=3?'close':(nums===0?'miss':'guess'))); draw(); save(); }
-    function draw(){ const h=qs('#wb-num-history'); h.innerHTML = history.length ? history.map(x=>'<div class="wb-guess-item"><b>'+esc(x.guess)+'</b>　'+esc(hintText(x.guess, x.nums, x.pos))+'</div>').join('') : '<div class="wb-muted">还没有猜测记录。</div>'; }
+    function draw(){ const h=qs('#wb-num-history'); patchElementHTML(h, history.length ? history.map(x=>'<div class="wb-guess-item"><b>'+esc(x.guess)+'</b>　'+esc(hintText(x.guess, x.nums, x.pos))+'</div>').join('') : '<div class="wb-muted">还没有猜测记录。</div>'); }
   }
 
   async function createWordGuessRounds(count, forceFallback, scope) {
@@ -16849,7 +17698,7 @@ function showGameRecords(game, page) {
     }
 	    function reveal(){ if(gamePaused||over||revealed) return; revealed=true; clueIndex=Math.min(4, round.clues.length-1); finishQuestion(false, '揭晓答案'); }
 		    function submit(){ if(gamePaused||over) return; const input=qs('#wb-word-input'); const guess=(input.value||'').trim(); if(!guess){ toast('请输入猜测'); return; } input.value=''; if(guess===round.word){ finishQuestion(true, guess); } else { const inter=round.interactions||{}; const wrong=Array.isArray(inter.guess)?inter.guess:[]; guesses.unshift({ guess, ok:false, text: wrong[Math.min(wrong.length-1, guesses.filter(g=>!g.ok).length)] || inter.guess || (role + '轻轻摇头，又把提示说得更软了一点。') }); speakText(guesses[0].text); draw(); save(); } }
-    function draw(){ qs('#wb-word-meta').textContent = '第 ' + (completed+1) + ' 题　字数：' + (round.length || (round.word || '').length) + ' 字　类型：' + (round.type || '未分类') + '　' + visibleClues().length + '/5　你赢：' + userWins; qs('#wb-word-clues').textContent = visibleClues().map((c,i)=>(i+1)+'. '+c).join('\n') + (revealed ? '\n\n答案：' + round.word : ''); qs('#wb-word-history').innerHTML = guesses.length ? guesses.map(g=>'<div class="wb-guess-item"><b>'+esc(g.guess)+'</b>　'+(g.ok?'你赢':'未中')+'<br>'+esc(g.text)+'</div>').join('') : '<div class="wb-muted">还没有猜测。</div>'; }
+    function draw(){ qs('#wb-word-meta').textContent = '第 ' + (completed+1) + ' 题　字数：' + (round.length || (round.word || '').length) + ' 字　类型：' + (round.type || '未分类') + '　' + visibleClues().length + '/5　你赢：' + userWins; qs('#wb-word-clues').textContent = visibleClues().map((c,i)=>(i+1)+'. '+c).join('\n') + (revealed ? '\n\n答案：' + round.word : ''); patchElementHTML(qs('#wb-word-history'), guesses.length ? guesses.map(g=>'<div class="wb-guess-item"><b>'+esc(g.guess)+'</b>　'+(g.ok?'你赢':'未中')+'<br>'+esc(g.text)+'</div>').join('') : '<div class="wb-muted">还没有猜测。</div>'); }
   }
 
 
@@ -16872,7 +17721,7 @@ function showGameRecords(game, page) {
       return startBoard().filter(p => p && p[0] === victimPrefix && (remaining[p] ? (remaining[p]--, false) : true));
     };
     let turn = state?.turn || 'user', selected = Number.isInteger(state?.selected) ? state.selected : -1;
-    let over = false, busy = false, halfmove = Math.max(0, Number(state?.halfmove || 0));
+    let over = false, busy = false, aiTimer = 0, halfmove = Math.max(0, Number(state?.halfmove || 0));
     let taMoves = state?.taMoves || 0, nextCharLineAt = state?.nextCharLineAt || nextCharLineTurn(0);
     let details = Object.assign({ rounds:0, userCaptures:0, charCaptures:0, userChecks:0, charChecks:0, cannonHits:0, horseMoves:0, riverCross:0, faceBlocks:0, endReason:'', materialSwing:0 }, state?.details || {});
     let lastMoves = Object.assign({ user:null, ta:null }, state?.lastMoves || {});
@@ -16880,6 +17729,11 @@ function showGameRecords(game, page) {
     let capturedByTa = Array.isArray(state?.capturedByTa) ? state.capturedByTa.filter(p => glyph[p]) : inferCaptured('r');
     let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-xq-panel"><div class="wb-xq-info"><span id="wb-xq-text"></span><button type="button" class="wb-btn primary wb-cheat-btn wb-cheat-compact" id="wb-cheat">反悔 <span class="wb-sudoku-badge" id="wb-cheat-left">' + Math.max(0, Math.min(CHEAT_MAX, Number(cheatLeft || 0))) + '</span></button></div><div class="wb-chess-captures ta"><span class="wb-chess-captures-label">' + esc(role) + ' 吃掉</span><div class="wb-chess-captured-list" id="wb-xq-char-captures"></div></div><div class="wb-xq-board" id="wb-xq-board"></div><div class="wb-chess-captures user"><span class="wb-chess-captures-label">你吃掉</span><div class="wb-chess-captured-list" id="wb-xq-user-captures"></div></div></div>';
+    const xqBoard = qs('#wb-xq-board', box);
+    xqBoard.onclick = event => {
+      const cell = event.target.closest('.wb-xq-cell');
+      if (cell && xqBoard.contains(cell)) select(+cell.dataset.i);
+    };
     qs('#wb-cheat', box).onclick = cheatUndo;
     draw(); save();
     function x(i){ return i % 9; } function y(i){ return Math.floor(i / 9); } function idx(a,b){ return b * 9 + a; }
@@ -16899,10 +17753,12 @@ function showGameRecords(game, page) {
       if(cheatAttemptResult('chinesechess', box, false) !== 'success'){ draw(); save(); return; }
       const snap = undoStack.pop();
       restoreCheatSnapshot(snap, s => { board=s.board; turn=s.turn; selected=s.selected; halfmove=s.halfmove || 0; taMoves=s.taMoves || 0; nextCharLineAt=s.nextCharLineAt || nextCharLineTurn(taMoves); details=s.details || details; lastMoves=Object.assign({user:null,ta:null},s.lastMoves||{}); capturedByUser=Array.isArray(s.capturedByUser)?s.capturedByUser:inferCaptured('b'); capturedByTa=Array.isArray(s.capturedByTa)?s.capturedByTa:inferCaptured('r'); });
-      busy = false; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; draw(); save(); if(turn === 'ta') setTimeout(ai, 0);
+      busy = false; cheatLeft--; details.cheatUsed = (details.cheatUsed || 0) + 1; if(turn === 'ta') scheduleAi(350); draw(); save();
     }
     function save(){ if(!over) saveProgress('chinesechess', { board, turn, selected:-1, halfmove, taMoves, nextCharLineAt, details, lastMoves, capturedByUser, capturedByTa, cheatLeft, cheatAttempted, undoStack }); }
-    save = registerLegacyGameSave('chinesechess', save);
+    save = registerLegacyGameSave('chinesechess', save, clearAiTimer);
+    save.setLifecycle?.({ pause:clearAiTimer, resume:()=>{ if(turn==='ta'){ scheduleAi(350); draw(); } } });
+    if(turn==='ta'){ scheduleAi(350); draw(); }
     function kingsFace(b){ const r=b.findIndex(p=>p==='rK'), k=b.findIndex(p=>p==='bK'); if(r<0||k<0||x(r)!==x(k)) return false; const a=x(r); for(let yy=Math.min(y(r),y(k))+1; yy<Math.max(y(r),y(k)); yy++) if(b[idx(a,yy)]) return false; return true; }
     function add(out,b,from,to){ if(to < 0 || to >= 90) return; const p=b[from], t=b[to]; if(!t || sideOf(t)!==sideOf(p)) out.push({ from, to, capture:t || '' }); }
     function rawMoves(b, side){
@@ -16948,7 +17804,7 @@ function showGameRecords(game, page) {
       if(checking){ if(side==='user'){ details.userChecks++; speak('chinesechess','user_check'); } else { details.charChecks++; speak('chinesechess','char_check'); } }
       if(!moves.length) return finish(side==='user'?'user_win':'ta_win', side==='user'?'你赢了':'游戏结束', checking?'将死':'困毙', moveLabel(m,p,cap));
       if(halfmove>=120) return finish('draw','平局','长回合未吃子', moveLabel(m,p,cap));
-      turn=other; if(side==='ta' && shouldCharNext() && !checking && !cap) speak('chinesechess','char_next'); draw(); save(); if(turn==='ta') setTimeout(ai,0); return true;
+      turn=other; if(side==='ta' && shouldCharNext() && !checking && !cap) speak('chinesechess','char_next'); if(turn==='ta') scheduleAi(); draw(); save(); return true;
     }
     function finish(result,title,reason,last){
       over=true; details.endReason=reason;
@@ -17014,15 +17870,26 @@ function showGameRecords(game, page) {
       for(const m of orderedMoves){ const nb=board.slice(); applyMoveTo(nb,m); const v=searchXq(nb,'user',depth-1,-Infinity,Infinity,1) + Math.random()*2; if(v>bestScore){ bestScore=v; best=m; } }
       doMove(best,'ta');
     }
+    function clearAiTimer(){ if(aiTimer){ clearTimeout(aiTimer); aiTimer=0; } busy=false; }
+    function scheduleAi(wait=850){
+      if(aiTimer||over||turn!=='ta'||!save.isActive()) return;
+      busy=true;
+      aiTimer=setTimeout(()=>{
+        aiTimer=0;
+        if(!save.isActive()||over||gamePaused||turn!=='ta'){ busy=false; return; }
+        busy=false;
+        ai();
+      },wait);
+    }
     function draw(){
       const scoreEl=qs('#wb-score'); if(scoreEl) scoreEl.textContent='本局：你吃' + (details.userCaptures||0) + ' / ' + role + '吃' + (details.charCaptures||0);
       const info=qs('#wb-xq-text', box); if(info) info.textContent=(turn==='user'?'你的回合':role+'思考中') + (inCheck(board, turn)?' · 被将军':'') + ' · 回合 ' + (details.rounds||0);
       refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused || over || busy);
       const captureHTML = pieces => pieces.length ? pieces.map(p=>'<span class="wb-chess-captured-piece xq ' + sideOf(p) + '" title="' + esc(glyph[p] || p) + '">' + (glyph[p] || '') + '</span>').join('') : '<span class="wb-chess-no-captures">尚未吃子</span>';
-      const charCaptures=qs('#wb-xq-char-captures',box); if(charCaptures) charCaptures.innerHTML=captureHTML(capturedByTa);
-      const userCaptures=qs('#wb-xq-user-captures',box); if(userCaptures) userCaptures.innerHTML=captureHTML(capturedByUser);
+      const charCaptures=qs('#wb-xq-char-captures',box); if(charCaptures) patchElementHTML(charCaptures,captureHTML(capturedByTa));
+      const userCaptures=qs('#wb-xq-user-captures',box); if(userCaptures) patchElementHTML(userCaptures,captureHTML(capturedByUser));
       const moves=selected>=0?legalMoves('user').filter(m=>m.from===selected):[], legal=new Set(moves.map(m=>m.to));
-      const brd=qs('#wb-xq-board', box); if(!brd) return;
+      const brd=xqBoard; if(!brd) return;
       const moveClass=i=>{
         const user=lastMoves.user && (lastMoves.user.from===i||lastMoves.user.to===i), ta=lastMoves.ta && (lastMoves.ta.from===i||lastMoves.ta.to===i);
         const from=(lastMoves.user&&lastMoves.user.from===i)||(lastMoves.ta&&lastMoves.ta.from===i);
@@ -17030,8 +17897,7 @@ function showGameRecords(game, page) {
         return (user&&ta?' last-both':user?' last-user':ta?' last-ta':'') + (from?' last-from':'') + (to?' last-to':'');
       };
       const lines='<svg class="wb-xq-lines" viewBox="0 0 900 1072" aria-hidden="true"><g stroke="rgba(98,63,22,.62)" stroke-width="3" fill="none" stroke-linecap="round"><path d="M50 50H850M50 150H850M50 250H850M50 350H850M50 450H850M50 622H850M50 722H850M50 822H850M50 922H850M50 1022H850"/><path d="M50 50V450M150 50V450M250 50V450M350 50V450M450 50V450M550 50V450M650 50V450M750 50V450M850 50V450M50 622V1022M150 622V1022M250 622V1022M350 622V1022M450 622V1022M550 622V1022M650 622V1022M750 622V1022M850 622V1022"/><path d="M350 50L550 250M550 50L350 250M350 822L550 1022M550 822L350 1022"/></g></svg>';
-      brd.innerHTML=lines + board.map((p,i)=>'<button class="wb-xq-cell' + moveClass(i) + (i===selected?' selected':'') + (legal.has(i)?' legal':'') + (sideOf(p)==='user'?' user':sideOf(p)==='ta'?' ta':'') + '" data-i="' + i + '" type="button" style="grid-column:' + (x(i)+1) + ';grid-row:' + (y(i)+1+(y(i)>=5?1:0)) + '">' + (p?'<span>'+glyph[p]+'</span>':'') + '</button>').join('') + '<div class="wb-xq-river"><span>楚河</span><span>汉界</span></div>';
-      qsa('.wb-xq-cell', brd).forEach(btn=>btn.onclick=()=>select(+btn.dataset.i));
+      patchElementHTML(brd, lines + board.map((p,i)=>'<button class="wb-xq-cell' + moveClass(i) + (i===selected?' selected':'') + (legal.has(i)?' legal':'') + (sideOf(p)==='user'?' user':sideOf(p)==='ta'?' ta':'') + '" data-i="' + i + '" type="button" style="grid-column:' + (x(i)+1) + ';grid-row:' + (y(i)+1+(y(i)>=5?1:0)) + '">' + (p?'<span>'+glyph[p]+'</span>':'') + '</button>').join('') + '<div class="wb-xq-river"><span>楚河</span><span>汉界</span></div>');
     }
   }
 
@@ -17060,6 +17926,11 @@ function showGameRecords(game, page) {
     let capturedByTa = Array.isArray(state?.capturedByTa) ? state.capturedByTa.filter(p => glyph[p]) : inferCaptured('w');
     let cheatLeft = Number.isInteger(state?.cheatLeft) ? state.cheatLeft : CHEAT_MAX, cheatAttempted = !!state?.cheatAttempted, undoStack = Array.isArray(state?.undoStack) ? state.undoStack : [];
     box.innerHTML = '<div class="wb-chess-panel"><div class="wb-chess-info"><span id="wb-chess-text"></span><button type="button" class="wb-btn primary wb-cheat-btn wb-cheat-compact" id="wb-cheat">反悔 <span class="wb-sudoku-badge" id="wb-cheat-left">' + Math.max(0, Math.min(CHEAT_MAX, Number(cheatLeft || 0))) + '</span></button></div><div class="wb-chess-captures ta"><span class="wb-chess-captures-label">' + esc(role) + ' 吃掉</span><div class="wb-chess-captured-list" id="wb-chess-char-captures"></div></div><div class="wb-chess-board" id="wb-chess-board"></div><div class="wb-chess-captures user"><span class="wb-chess-captures-label">你吃掉</span><div class="wb-chess-captured-list" id="wb-chess-user-captures"></div></div></div>';
+    const chessBoard = qs('#wb-chess-board', box);
+    chessBoard.onclick = event => {
+      const cell = event.target.closest('.wb-chess-cell');
+      if (cell && chessBoard.contains(cell)) select(+cell.dataset.i);
+    };
     qs('#wb-cheat', box).onclick = cheatUndo;
     draw(); save();
     function x(i){ return i % 8; } function y(i){ return Math.floor(i / 8); } function idx(a,b){ return b * 8 + a; }
@@ -17256,22 +18127,21 @@ function showGameRecords(game, page) {
       if(info) info.textContent=(turn === 'user' ? '你的回合' : role + '思考中') + (inCheck(board, turn) ? ' · 被将军' : '') + ' · 回合 ' + (details.rounds || 0);
       refreshCheatButton(box, cheatLeft, undoStack.length > 0, gamePaused || over || busy);
       const captureHTML = pieces => pieces.length ? pieces.map(p=>'<span class="wb-chess-captured-piece western" title="' + esc(p) + '">' + (glyph[p] || '') + '</span>').join('') : '<span class="wb-chess-no-captures">尚未吃子</span>';
-      const charCaptures=qs('#wb-chess-char-captures',box); if(charCaptures) charCaptures.innerHTML=captureHTML(capturedByTa);
-      const userCaptures=qs('#wb-chess-user-captures',box); if(userCaptures) userCaptures.innerHTML=captureHTML(capturedByUser);
+      const charCaptures=qs('#wb-chess-char-captures',box); if(charCaptures) patchElementHTML(charCaptures,captureHTML(capturedByTa));
+      const userCaptures=qs('#wb-chess-user-captures',box); if(userCaptures) patchElementHTML(userCaptures,captureHTML(capturedByUser));
       const moves = selected >= 0 ? legalMoves('user').filter(m => m.from === selected) : [];
       const legal = new Set(moves.map(m => m.to));
-      const brd=qs('#wb-chess-board', box); if(!brd) return;
+      const brd=chessBoard; if(!brd) return;
       const moveClass=i=>{
         const user=lastMoves.user && (lastMoves.user.from===i||lastMoves.user.to===i), ta=lastMoves.ta && (lastMoves.ta.from===i||lastMoves.ta.to===i);
         const from=(lastMoves.user&&lastMoves.user.from===i)||(lastMoves.ta&&lastMoves.ta.from===i);
         const to=(lastMoves.user&&lastMoves.user.to===i)||(lastMoves.ta&&lastMoves.ta.to===i);
         return (user&&ta?' last-both':user?' last-user':ta?' last-ta':'') + (from?' last-from':'') + (to?' last-to':'');
       };
-      brd.innerHTML = board.map((p,i) => {
+      patchElementHTML(brd, board.map((p,i) => {
         const dark = (x(i) + y(i)) % 2 ? ' dark' : ' light';
         return '<button class="wb-chess-cell' + dark + moveClass(i) + (i===selected?' selected':'') + (legal.has(i)?' legal':'') + (sideOf(p)==='user'?' user':sideOf(p)==='ta'?' ta':'') + '" data-i="' + i + '" type="button">' + (p ? '<span>' + glyph[p] + '</span>' : '') + '</button>';
-      }).join('');
-      qsa('.wb-chess-cell', brd).forEach(btn => btn.onclick = () => select(+btn.dataset.i));
+      }).join(''));
     }
   }
 
@@ -17318,7 +18188,12 @@ function showGameRecords(game, page) {
 	    }
 	    const tetrisToggle = qs('#wb-tetris-toggle-keys', box);
 	    if(tetrisToggle) tetrisToggle.onclick = () => { controlMode = nextControlMode(controlMode, ['keys','swipe','tap']); syncTetrisKeyToggle(); save(); };
-	    tetrisTimer=setInterval(tick,500); syncTetrisKeyToggle(); draw(); save();
+      function startTetrisTimer(){ if(!tetrisTimer && !over && !gamePaused) tetrisTimer=setInterval(tick,500); }
+      save.setLifecycle?.({
+        pause(){ if(tetrisTimer){ clearInterval(tetrisTimer); tetrisTimer=null; } },
+        resume(){ startTetrisTimer(); }
+      });
+      startTetrisTimer(); syncTetrisKeyToggle(); draw(); save();
     function hit(p){ return p.s.some((r,y)=>r.some((v,x)=>v && (p.x+x<0||p.x+x>=W||p.y+y>=H||board[p.y+y]?.[p.x+x]))); }
     function move(dx,dy){ if (gamePaused) return false; const p={s:piece.s,x:piece.x+dx,y:piece.y+dy}; if(!hit(p)){ piece=p; if(dx) markTetris('move'); return true; } return false; }
     function rot(){ const s=piece.s[0].map((_,i)=>piece.s.map(r=>r[i]).reverse()); const p={s,x:piece.x,y:piece.y}; if(!hit(p)) piece=p; }

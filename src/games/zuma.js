@@ -751,13 +751,10 @@ export function createZumaGame(state, env) {
   }
 
   function frame(now) {
-    if (destroyed || !env.isActive()) return;
+    raf = 0;
+    if (destroyed || !env.isActive() || env.isPaused()) return;
     const delta = lastFrame ? clamp((now - lastFrame) / 1000, 0, .05) : 0;
     lastFrame = now;
-    if (env.isPaused()) {
-      raf = win.requestAnimationFrame(frame);
-      return;
-    }
     update(delta);
     if (destroyed) return;
     draw();
@@ -765,7 +762,22 @@ export function createZumaGame(state, env) {
       lastSave = now;
       save();
     }
-    raf = win.requestAnimationFrame(frame);
+    scheduleFrame();
+  }
+
+  function scheduleFrame() {
+    if (!raf && !destroyed && env.isActive() && !env.isPaused()) raf = win.requestAnimationFrame(frame);
+  }
+
+  function pause() {
+    if (raf) win.cancelAnimationFrame(raf);
+    raf = 0;
+    lastFrame = 0;
+  }
+
+  function resume() {
+    lastFrame = 0;
+    scheduleFrame();
   }
 
   function activateTool(tool) {
@@ -789,7 +801,6 @@ export function createZumaGame(state, env) {
     if (!aiming || destroyed) return;
     event.preventDefault();
     setAim(event);
-    draw();
   });
   canvas.addEventListener('pointerdown', event => {
     if (destroyed || env.isPaused() || shot || resolution) return;
@@ -842,6 +853,7 @@ export function createZumaGame(state, env) {
     if (destroyed) return;
     destroyed = true;
     if (raf) win.cancelAnimationFrame(raf);
+    raf = 0;
     if (keyboardHandler) doc.removeEventListener('keydown', keyboardHandler);
   }
 
@@ -852,6 +864,6 @@ export function createZumaGame(state, env) {
   updateUI();
   save(true);
   draw();
-  raf = win.requestAnimationFrame(frame);
-  return { destroy, save:() => save(true), getState:stateData };
+  scheduleFrame();
+  return { destroy, pause, resume, save:() => save(true), getState:stateData };
 }

@@ -321,6 +321,7 @@ export function createFlappyBirdGame(savedState, env) {
   let destroyed = false;
   let over = false;
   let animationFrame = 0;
+  let readyFrameTimer = 0;
   let lastFrameAt = 0;
   let accumulator = 0;
   let saveElapsed = 0;
@@ -469,15 +470,11 @@ export function createFlappyBirdGame(savedState, env) {
   }
 
   function frame(timestamp) {
-    if (destroyed) return;
+    animationFrame = 0;
+    if (destroyed || env.isPaused() || !env.isActive()) return;
     if (!lastFrameAt) lastFrameAt = timestamp;
     const elapsed = clampFlappyDelta((timestamp - lastFrameAt) / 1000);
     lastFrameAt = timestamp;
-    if (env.isPaused()) {
-      accumulator = 0;
-      animationFrame = over ? 0 : win.requestAnimationFrame(frame);
-      return;
-    }
     visualClock += elapsed;
     scorePulse = Math.max(0, scorePulse - elapsed);
     if (phase === 'playing' && !over) {
@@ -489,13 +486,42 @@ export function createFlappyBirdGame(savedState, env) {
       }
     }
     draw();
-    animationFrame = over ? 0 : win.requestAnimationFrame(frame);
+    scheduleFrame();
+  }
+
+  function scheduleFrame() {
+    if (animationFrame || readyFrameTimer || destroyed || over || !env.isActive() || env.isPaused()) return;
+    if (phase === 'ready') {
+      readyFrameTimer = win.setTimeout(() => {
+        readyFrameTimer = 0;
+        if (!destroyed && !over && env.isActive() && !env.isPaused()) animationFrame = win.requestAnimationFrame(frame);
+      }, 50);
+      return;
+    }
+    animationFrame = win.requestAnimationFrame(frame);
+  }
+
+  function pause() {
+    if (animationFrame) win.cancelAnimationFrame(animationFrame);
+    if (readyFrameTimer) win.clearTimeout(readyFrameTimer);
+    animationFrame = 0;
+    readyFrameTimer = 0;
+    lastFrameAt = 0;
+    accumulator = 0;
+  }
+
+  function resume() {
+    lastFrameAt = 0;
+    accumulator = 0;
+    scheduleFrame();
   }
 
   function flap() {
     if (destroyed || over || env.isPaused() || !env.isActive()) return;
     if (phase === 'ready') {
       phase = 'playing';
+      if (readyFrameTimer) win.clearTimeout(readyFrameTimer);
+      readyFrameTimer = 0;
       state.bird.y = FLAPPY_WORLD.height * .44;
       state.bird.vy = 0;
       accumulator = 0;
@@ -504,6 +530,7 @@ export function createFlappyBirdGame(savedState, env) {
     details.flaps = (details.flaps || 0) + 1;
     if (details.flaps === 1 || details.flaps % 9 === 0) speak('flap');
     save(false);
+    scheduleFrame();
   }
 
   function onPointerDown(event) {
@@ -525,9 +552,11 @@ export function createFlappyBirdGame(savedState, env) {
 
   function destroy() {
     if (destroyed) return;
-    save(true);
     destroyed = true;
     if (animationFrame) win.cancelAnimationFrame(animationFrame);
+    if (readyFrameTimer) win.clearTimeout(readyFrameTimer);
+    animationFrame = 0;
+    readyFrameTimer = 0;
     canvas.removeEventListener('pointerdown', onPointerDown);
     doc.removeEventListener('keydown', onKeyDown);
     win.removeEventListener?.('pagehide', saveOnLeave);
@@ -547,6 +576,6 @@ export function createFlappyBirdGame(savedState, env) {
   updateUI();
   draw();
   save(true);
-  animationFrame = win.requestAnimationFrame(frame);
-  return { destroy, save:() => save(true), getState:stateData };
+  scheduleFrame();
+  return { destroy, pause, resume, save:() => save(true), getState:stateData };
 }

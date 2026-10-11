@@ -8,6 +8,7 @@ import { resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const workspace = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const yamlBrowser = resolve(workspace, '../../../../..', 'node_modules/yaml/browser');
 const chrome = process.env.WANBAN_TEST_CHROME || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -31,6 +32,27 @@ addEventListener('unhandledrejection',event=>__errors.push(String(event.reason))
 const longText='移动端性能测试内容'.repeat(500);
 const roles=Array.from({length:32},(_,index)=>({roleKey:'role_'+index,name:'角色 '+index,charName:'角色 '+index,manualCharPersona:longText,worldText:longText,roleUpdatedAt:index}));
 localStorage.setItem('wanbanXiaowu_settings_v1',JSON.stringify({roleKey:'role_0',charName:'角色 0',companion:true}));
+localStorage.setItem('wanbanXiaowu_progress_v1__turkey',JSON.stringify({
+  initialized:true,savedAt:Date.now(),startedAt:Date.now(),score:0,moves:0,combo:0,
+  tools:{thunder:3,stardust:3,hammer:3},seen:{},details:{},
+  blocks:[
+    {id:'clear_left',row:9,col:0,len:4,color:'#FF7B7B'},
+    {id:'clear_right',row:9,col:4,len:4,color:'#FFD66B'},
+    {id:'stack_low',row:8,col:0,len:1,color:'#5FD1C8'},
+    {id:'stack_high',row:7,col:0,len:1,color:'#6CA8FF'},
+    {id:'stable_move',row:8,col:4,len:1,color:'#B28DFF'},
+  ],
+}));
+localStorage.setItem('wanbanXiaowu_petLastRoute',JSON.stringify('test'));
+localStorage.setItem('wanbanXiaowu_petTest_v1',JSON.stringify({journeyId:'mobile_pet_story',userName:'测试用户',testSpecies:'rabbit',testEgg:'green',testPetName:'团团',stage:'egg',route:'common',growth:0,fullness:80,happiness:80,location:'home',pendingStories:['M01'],completedMain:[],completedSide:[],storyRecords:[],logs:{},days:{},sideCounts:{},sideTriggered:[],dismissedStories:[],activeStory:null}));
+const fullPetInfo=['<pet_info>','pet_card:','  pet_name: 测试兔','  egg: green','  species: rabbit','  sex: female','main_story:','  - id: M01','    title: 初见','    story: "[旁白] 小屋里的测试剧情。"','side_story: []','quotes:','  char: {}','  pet: {}','</pet_info>'].join('\\n');
+const formalState=(growth,name)=>({userName:'测试用户',testPetName:name,stage:'egg',route:'common',growth,fullness:80,happiness:80,location:'home',completedMain:['M01'],completedSide:[],storyRecords:[],logs:{},days:{},sideCounts:{},sideTriggered:[],pendingStories:[],dismissedStories:[],activeStory:null,eggInteractions:0,lastEggPetGrowthAt:0});
+localStorage.setItem('wanbanXiaowu_petFull_v1',JSON.stringify({activeCaretakerId:'caretaker_a',caretakers:[
+  {id:'caretaker_a',name:'饲养员甲',activePetId:'pet_a',pets:[{id:'pet_a',infoText:fullPetInfo,state:formalState(1,'甲兔'),stateSavedAt:0}]},
+  {id:'caretaker_b',name:'饲养员乙',activePetId:'pet_b',pets:[{id:'pet_b',infoText:fullPetInfo,state:formalState(2,'乙兔'),stateSavedAt:0}]},
+]}));
+localStorage.setItem('wanbanXiaowu_petState_v1__'+encodeURIComponent('full_caretaker_a_pet_a'),JSON.stringify({savedAt:Date.now(),state:formalState(10,'甲兔')}));
+localStorage.setItem('wanbanXiaowu_petState_v1__'+encodeURIComponent('full_caretaker_b_pet_b'),JSON.stringify({savedAt:Date.now(),state:formalState(20,'乙兔')}));
 localStorage.setItem('wanbanXiaowu_worldPresets_v1',JSON.stringify(roles));
 localStorage.setItem('wanbanXiaowu_roleContexts_v2',JSON.stringify(Object.fromEntries(roles.map(role=>[role.roleKey,role]))));
 localStorage.setItem('wanbanXiaowu_summaries_v1',JSON.stringify(Array.from({length:32},(_,index)=>({id:'summary_'+index,name:'总结 '+index,content:longText}))));
@@ -62,7 +84,14 @@ const server = createServer(async (request, response) => {
     }
     if (pathname === '/lib.js') {
       response.setHeader('Content-Type', 'text/javascript');
-      response.end('export const yaml={};');
+      response.end("import yaml from '/yaml/index.js';export {yaml};");
+      return;
+    }
+    if (pathname.startsWith('/yaml/')) {
+      const yamlPath = resolve(yamlBrowser, '.' + pathname.slice('/yaml'.length));
+      if (!yamlPath.startsWith(yamlBrowser + sep)) throw new Error('Invalid YAML module path');
+      response.setHeader('Content-Type', 'text/javascript');
+      response.end(await readFile(yamlPath));
       return;
     }
     const path = resolve(workspace, '.' + pathname);
@@ -122,7 +151,48 @@ async function waitFor(expression) {
     if (await evaluate(expression)) return;
     await sleep(30);
   }
-  throw new Error('Timed out: ' + expression);
+  const details = await evaluate(`(()=>({errors:window.__errors||[],gamebox:document.querySelector('#wb-gamebox')?.innerText||'',modals:Array.from(document.querySelectorAll('.wb-modal-mask')).map(mask=>mask.id)}))()`);
+  throw new Error('Timed out: ' + expression + ' ' + JSON.stringify(details));
+}
+async function openListedGame(game, tab = 'single') {
+  await waitFor('!!document.querySelector(".wb-cardgrid")');
+  if (await evaluate(`!!document.querySelector('[data-tab="${tab}"]')`)) {
+    await evaluate(`document.querySelector('[data-tab="${tab}"]').click()`);
+    await waitFor('!!document.querySelector(".wb-cardgrid")');
+  }
+  for (let i = 0; i < 12 && !(await evaluate(`!!document.querySelector('[data-game="${game}"]')`)); i++) {
+    await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
+    await sleep(260);
+  }
+  assert.ok(await evaluate(`!!document.querySelector('[data-game="${game}"]')`), game + ' card was not rendered');
+  await evaluate(`document.querySelector('[data-game="${game}"]').click()`);
+  await waitFor('!!document.querySelector("#wb-start-cover-btn")');
+}
+async function smokeStartListedGame(game, tab, selector) {
+  if (!(await evaluate('!!document.querySelector(".wb-cardgrid")'))) {
+    await evaluate('document.querySelector("#wb-back")?.click()');
+  }
+  await openListedGame(game, tab);
+  await evaluate('window.__errors.length=0;document.querySelector("#wb-start-cover-btn").click()');
+  for (let i = 0; i < 160 && !(await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`)); i++) {
+    const action = await evaluate(`(()=>{
+      const progress=document.querySelector('#wb-progress-new');
+      if(progress){ progress.click(); return 'progress'; }
+      const choice=document.querySelector('#wb-choice-mask [data-choice]');
+      if(choice){ choice.click(); return 'choice'; }
+      const first=document.querySelector('#wb-first-mask [data-first="user"]');
+      if(first){ first.click(); return 'first'; }
+      const cover=document.querySelector('#wb-start-cover-btn');
+      if(cover&&cover.offsetParent!==null&&!cover.disabled){ cover.click(); return 'cover'; }
+      return '';
+    })()`);
+    await sleep(action ? 70 : 30);
+  }
+  assert.ok(await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`), game + ' did not start');
+  const errors = await evaluate('window.__errors.slice()');
+  assert.deepEqual(errors, [], game + ' startup errors: ' + JSON.stringify(errors));
+  await evaluate('document.querySelector("#wb-back").click()');
+  await waitFor('!!document.querySelector(".wb-cardgrid")');
 }
 
 try {
@@ -208,7 +278,11 @@ try {
   await sleep(1400);
   await evaluate('document.querySelector("#wb-pause").click()');
   await waitFor('!!document.querySelector("#wb-pause-overlay")');
-  assert.equal(await evaluate(`import('/src/runtime/storage.js?progress-check').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_progress_v1')).shuerte.next)`), 9, 'debounced Schulte progress must persist');
+  assert.equal(await evaluate(`import('/src/runtime/storage.js?progress-check').then(module=>{
+    const shard=localStorage.getItem('wanbanXiaowu_progress_v1__shuerte');
+    const aggregate=localStorage.getItem('wanbanXiaowu_progress_v1');
+    return shard?module.decodeStoredJSON(shard).next:module.decodeStoredJSON(aggregate).shuerte.next;
+  })`), 9, 'debounced Schulte progress must persist');
   await evaluate(`(()=>{
     window.__settingsLongTasks=[];
     if(!globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')) return;
@@ -262,13 +336,17 @@ try {
   assert.ok(secondSettingsSwitch < 60, 'cached settings switch took ' + secondSettingsSwitch.toFixed(1) + 'ms');
   const readCounts = await evaluate(`Object.fromEntries(['wanbanXiaowu_apiPresets_v1','wanbanXiaowu_worldPresets_v1','wanbanXiaowu_summaries_v1','wanbanXiaowu_roleContexts_v2'].map(key=>[key,__storageReads[key]||0]))`);
   Object.entries(readCounts).forEach(([key,count]) => assert.ok(count <= 1, key + ' was decoded ' + count + ' times'));
-  await evaluate(`(()=>{
+  const backdropCloseMs = await evaluate(`(()=>{
     const input=document.querySelector('#wb-break-limit-prompt');
     input.value='遮罩关闭保存验证';
     input.dispatchEvent(new Event('input',{bubbles:true}));
+    const started=performance.now();
     document.querySelector('#wanbanXiaowu-shell').click();
+    return performance.now()-started;
   })()`);
   assert.equal(await evaluate('document.querySelector("#wanbanXiaowu-shell").classList.contains("wb-shell-visible")'), false, 'closing must hide the popup shell');
+  assert.ok(backdropCloseMs < 30, 'backdrop close handler took ' + backdropCloseMs.toFixed(1) + 'ms');
+  await waitFor('document.querySelector("#wb-body").childElementCount===0');
   assert.equal(await evaluate('document.querySelector("#wb-body").childElementCount'), 0, 'closing must release the heavy popup body');
   assert.equal(await evaluate(`import('/src/runtime/storage.js?settings-close-check').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1')).breakLimitPrompt)`), '遮罩关闭保存验证', 'backdrop close must flush debounced settings');
   await sleep(1300);
@@ -294,13 +372,14 @@ try {
     button.click();
     window.__nativeStorageSet=Storage.prototype.setItem;
     Storage.prototype.setItem=function(key,value){
-      if(key==='wanbanXiaowu_progress_v1') throw new DOMException('temporary quota failure','QuotaExceededError');
+      if(key==='wanbanXiaowu_progress_v1__shuerte') throw new DOMException('temporary quota failure','QuotaExceededError');
       return window.__nativeStorageSet.call(this,key,value);
     };
     document.querySelector('#wb-pause').click();
     document.querySelector('#wb-close').click();
   })()`);
-  assert.equal(await evaluate('document.querySelector("#wb-body").childElementCount'), 0, 'failed storage writes must still allow the heavy body to be released');
+  assert.equal(await evaluate('document.querySelector("#wanbanXiaowu-shell").classList.contains("wb-shell-visible")'), false, 'failed storage writes must still hide the popup immediately');
+  await waitFor('document.querySelector("#wb-body").childElementCount===0');
   await sleep(1300);
   await evaluate('Storage.prototype.setItem=window.__nativeStorageSet');
   await evaluate('document.querySelector("#wanbanXiaowu-menu-item").click()');
@@ -312,7 +391,11 @@ try {
   await waitFor('!!document.querySelector("#wb-progress-continue")');
   await evaluate('document.querySelector("#wb-progress-continue").click()');
   await waitFor('document.querySelector("#wb-shuerte-target")?.textContent==="目标：10"');
-  assert.equal(await evaluate(`import('/src/runtime/storage.js?progress-check').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_progress_v1')).shuerte.next)`), 10, 'pending progress must persist after storage recovers');
+  assert.equal(await evaluate(`import('/src/runtime/storage.js?progress-check').then(module=>{
+    const shard=localStorage.getItem('wanbanXiaowu_progress_v1__shuerte');
+    const aggregate=localStorage.getItem('wanbanXiaowu_progress_v1');
+    return shard?module.decodeStoredJSON(shard).next:module.decodeStoredJSON(aggregate).shuerte.next;
+  })`), 10, 'pending progress must persist after storage recovers');
   await evaluate(`(async()=>{
     const board=document.querySelector('#wb-shuerte-board');
     for(let value=10;value<=16;value++){
@@ -420,6 +503,144 @@ try {
   assert.ok(restoredContent.lineText && !restoredContent.lineText.includes('未生成'), 'reopened settings must load generated lines from storage');
   assert.ok(restoredContent.theaterText && !restoredContent.theaterText.includes('未生成') && !restoredContent.theaterText.includes('失败：'), 'reopened settings must load generated theaters from storage');
 
+  await evaluate('document.querySelectorAll(".wb-modal-mask").forEach(mask=>mask.remove());document.querySelector("[data-tab=intimacy]").click()');
+  await waitFor('!!document.querySelector("#wb-pet-trial")');
+  const petEntryMs = await evaluate(`(()=>{const started=performance.now();document.querySelector('#wb-pet-trial').click();return performance.now()-started})()`);
+  assert.ok(petEntryMs < 30, 'pet house entry handler took ' + petEntryMs.toFixed(1) + 'ms');
+  await sleep(300);
+  assert.equal(await evaluate('!!document.querySelector("#wb-pet-room")'), true, 'pet house did not open: ' + JSON.stringify(await evaluate(`(()=>({body:document.querySelector('#wb-body')?.innerText,modals:Array.from(document.querySelectorAll('.wb-modal-mask')).map(mask=>mask.id),errors:window.__errors,pet:localStorage.getItem('wanbanXiaowu_petTest_v1')}))()`)));
+  await waitFor('!!document.querySelector("#wb-pet-story-play")');
+  const petStoryEntryMs = await evaluate(`(()=>{
+    window.__petPatButton=document.querySelector('#wb-pet-pat');
+    const started=performance.now();
+    document.querySelector('#wb-pet-story-play').click();
+    return performance.now()-started;
+  })()`);
+  assert.ok(petStoryEntryMs < 30, 'pet story entry handler took ' + petStoryEntryMs.toFixed(1) + 'ms');
+  await waitFor('document.querySelector("#wb-pet-room")?.classList.contains("story-mode")');
+  await evaluate(`(()=>{
+    const shardKey='wanbanXiaowu_petState_v1__'+encodeURIComponent('test_mobile_pet_story');
+    window.__petStorageSet=Storage.prototype.setItem;
+    Storage.prototype.setItem=function(key,value){
+      if(key===shardKey) throw new DOMException('temporary pet quota failure','QuotaExceededError');
+      return window.__petStorageSet.call(this,key,value);
+    };
+    window.__petPatButton.click();
+    Storage.prototype.setItem=window.__petStorageSet;
+  })()`);
+  const petStoryTap = await evaluate(`(async()=>{
+    const room=document.querySelector('#wb-pet-room');
+    const scene=document.querySelector('#wb-pet-scene');
+    const started=performance.now();
+    document.querySelector('#wb-pet-poke').click();
+    const handler=performance.now()-started;
+    await new Promise(requestAnimationFrame);
+    const cursorKey='wanbanXiaowu_petState_v1__'+encodeURIComponent('test_mobile_pet_story')+'__story';
+    const cursor=JSON.parse(localStorage.getItem(cursorKey));
+    return {
+      handler,
+      stableRoom:room===document.querySelector('#wb-pet-room'),
+      stableScene:scene===document.querySelector('#wb-pet-scene'),
+      cursor,
+      shardBytes:(localStorage.getItem('wanbanXiaowu_petState_v1__'+encodeURIComponent('test_mobile_pet_story'))||'').length,
+      cursorBytes:(localStorage.getItem(cursorKey)||'').length,
+    };
+  })()`);
+  assert.ok(petStoryTap.handler < 30, 'pet story tap handler took ' + petStoryTap.handler.toFixed(1) + 'ms');
+  assert.equal(petStoryTap.stableRoom, true, 'pet story taps must preserve the house DOM');
+  assert.equal(petStoryTap.stableScene, true, 'pet story taps must preserve the scene DOM');
+  assert.ok(petStoryTap.cursor?.activeStory && (petStoryTap.cursor.activeStory.index > 0 || petStoryTap.cursor.activeStory.page > 0 || petStoryTap.cursor.activeStory.done), 'pet story cursor did not advance');
+  assert.ok(petStoryTap.cursorBytes < petStoryTap.shardBytes || petStoryTap.cursorBytes < 512, 'pet story cursor should remain a lightweight save');
+  const savedPetCursor = JSON.stringify(petStoryTap.cursor.activeStory);
+  await evaluate('document.querySelector("#wb-close").click()');
+  await waitFor('document.querySelector("#wb-body").childElementCount===0');
+  await evaluate('document.querySelector("#wanbanXiaowu-menu-item").click()');
+  await waitFor('!!document.querySelector("[data-tab=intimacy]")');
+  await evaluate('document.querySelector("[data-tab=intimacy]").click()');
+  await waitFor('!!document.querySelector("#wb-pet-trial")');
+  await evaluate('document.querySelector("#wb-pet-trial").click()');
+  await waitFor('document.querySelector("#wb-pet-room")?.classList.contains("story-mode")');
+  const restoredPet = await evaluate(`(()=>{
+    const base='wanbanXiaowu_petState_v1__'+encodeURIComponent('test_mobile_pet_story');
+    const cursor=JSON.parse(localStorage.getItem(base+'__story')||'null');
+    const shard=JSON.parse(localStorage.getItem(base)||'null');
+    return {
+      cursor:JSON.stringify(cursor?.activeStory||shard?.state?.activeStory||null),
+      eggInteractions:Number(shard?.state?.eggInteractions||0),
+    };
+  })()`);
+  assert.equal(restoredPet.cursor, savedPetCursor, 'pet story cursor must survive close and reopen');
+  assert.equal(restoredPet.eggInteractions, 1, 'a failed full pet save must survive later lightweight story cursor saves');
+
+  await evaluate('document.querySelector("#wb-pet-caretakers").click()');
+  await waitFor('!!document.querySelector("#wb-pet-caretaker-mask [data-id=caretaker_a]")');
+  const caretakerASwitch = await evaluate(`(()=>{
+    const aggregate=localStorage.getItem('wanbanXiaowu_petFull_v1');
+    const started=performance.now();
+    document.querySelector('#wb-pet-caretaker-mask [data-id=caretaker_a]').click();
+    return {handler:performance.now()-started,aggregateStable:aggregate===localStorage.getItem('wanbanXiaowu_petFull_v1')};
+  })()`);
+  assert.ok(caretakerASwitch.handler < 30, 'caretaker switch handler took ' + caretakerASwitch.handler.toFixed(1) + 'ms');
+  assert.equal(caretakerASwitch.aggregateStable, true, 'caretaker switching must not rewrite the full pet archive');
+  await waitFor('document.querySelector(".wb-pet-house-name")?.textContent.includes("饲养员甲")');
+  const formalPetA = await evaluate(`(()=>{
+    const started=performance.now();
+    document.querySelector('#wb-pet-pat').click();
+    const key='wanbanXiaowu_petState_v1__'+encodeURIComponent('full_caretaker_a_pet_a');
+    const state=JSON.parse(localStorage.getItem(key)).state;
+    return {handler:performance.now()-started,growth:state.growth,interactions:state.eggInteractions};
+  })()`);
+  assert.ok(formalPetA.handler < 30, 'formal pet interaction handler took ' + formalPetA.handler.toFixed(1) + 'ms');
+  assert.deepEqual({ growth:formalPetA.growth, interactions:formalPetA.interactions }, { growth:11, interactions:1 }, 'first caretaker pet shard was not updated independently');
+
+  await evaluate('document.querySelector("#wb-pet-caretakers").click()');
+  await waitFor('!!document.querySelector("#wb-pet-caretaker-mask [data-id=caretaker_b]")');
+  const caretakerBSwitch = await evaluate(`(()=>{
+    const aggregate=localStorage.getItem('wanbanXiaowu_petFull_v1');
+    const started=performance.now();
+    document.querySelector('#wb-pet-caretaker-mask [data-id=caretaker_b]').click();
+    return {handler:performance.now()-started,aggregateStable:aggregate===localStorage.getItem('wanbanXiaowu_petFull_v1')};
+  })()`);
+  assert.ok(caretakerBSwitch.handler < 30, 'second caretaker switch handler took ' + caretakerBSwitch.handler.toFixed(1) + 'ms');
+  assert.equal(caretakerBSwitch.aggregateStable, true, 'second caretaker switch must not rewrite the full pet archive');
+  await waitFor('document.querySelector(".wb-pet-house-name")?.textContent.includes("饲养员乙")');
+  const formalPetB = await evaluate(`(()=>{
+    const aKey='wanbanXiaowu_petState_v1__'+encodeURIComponent('full_caretaker_a_pet_a');
+    const bKey='wanbanXiaowu_petState_v1__'+encodeURIComponent('full_caretaker_b_pet_b');
+    const beforeA=JSON.parse(localStorage.getItem(aKey)).state.growth;
+    const started=performance.now();
+    document.querySelector('#wb-pet-pat').click();
+    const b=JSON.parse(localStorage.getItem(bKey)).state;
+    return {handler:performance.now()-started,beforeA,growth:b.growth,interactions:b.eggInteractions};
+  })()`);
+  assert.ok(formalPetB.handler < 30, 'second formal pet interaction handler took ' + formalPetB.handler.toFixed(1) + 'ms');
+  assert.deepEqual({ growth:formalPetB.growth, interactions:formalPetB.interactions, first:formalPetB.beforeA }, { growth:21, interactions:1, first:11 }, 'switching caretakers mixed their pet shards');
+
+  await evaluate('document.querySelector("#wb-pet-caretakers").click()');
+  await waitFor('!!document.querySelector("#wb-pet-caretaker-mask [data-id=caretaker_a]")');
+  await evaluate('document.querySelector("#wb-pet-caretaker-mask [data-id=caretaker_a]").click()');
+  await waitFor('document.querySelector(".wb-pet-house-name")?.textContent.includes("饲养员甲")');
+  await evaluate('document.querySelector("#wb-pet-restart").click()');
+  await waitFor('!!document.querySelector("#wb-pet-mini-ok")');
+  await evaluate('document.querySelector("#wb-pet-mini-ok").click()');
+  await waitFor('!!document.querySelector("#wb-pet-adoption-mask")');
+  const formalDelete = await evaluate(`(()=>{
+    const aKey='wanbanXiaowu_petState_v1__'+encodeURIComponent('full_caretaker_a_pet_a');
+    const bKey='wanbanXiaowu_petState_v1__'+encodeURIComponent('full_caretaker_b_pet_b');
+    const full=JSON.parse(localStorage.getItem('wanbanXiaowu_petFull_v1'));
+    return {
+      aShard:localStorage.getItem(aKey),
+      aCursor:localStorage.getItem(aKey+'__story'),
+      aPets:full.caretakers.find(c=>c.id==='caretaker_a').pets.map(p=>p.id),
+      bPets:full.caretakers.find(c=>c.id==='caretaker_b').pets.map(p=>p.id),
+      bGrowth:JSON.parse(localStorage.getItem(bKey)).state.growth,
+    };
+  })()`);
+  assert.deepEqual(formalDelete, { aShard:null, aCursor:null, aPets:[], bPets:['pet_b'], bGrowth:21 }, 'deleting one formal pet must preserve every other caretaker shard');
+  await evaluate('document.querySelectorAll(".wb-modal-mask").forEach(mask=>mask.remove())');
+  await evaluate('document.querySelector("[data-tab=settings]").click()');
+  await waitFor('!!document.querySelector("#wb-companion-toggle")');
+
   await evaluate(`(()=>{
     const companion=document.querySelector('#wb-companion-toggle');
     const theme=document.querySelector('#wb-theme');
@@ -429,6 +650,155 @@ try {
     companion.dispatchEvent(new Event('change',{bubbles:true}));
     document.querySelector('[data-tab=single]').click();
   })()`);
+  for (let i = 0; i < 10 && !(await evaluate('!!document.querySelector("[data-game=spider]")')); i++) {
+    await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
+    await sleep(260);
+  }
+  await evaluate('document.querySelector("[data-game=spider]").click()');
+  await waitFor('!!document.querySelector("#wb-start-cover-btn")');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('!!document.querySelector("#wb-choice-mask [data-choice=easy]")');
+  await evaluate('document.querySelector("#wb-choice-mask [data-choice=easy]").click()');
+  await waitFor('document.querySelectorAll(".wb-spider-col").length===10 && document.querySelectorAll(".wb-spider-card").length===54');
+  const spiderInteraction = await evaluate(`(async()=>{
+    const board=document.querySelector('#sp-board');
+    const columns=Array.from(board.querySelectorAll('.wb-spider-col'));
+    const before=columns.map(column=>column.querySelectorAll('.wb-spider-card').length);
+    const card=columns[0].querySelector('.wb-spider-card:not(.back):last-of-type');
+    window.__stableSpiderCard=card;
+    const selectStarted=performance.now();
+    card.click();
+    const selectHandler=performance.now()-selectStarted;
+    await new Promise(requestAnimationFrame);
+    const reusedAfterSelect=window.__stableSpiderCard===document.querySelector('[data-card-id="'+card.dataset.cardId+'"]');
+    card.click();
+    const dealStarted=performance.now();
+    document.querySelector('#sp-deck').click();
+    const dealHandler=performance.now()-dealStarted;
+    return {before,selectHandler,dealHandler,reusedAfterSelect};
+  })()`);
+  await waitFor(`(()=>{const before=${JSON.stringify(spiderInteraction.before)};return Array.from(document.querySelectorAll('.wb-spider-col')).every((column,index)=>column.querySelectorAll('.wb-spider-card').length===before[index]+1)})()`);
+  const spiderAfterDeal = await evaluate(`(()=>{
+    const columns=Array.from(document.querySelectorAll('.wb-spider-col'));
+    const readable=columns.every(column=>{
+      const cards=Array.from(column.querySelectorAll('.wb-spider-card:not(.back)'));
+      if(cards.length<2)return true;
+      const tops=cards.map(card=>parseFloat(card.style.top)||0);
+      return tops.slice(1).every((top,index)=>top-tops[index]>=12.9);
+    });
+    return {
+      counts:columns.map(column=>column.querySelectorAll('.wb-spider-card').length),
+      cards:columns.map(column=>Array.from(column.querySelectorAll('.wb-spider-card')).map(card=>card.dataset.cardId)),
+      readable,
+      horizontalOverflow:document.querySelector('#sp-board').scrollWidth-document.querySelector('#sp-board').clientWidth,
+    };
+  })()`);
+  assert.equal(spiderInteraction.reusedAfterSelect, true, 'spider selection must reuse the existing card node');
+  assert.ok(spiderInteraction.selectHandler < 30, 'spider selection handler took ' + spiderInteraction.selectHandler.toFixed(1) + 'ms');
+  assert.ok(spiderInteraction.dealHandler < 30, 'spider deal handler took ' + spiderInteraction.dealHandler.toFixed(1) + 'ms');
+  assert.equal(spiderAfterDeal.readable, true, 'spider face-up ranks must remain readable');
+  assert.ok(spiderAfterDeal.horizontalOverflow <= 1, 'spider board must not overflow horizontally on mobile');
+  const spiderCloseMs = await evaluate(`(()=>{const started=performance.now();document.querySelector('#wb-close').click();return performance.now()-started})()`);
+  assert.ok(spiderCloseMs < 30, 'spider close handler took ' + spiderCloseMs.toFixed(1) + 'ms');
+  assert.equal(await evaluate('document.querySelector("#wanbanXiaowu-shell").classList.contains("wb-shell-visible")'), false, 'spider close must hide immediately');
+  await waitFor('document.querySelector("#wb-body").childElementCount===0');
+  await evaluate('document.querySelector("#wanbanXiaowu-menu-item").click()');
+  for (let i = 0; i < 10 && !(await evaluate('!!document.querySelector("[data-game=spider]")')); i++) {
+    await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
+    await sleep(260);
+  }
+  await evaluate('document.querySelector("[data-game=spider]").click()');
+  await sleep(180);
+  if (await evaluate('!!document.querySelector("#wb-progress-continue")')) await evaluate('document.querySelector("#wb-progress-continue").click()');
+  else await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('document.querySelectorAll(".wb-spider-card").length===64');
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.wb-spider-col')).map(column=>Array.from(column.querySelectorAll('.wb-spider-card')).map(card=>card.dataset.cardId))`), spiderAfterDeal.cards, 'spider tableau must restore exactly after close');
+  await evaluate('document.querySelector("#wb-close").click()');
+  await waitFor('document.querySelector("#wb-body").childElementCount===0');
+  await evaluate('document.querySelector("#wanbanXiaowu-menu-item").click()');
+  await waitFor('!!document.querySelector("[data-tab=single]")');
+  await evaluate('document.querySelector("[data-tab=single]").click()');
+  for (let i = 0; i < 10 && !(await evaluate('!!document.querySelector("[data-game=watersort]")')); i++) {
+    await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
+    await sleep(260);
+  }
+  await evaluate('document.querySelector("[data-game=watersort]").click()');
+  await waitFor('!!document.querySelector("#wb-start-cover-btn")');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('document.querySelectorAll(".wb-water-bottle").length>=5');
+  const waterSortInteraction = await evaluate(`(async()=>{
+    const board=document.querySelector('#wb-water-board');
+    const bottles=Array.from(board.querySelectorAll('.wb-water-bottle'));
+    const labels=bottles.map(bottle=>bottle.getAttribute('aria-label'));
+    const colors=bottle=>{
+      const label=bottle.getAttribute('aria-label')||'';
+      if(label.includes('空瓶')) return [];
+      return (label.split('从底到顶 ')[1]||'').split('，包含')[0].split('、').filter(Boolean);
+    };
+    const values=bottles.map(colors);
+    let move=null;
+    for(let from=0;from<values.length&&!move;from++) for(let to=0;to<values.length;to++){
+      if(from!==to&&values[from].length&&values[to].length<4&&(!values[to].length||values[from].at(-1)===values[to].at(-1))){ move={from,to}; break; }
+    }
+    if(!move) throw new Error('No legal water sort move');
+    const source=bottles[move.from],target=bottles[move.to];
+    const started=performance.now();
+    source.click();
+    const handler=performance.now()-started;
+    await new Promise(requestAnimationFrame);
+    target.click();
+    const firstStarted=source.classList.contains('pour-source')&&target.classList.contains('pour-target');
+    await new Promise(resolve=>setTimeout(resolve,280));
+    const firstCleared=!board.querySelector('.pour-source,.pour-target');
+    document.querySelector('.wb-water-tool[data-tool="undo"]').click();
+    source.click(); target.click();
+    const secondStarted=source.classList.contains('pour-source')&&target.classList.contains('pour-target');
+    await new Promise(resolve=>setTimeout(resolve,280));
+    const secondCleared=!board.querySelector('.pour-source,.pour-target');
+    document.querySelector('.wb-water-tool[data-tool="undo"]').click();
+    return {handler,firstStarted,firstCleared,secondStarted,secondCleared,stable:bottles.every((bottle,index)=>bottle===board.querySelectorAll('.wb-water-bottle')[index]),labels};
+  })()`);
+  assert.equal(waterSortInteraction.stable, true, 'water sort selection must reuse every bottle node');
+  assert.equal(waterSortInteraction.firstStarted && waterSortInteraction.secondStarted, true, 'every water sort pour must start both bottle animations');
+  assert.equal(waterSortInteraction.firstCleared && waterSortInteraction.secondCleared, true, 'water sort pour classes must clear after every animation');
+  assert.ok(waterSortInteraction.handler < 30, 'water sort selection handler took ' + waterSortInteraction.handler.toFixed(1) + 'ms');
+  const waterSortBackMs = await evaluate(`(()=>{const started=performance.now();document.querySelector('#wb-back').click();return performance.now()-started})()`);
+  assert.ok(waterSortBackMs < 30, 'water sort back handler took ' + waterSortBackMs.toFixed(1) + 'ms');
+  assert.ok(await evaluate('!!document.querySelector(".wb-cardgrid")'), 'water sort back must render the game list synchronously');
+  await sleep(900);
+  assert.ok(await evaluate('!!localStorage.getItem("wanbanXiaowu_progress_v1__watersort")'), 'water sort back must flush its deferred snapshot');
+  for (let i = 0; i < 10 && !(await evaluate('!!document.querySelector("[data-game=watersort]")')); i++) {
+    await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
+    await sleep(260);
+  }
+  await evaluate('document.querySelector("[data-game=watersort]").click()');
+  await waitFor('!!document.querySelector("#wb-progress-continue")');
+  await evaluate('document.querySelector("#wb-progress-continue").click()');
+  await waitFor('document.querySelectorAll(".wb-water-bottle").length>=5');
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.wb-water-bottle')).map(bottle=>bottle.getAttribute('aria-label'))`), waterSortInteraction.labels, 'water sort must restore the exact bottle layout after back');
+  await evaluate('document.querySelector("#wb-back").click()');
+  for (let i = 0; i < 10 && !(await evaluate('!!document.querySelector("[data-game=game2048]")')); i++) {
+    await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
+    await sleep(260);
+  }
+  await evaluate('document.querySelector("[data-game=game2048]").click()');
+  await waitFor('!!document.querySelector("#wb-start-cover-btn")');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('!!document.querySelector("#wb-choice-mask [data-choice=normal]")');
+  await evaluate('document.querySelector("#wb-choice-mask [data-choice=normal]").click()');
+  await waitFor('document.querySelectorAll("#wb-2048 .wb-tile").length===16');
+  const game2048Interaction = await evaluate(`(async()=>{
+    const board=document.querySelector('#wb-2048');
+    const cells=Array.from(board.children);
+    const started=performance.now();
+    document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}));
+    const handler=performance.now()-started;
+    await new Promise(requestAnimationFrame);
+    return {handler,stable:cells.every((cell,index)=>cell===board.children[index])};
+  })()`);
+  assert.equal(game2048Interaction.stable, true, '2048 moves must reuse every grid node');
+  assert.ok(game2048Interaction.handler < 30, '2048 move handler took ' + game2048Interaction.handler.toFixed(1) + 'ms');
+  await evaluate('document.querySelector("#wb-back").click()');
   for (let i = 0; i < 8 && !(await evaluate('!!document.querySelector("[data-game=numberklotski]")')); i++) {
     await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
     await sleep(260);
@@ -470,8 +840,234 @@ try {
   assert.equal(klotski320.allCellsInside, true, 'all 6x6 number klotski cells must remain visible at 320px');
   assert.equal(klotski320.square, true, 'number klotski board must remain square at 320px');
   assert.ok(klotski320.root.scrollWidth <= klotski320.root.width + 1, 'number klotski root must not overflow horizontally at 320px');
+
+  await client.call('Emulation.setDeviceMetricsOverride', { width:390, height:844, deviceScaleFactor:2, mobile:true });
+  await evaluate('document.querySelector("#wb-back").click()');
+  await openListedGame('uyangle');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('!!document.querySelector("#wb-choice-mask [data-choice=easy]")');
+  await evaluate('document.querySelector("#wb-choice-mask [data-choice=easy]").click()');
+  await waitFor('document.querySelectorAll(".wb-uyangle-tile").length>0');
+  const uyangleReady = await evaluate(`(()=>({total:document.querySelectorAll('.wb-uyangle-tile').length,enabled:document.querySelectorAll('.wb-uyangle-tile:not(:disabled)').length,errors:window.__errors,body:document.querySelector('#wb-gamebox')?.innerText}))()`);
+  assert.ok(uyangleReady.enabled > 0, 'U board has no selectable tile: ' + JSON.stringify(uyangleReady));
+  const uyangleInteraction = await evaluate(`(()=>{
+    const board=document.querySelector('#wb-uyangle-board');
+    const before=board.children.length;
+    const tile=board.querySelector('.wb-uyangle-tile:not(:disabled)');
+    const started=performance.now();
+    tile.click();
+    return {handler:performance.now()-started,before,after:board.children.length,tray:document.querySelectorAll('#wb-uyangle-tray img').length};
+  })()`);
+  assert.equal(uyangleInteraction.after, uyangleInteraction.before - 1, 'U tile pick must remove exactly one board node');
+  assert.equal(uyangleInteraction.tray, 1, 'U tile pick must preserve the tray result');
+  assert.ok(uyangleInteraction.handler < 80, 'U tile handler took ' + uyangleInteraction.handler.toFixed(1) + 'ms');
+
+  await evaluate('document.querySelector("#wb-back").click()');
+  await openListedGame('popstar');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('!!document.querySelector("#wb-choice-mask [data-choice=easy]")');
+  await evaluate('document.querySelector("#wb-choice-mask [data-choice=easy]").click()');
+  await waitFor('document.querySelectorAll(".wb-popstar-cell").length===100');
+  const popstarInteraction = await evaluate(`(()=>{
+    const board=document.querySelector('#wb-popstar-board');
+    const cells=Array.from(board.querySelectorAll('.wb-popstar-cell'));
+    const byPosition=new Map(cells.map(cell=>[cell.dataset.r+','+cell.dataset.c,cell]));
+    const color=cell=>cell.style.getPropertyValue('--star-color');
+    let pair=null;
+    for(const cell of cells){
+      const r=Number(cell.dataset.r),c=Number(cell.dataset.c);
+      const neighbor=byPosition.get((r+1)+','+c)||byPosition.get(r+','+(c+1));
+      if(neighbor&&color(neighbor)===color(cell)){ pair=[cell,neighbor]; break; }
+    }
+    if(!pair) throw new Error('No removable Pop Star group');
+    const group=new Set(pair),queue=pair.slice();
+    while(queue.length){
+      const cell=queue.shift(),r=Number(cell.dataset.r),c=Number(cell.dataset.c);
+      for(const key of [(r-1)+','+c,(r+1)+','+c,r+','+(c-1),r+','+(c+1)]){
+        const next=byPosition.get(key);
+        if(next&&!group.has(next)&&color(next)===color(cell)){ group.add(next); queue.push(next); }
+      }
+    }
+    window.__stablePopstarNode=cells.find(cell=>!group.has(cell))||null;
+    const before=cells.length,started=performance.now();
+    pair[0].click();
+    return {handler:performance.now()-started,before,removed:group.size};
+  })()`);
+  await sleep(380);
+  const popstarAfter = await evaluate(`(()=>({
+    count:document.querySelectorAll('#wb-popstar-board .wb-popstar-cell').length,
+    removing:document.querySelectorAll('#wb-popstar-board .removing').length,
+    stable:!window.__stablePopstarNode||window.__stablePopstarNode.isConnected,
+    unique:new Set(Array.from(document.querySelectorAll('#wb-popstar-board .wb-popstar-cell')).map(cell=>cell.dataset.popstarId)).size,
+  }))()`);
+  assert.equal(popstarAfter.removing, 0, 'removed Pop Star nodes must be released after their animation');
+  assert.equal(popstarAfter.count, popstarInteraction.before - popstarInteraction.removed, 'Pop Star board retained stale removed nodes');
+  assert.equal(popstarAfter.unique, popstarAfter.count, 'Pop Star board must not duplicate reused nodes');
+  assert.equal(popstarAfter.stable, true, 'Pop Star must preserve unaffected nodes');
+  assert.ok(popstarInteraction.handler < 40, 'Pop Star handler took ' + popstarInteraction.handler.toFixed(1) + 'ms');
+
+  await evaluate('document.querySelector("#wb-back").click()');
+  await openListedGame('gomoku', 'double');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('!!document.querySelector("#wb-choice-mask [data-choice=normal]")');
+  await evaluate('document.querySelector("#wb-choice-mask [data-choice=normal]").click()');
+  await waitFor('!!document.querySelector("#wb-first-mask [data-first=user]")');
+  await evaluate('document.querySelector("#wb-first-mask [data-first=user]").click()');
+  await waitFor('document.querySelectorAll(".wb-gcell").length===225');
+  const gomokuInteraction = await evaluate(`(()=>{
+    const cells=Array.from(document.querySelectorAll('.wb-gcell'));
+    window.__gomokuCells=cells;
+    window.__gomokuMoveStarted=performance.now();
+    const started=performance.now();
+    cells[112].click();
+    return {handler:performance.now()-started,occupied:cells.filter(cell=>cell.classList.contains('black')||cell.classList.contains('white')).length,stable:cells.every((cell,index)=>cell===document.querySelectorAll('.wb-gcell')[index])};
+  })()`);
+  assert.equal(gomokuInteraction.stable, true, 'Gomoku moves must reuse all board cells');
+  assert.equal(gomokuInteraction.occupied, 1, 'Gomoku AI must not move in the user click handler');
+  assert.ok((await evaluate('document.querySelector("#wb-gomoku-turn").textContent')).includes('思考中'), 'Gomoku must show its AI thinking state');
+  await sleep(350);
+  assert.equal(await evaluate(`document.querySelectorAll('.wb-gcell.black,.wb-gcell.white').length`), 1, 'Gomoku AI delay ended too early');
+  await waitFor('document.querySelectorAll(".wb-gcell.black,.wb-gcell.white").length>=2');
+  const gomokuAfterAi = await evaluate(`({elapsed:performance.now()-window.__gomokuMoveStarted,stable:window.__gomokuCells.every((cell,index)=>cell===document.querySelectorAll('.wb-gcell')[index])})`);
+  assert.equal(gomokuAfterAi.stable, true, 'Gomoku AI move must reuse all board cells');
+  assert.ok(gomokuAfterAi.elapsed >= 700, 'Gomoku AI moved without a visible delay: ' + gomokuAfterAi.elapsed.toFixed(1) + 'ms');
+  assert.ok(gomokuInteraction.handler < 80, 'Gomoku move and AI handler took ' + gomokuInteraction.handler.toFixed(1) + 'ms');
+
+  await evaluate('document.querySelector("#wb-back").click()');
+  await openListedGame('chinesechess', 'double');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('document.querySelectorAll(".wb-xq-cell").length===90');
+  const chineseChessMove = await evaluate(`(()=>{
+    window.__xqCells=Array.from(document.querySelectorAll('.wb-xq-cell'));
+    window.__xqMoveStarted=performance.now();
+    document.querySelector('.wb-xq-cell[data-i="54"]').click();
+    document.querySelector('.wb-xq-cell[data-i="45"]').click();
+    return {
+      thinking:document.querySelector('#wb-xq-text').textContent.includes('思考中'),
+      userMarks:document.querySelectorAll('.wb-xq-cell.last-user').length,
+      taMarks:document.querySelectorAll('.wb-xq-cell.last-ta').length,
+    };
+  })()`);
+  assert.equal(chineseChessMove.thinking, true, 'Chinese chess must show its AI thinking state');
+  assert.ok(chineseChessMove.userMarks > 0, 'Chinese chess user move did not complete');
+  assert.equal(chineseChessMove.taMarks, 0, 'Chinese chess AI must not move in the user click handler');
+  await sleep(350);
+  assert.equal(await evaluate(`document.querySelectorAll('.wb-xq-cell.last-ta').length`), 0, 'Chinese chess AI delay ended too early');
+  await waitFor('document.querySelectorAll(".wb-xq-cell.last-ta").length>0');
+  const chineseChessAfterAi = await evaluate(`({elapsed:performance.now()-window.__xqMoveStarted,stable:window.__xqCells.every((cell,index)=>cell===document.querySelectorAll('.wb-xq-cell')[index])})`);
+  assert.equal(chineseChessAfterAi.stable, true, 'Chinese chess AI move must reuse all board cells');
+  assert.ok(chineseChessAfterAi.elapsed >= 700, 'Chinese chess AI moved without a visible delay: ' + chineseChessAfterAi.elapsed.toFixed(1) + 'ms');
+
+  await evaluate('document.querySelector("#wb-back").click()');
+  await openListedGame('ludo', 'double');
+  await evaluate('document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('!!document.querySelector("#wb-first-mask [data-first=user]")');
+  await evaluate('document.querySelector("#wb-first-mask [data-first=user]").click()');
+  await waitFor('document.querySelectorAll(".wb-ludo-cell").length===121 && document.querySelectorAll(".wb-ludo-piece").length===8');
+  const ludoRoll = await evaluate(`(()=>{
+    window.__ludoCells=Array.from(document.querySelectorAll('.wb-ludo-cell'));
+    window.__ludoPieces=Array.from(document.querySelectorAll('.wb-ludo-piece'));
+    window.__ludoDice=Array.from(document.querySelector('#wb-ludo-dice').children);
+    const started=performance.now();
+    document.querySelector('#wb-ludo-roll').click();
+    return performance.now()-started;
+  })()`);
+  await sleep(160);
+  await evaluate('document.querySelector("#wb-ludo-roll").click()');
+  await sleep(100);
+  const ludoAfter = await evaluate(`(()=>({
+    cells:document.querySelectorAll('.wb-ludo-cell').length,
+    pieces:document.querySelectorAll('.wb-ludo-piece').length,
+    dice:document.querySelector('#wb-ludo-dice').children.length,
+    stableCells:window.__ludoCells.every((node,index)=>node===document.querySelectorAll('.wb-ludo-cell')[index]),
+    stablePieces:window.__ludoPieces.every(node=>node.isConnected),
+    stableDice:window.__ludoDice.every((node,index)=>node===document.querySelector('#wb-ludo-dice').children[index]),
+  }))()`);
+  assert.deepEqual({ cells:ludoAfter.cells, pieces:ludoAfter.pieces, dice:ludoAfter.dice }, { cells:121, pieces:8, dice:9 }, 'Ludo static nodes changed during a dice roll');
+  assert.equal(ludoAfter.stableCells && ludoAfter.stablePieces && ludoAfter.stableDice, true, 'Ludo must reuse board, piece and dice nodes');
+  assert.ok(ludoRoll < 30, 'Ludo roll handler took ' + ludoRoll.toFixed(1) + 'ms');
+
+  await evaluate('document.querySelector("#wb-back").click()');
+  await openListedGame('turkey');
+  await sleep(90);
+  await evaluate('document.querySelector("#wb-progress-mask")?.remove();document.querySelector("#wb-start-cover-btn").click()');
+  await waitFor('document.querySelectorAll(".wb-turkey-block").length>0');
+  const turkeyMove = await evaluate(`(()=>{
+    const board=document.querySelector('#tk-board');
+    const cell=board.getBoundingClientRect().width/8;
+    const move=document.querySelector('.wb-turkey-block[data-id="stable_move"]');
+    const doomed=['clear_left','clear_right'].map(id=>document.querySelector('.wb-turkey-block[data-id="'+id+'"]'));
+    const survivors=['stack_low','stack_high','stable_move'].map(id=>[id,document.querySelector('.wb-turkey-block[data-id="'+id+'"]')]);
+    if(!move||doomed.some(node=>!node)||survivors.some(([,node])=>!node)) return {error:'seeded Turkey blocks missing'};
+    window.__turkeyPushTest={initialY:null,started:false,nodes:null,sawClear:false,clearSnapshot:false,doomed,survivors};
+    const observer=new MutationObserver(()=>{
+      if(doomed.every(node=>node.classList.contains('clear'))){
+        window.__turkeyPushTest.sawClear=true;
+        window.__turkeyPushTest.clearSnapshot=doomed.every(node=>node.isConnected)
+          &&survivors.every(([,node])=>node.isConnected&&!node.classList.contains('clear'));
+      }
+      const pushed=board.querySelector('.wb-turkey-block.row-push');
+      if(!pushed) return;
+      const transform=getComputedStyle(pushed).transform;
+      const y=transform==='none'?0:new DOMMatrixReadOnly(transform).m42;
+      if(!pushed.classList.contains('run')&&window.__turkeyPushTest.initialY===null){
+        window.__turkeyPushTest.initialY=y;
+        window.__turkeyPushTest.nodes=new Map(Array.from(board.querySelectorAll('.wb-turkey-block')).map(element=>[element.dataset.id,element]));
+      }
+      if(pushed.classList.contains('run')) window.__turkeyPushTest.started=true;
+    });
+    observer.observe(board,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
+    window.__turkeyPushTest.observer=observer;
+    const rect=board.getBoundingClientRect();
+    const startX=rect.left+4.5*cell;
+    const endX=startX+cell;
+    const y=rect.top+8.5*cell;
+    const event=(type,x)=>new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:1,pointerType:'touch',isPrimary:true,clientX:x,clientY:y});
+    move.dispatchEvent(event('pointerdown',startX));
+    document.dispatchEvent(event('pointermove',endX));
+    document.dispatchEvent(event('pointerup',endX));
+    return {cell};
+  })()`);
+  assert.equal(turkeyMove.error, undefined, turkeyMove.error);
+  await waitFor('window.__turkeyPushTest?.sawClear===true');
+  assert.equal(await evaluate('window.__turkeyPushTest.clearSnapshot'), true, 'Turkey clear must fade only the completed row while preserving survivors');
+  await waitFor('!document.querySelector(".wb-turkey-block[data-id=clear_left]")&&!document.querySelector(".wb-turkey-block[data-id=clear_right]")');
+  assert.equal(await evaluate(`window.__turkeyPushTest.survivors.every(([id,node])=>node.isConnected&&document.querySelector('.wb-turkey-block[data-id="'+id+'"]')===node)`), true, 'Turkey clear must remove only the completed row nodes');
+  await waitFor('window.__turkeyPushTest?.started===true');
+  await sleep(100);
+  const turkeyPushMid = await evaluate(`(()=>{
+    const pushed=document.querySelector('.wb-turkey-block.row-push.run');
+    const transform=pushed?getComputedStyle(pushed).transform:'none';
+    return {
+      active:!!pushed,
+      y:transform==='none'?0:new DOMMatrixReadOnly(transform).m42,
+      initialY:window.__turkeyPushTest.initialY,
+      stable:Array.from(window.__turkeyPushTest.nodes||[]).every(([id,node])=>node.isConnected&&node.dataset.id===id),
+    };
+  })()`);
+  assert.equal(turkeyPushMid.active, true, 'Turkey row push ended before its visible middle frame');
+  assert.equal(turkeyPushMid.stable, true, 'Turkey row push must reuse existing block nodes');
+  assert.ok(Math.abs(turkeyPushMid.initialY-turkeyMove.cell)<2, 'Turkey row push must start one cell below its final position');
+  assert.ok(turkeyPushMid.y>0&&turkeyPushMid.y<turkeyMove.cell, 'Turkey row push must visibly move upward: ' + JSON.stringify(turkeyPushMid));
+  await waitFor('document.querySelectorAll(".wb-turkey-block.row-push").length===0');
+  await sleep(700);
+  assert.equal(await evaluate(`Array.from(window.__turkeyPushTest.nodes||[]).every(([id,node])=>{const current=document.querySelector('.wb-turkey-block[data-id="'+id+'"]');return !current||current===node})`), true, 'Turkey settling must never repurpose a surviving block node');
+  await evaluate('window.__turkeyPushTest.observer.disconnect();document.querySelector("#wb-back").click()');
+
+  const startupSmokes = [
+    ['tetris','single','#wb-tetris-toggle-keys'], ['snake','single','#wb-snake-toggle-keys'], ['watermelon','single','#wb-watermelon'],
+    ['memory','single','#wb-memory-board'], ['jump','single','#wb-jump'], ['plank','single','#wb-plank'], ['sudoku','single','#wb-sudoku-board'],
+    ['minesweeper','single','#wb-mines-board'], ['screw','single','#wb-screw-canvas'], ['paopao','single','#wb-paopao-canvas'],
+    ['game1010','single','#wb-1010-canvas'], ['linklink','single','#ll-board'],
+    ['zuma','single','#wb-zuma-canvas'], ['flappybird','single','#wb-flappy-canvas'],
+    ['territory','double','#wb-territory-board'], ['oldmaid','double','#wb-oldmaid-ta'], ['reversi','double','#wb-reversi-board'],
+    ['bombnumber','double','#wb-bomb-grid'], ['connect4d','double','#wb-c4d-board'], ['draughts','double','#wb-draughts-board'],
+    ['westernchess','double','#wb-chess-board'], ['blackjack','double','#bj-hit'],
+    ['guessnumber','double','#wb-num-guess'], ['wordguess','double','#wb-word-input'], ['tictactoe','double','.wb-board3'],
+  ];
+  for (const [game, tab, selector] of startupSmokes) await smokeStartListedGame(game, tab, selector);
   assert.deepEqual(await evaluate('window.__errors'), []);
-  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; Schulte handler ' + interaction.maxHandler.toFixed(1) + 'ms; settings switch ' + settingsSwitch.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); settings scroll work ' + settingsScroll.maxWork.toFixed(1) + 'ms; home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
+  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
 } finally {
   client?.close();
   if (browser) {

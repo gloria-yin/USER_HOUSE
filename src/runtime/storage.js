@@ -38,8 +38,9 @@ function cachedDecodedText(raw) {
   return json;
 }
 
-function encodeJSONText(json) {
+function encodeJSONText(json, options = {}) {
   if (json === undefined) throw new Error('Cannot store an undefined value');
+  if (options.compress === false) return json;
   if (json.length < 4096) return json;
   const packed = JSON.stringify({ format:FORMAT, data:LZString.compressToUTF16(json) });
   return packed.length < json.length * 0.9 ? packed : json;
@@ -61,12 +62,12 @@ export function decodeStoredJSON(raw) {
   return JSON.parse(json);
 }
 
-export function writeStoredJSON(storage, key, value) {
+export function writeStoredJSON(storage, key, value, options = {}) {
   const json = JSON.stringify(value);
   if (json === undefined) throw new Error('Cannot store an undefined value');
   const previous = storage.getItem(key);
   if (previous === json || (previous !== null && cachedDecodedText(previous) === json)) return;
-  const raw = encodeJSONText(json);
+  const raw = encodeJSONText(json, options);
   if (previous === raw) return;
   storage.setItem(key, raw);
   if (storage.getItem(key) !== raw) throw new Error('Storage verification failed: ' + key);

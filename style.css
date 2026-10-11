@@ -764,6 +764,8 @@
 .wb-turkey-block.dim { filter:grayscale(.8) brightness(.7); opacity:.55; }
 .wb-turkey-block.clear { transform:scale(.76); opacity:0; }
 .wb-turkey-block.shatter { animation:wbTurkeyShatter .34s ease-in forwards; filter:saturate(1.2) brightness(1.08); }
+.wb-turkey-block.row-push { transform:translate3d(0,var(--tk-cell),0); transition:none; will-change:transform; }
+.wb-turkey-block.row-push.run { transform:translate3d(0,0,0); transition:transform .22s cubic-bezier(.22,.8,.3,1); }
 .wb-turkey-preview { position:absolute; height:calc(var(--tk-cell) - 4px); border-radius:calc(var(--tk-cell) * .18); border:2px solid #22c55e; background:rgba(34,197,94,.14); z-index:3; pointer-events:none; }
 .wb-turkey-preview.bad { border-color:#ef4444; background:rgba(239,68,68,.12); }
 .wb-turkey-rowflash { position:absolute; left:0; width:100%; height:var(--tk-cell); background:rgba(255,255,255,.48); z-index:5; pointer-events:none; animation:wbTurkeyFlash .18s ease; }
@@ -933,13 +935,13 @@
 .wb-spider-deck::before { content:'☞'; font-size:16px; line-height:1; }
 .wb-spider-deck.blocked { opacity:.55; filter:saturate(.72); }
 .wb-spider-deck:disabled { cursor:not-allowed; }
-.wb-spider-board { min-height:0; display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:var(--sp-col-gap); align-items:start; overflow:hidden; padding:3px 2px 5px; border:1px solid color-mix(in srgb,var(--wb-border) 65%,#a8c8c4 35%); border-radius:10px; background:linear-gradient(180deg,rgba(236,250,246,.70),rgba(255,248,236,.72)); touch-action:pan-y; }
-.wb-spider-col { position:relative; min-height:calc(var(--sp-card-h) + 12px); border:1px solid rgba(81,119,118,.18); border-radius:4px; padding:1px; transition:border-color .15s,box-shadow .15s,background .15s; }
+.wb-spider-board { min-height:0; display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:var(--sp-col-gap); align-items:start; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; padding:3px 2px 5px; border:1px solid color-mix(in srgb,var(--wb-border) 65%,#a8c8c4 35%); border-radius:10px; background:linear-gradient(180deg,rgba(236,250,246,.70),rgba(255,248,236,.72)); touch-action:pan-y; contain:layout paint; }
+.wb-spider-col { position:relative; min-width:0; min-height:calc(var(--sp-card-h) + 12px); border:1px solid rgba(81,119,118,.18); border-radius:4px; padding:1px; transition:border-color .15s,box-shadow .15s,background .15s; contain:layout paint; }
 .wb-spider-col.legal { border-color:#22c55e; box-shadow:0 0 0 2px rgba(34,197,94,.22); background:rgba(220,252,231,.28); }
 .wb-spider-col.illegal { border-color:#ef4444; box-shadow:0 0 0 2px rgba(239,68,68,.2); }
 .wb-spider-col.empty-warn { border-color:#f59e0b; box-shadow:0 0 0 2px rgba(245,158,11,.2); }
 .wb-spider-col.overflow { border-color:#ef4444; box-shadow:0 0 0 2px rgba(239,68,68,.28); animation:wbSpiderShake .25s linear; }
-.wb-spider-card { position:absolute; left:50%; width:var(--sp-card-w); height:var(--sp-card-h); margin-left:calc(var(--sp-card-w) / -2); border:1px solid #aeb9c8; border-radius:1px; background:#fffdf8; color:#172033; font-weight:900; box-shadow:0 1px 4px rgba(15,23,42,.15); user-select:none; touch-action:none; box-sizing:border-box; transition:transform .14s,box-shadow .14s,border-color .14s,opacity .14s; z-index:1; overflow:hidden; }
+.wb-spider-card { position:absolute; left:50%; width:var(--sp-card-w); height:var(--sp-card-h); margin-left:calc(var(--sp-card-w) / -2); border:1px solid #aeb9c8; border-radius:1px; background:#fffdf8; color:#172033; font-weight:900; box-shadow:0 1px 4px rgba(15,23,42,.15); user-select:none; touch-action:pan-y; box-sizing:border-box; transition:transform .1s,box-shadow .1s,border-color .1s,opacity .1s; z-index:1; overflow:hidden; }
 .wb-spider-card.red { color:#d94b55; border-color:#e89aa3; }
 .wb-spider-card.back { background:url('./assets/game-icons/spider-card.png') center / 100% 100% no-repeat,#243858; color:transparent; border-color:#20324f; box-shadow:0 1px 4px rgba(15,23,42,.18); }
 .wb-spider-card .corner { position:absolute; left:2px; top:2px; font-size:clamp(8px,1.7cqw,12px); line-height:.95; letter-spacing:-.5px; }

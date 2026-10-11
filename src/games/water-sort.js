@@ -238,6 +238,11 @@ export function createWaterSortGame(state, env) {
   let destroyed = false;
   const timers = new Set();
   let boardObserver = null;
+  const board = q('#wb-water-board');
+  const bottleElements = [];
+  let layoutBottleCount = -1;
+  let layoutWidth = -1;
+  let layoutHeight = -1;
 
   function backgroundRequest(kind, payload) {
     if (!win.Worker) return Promise.resolve(null);
@@ -340,31 +345,46 @@ export function createWaterSortGame(state, env) {
     later(() => q('#wb-water-banner')?.classList.remove('show'), duration);
   }
 
-  function layoutBoard(board) {
+  function layoutBoard(board, force = false) {
     if (!board) return;
-    const layout = waterSortLayout(bottles.length, board.clientWidth, board.clientHeight);
+    const width = board.clientWidth;
+    const height = board.clientHeight;
+    if (!force && layoutBottleCount === bottles.length && layoutWidth === width && layoutHeight === height) return;
+    layoutBottleCount = bottles.length;
+    layoutWidth = width;
+    layoutHeight = height;
+    const layout = waterSortLayout(bottles.length, width, height);
     board.style.setProperty('--water-cols', String(layout.columns));
     board.style.setProperty('--water-rows', String(layout.rows));
     board.style.setProperty('--water-cell-width', layout.cellWidth + 'px');
     board.style.setProperty('--water-row-height', layout.rowHeight + 'px');
   }
 
-  function draw() {
-    const board = q('#wb-water-board');
-    if (!board) return;
-    layoutBoard(board);
-    const banner = q('#wb-water-banner');
-    const bannerHTML = banner ? banner.outerHTML : '<div class="wb-water-banner" id="wb-water-banner"></div>';
-    board.innerHTML = bannerHTML + bottles.map((bottle, index) => {
-      const complete = bottle.length === CAPACITY && bottle.every(color => color === bottle[0]);
-      const bottleHints = hintMoves.flatMap((move, hintIndex) => move.from === index || move.to === index
-        ? [{ hintIndex, color:waterSortHintColor(hintIndex) }] : []);
-      const classes = [
-        'wb-water-bottle',
-        index === selected ? 'selected' : '',
-        bottleHints.length ? 'hinted' : '',
-        complete ? 'done' : '',
-      ].filter(Boolean).join(' ');
+  function ensureBottleElements() {
+    while (bottleElements.length > bottles.length) bottleElements.pop().remove();
+    while (bottleElements.length < bottles.length) {
+      const index = bottleElements.length;
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'wb-water-bottle';
+      button.dataset.bottle = String(index);
+      bottleElements.push(button);
+      board.appendChild(button);
+    }
+  }
+
+  function drawBottle(index) {
+    const button = bottleElements[index];
+    const bottle = bottles[index];
+    if (!button || !bottle) return;
+    const complete = bottle.length === CAPACITY && bottle.every(color => color === bottle[0]);
+    const bottleHints = hintMoves.flatMap((move, hintIndex) => move.from === index || move.to === index
+      ? [{ hintIndex, color:waterSortHintColor(hintIndex) }] : []);
+    button.classList.toggle('selected', index === selected);
+    button.classList.toggle('hinted', bottleHints.length > 0);
+    button.classList.toggle('done', complete);
+    const signature = bottle.join(',') + '|' + bottleHints.map(hint => hint.hintIndex).join(',');
+    if (button.dataset.renderSignature !== signature) {
       const groups = [];
       bottle.forEach((color, layer) => {
         const last = groups[groups.length - 1];
@@ -372,14 +392,20 @@ export function createWaterSortGame(state, env) {
         else groups.push({ color, layer, count:1 });
       });
       const layers = groups.map(({ color, layer, count }, group) => '<span class="wb-water-fill' + (group === groups.length - 1 ? ' surface' : '') + '" style="--layer:' + layer + ';--count:' + count + ';--water:' + WATER_COLORS[color % WATER_COLORS.length] + '"></span>').join('');
-      const label = bottle.length ? '，从底到顶 ' + bottle.map(color => WATER_COLOR_NAMES[color % WATER_COLOR_NAMES.length]).join('、') : '，空瓶';
       const hintMarks = bottleHints.length ? '<span class="wb-water-hint-marks" aria-hidden="true">' + bottleHints.map(hint => '<span class="wb-water-hint-mark" style="--hint-color:' + hint.color + '"></span>').join('') + '</span>' : '';
-      const hintLabel = bottleHints.length ? '，包含可走方案 ' + bottleHints.map(hint => hint.hintIndex + 1).join('、') : '';
-      return '<button type="button" class="' + classes + '" data-bottle="' + index + '" aria-label="瓶子 ' + (index + 1) + label + hintLabel + '">' + hintMarks + '<span class="wb-water-glass">' + layers + '</span></button>';
-    }).join('');
-    board.querySelectorAll('.wb-water-bottle').forEach(button => {
-      button.addEventListener('click', () => selectBottle(Number(button.dataset.bottle)));
-    });
+      button.innerHTML = hintMarks + '<span class="wb-water-glass">' + layers + '</span>';
+      button.dataset.renderSignature = signature;
+    }
+    const label = bottle.length ? '，从底到顶 ' + bottle.map(color => WATER_COLOR_NAMES[color % WATER_COLOR_NAMES.length]).join('、') : '，空瓶';
+    const hintLabel = bottleHints.length ? '，包含可走方案 ' + bottleHints.map(hint => hint.hintIndex + 1).join('、') : '';
+    button.setAttribute('aria-label', '瓶子 ' + (index + 1) + label + hintLabel);
+  }
+
+  function draw() {
+    if (!board) return;
+    ensureBottleElements();
+    if (layoutBottleCount !== bottles.length) layoutBoard(board, true);
+    bottleElements.forEach((_, index) => drawBottle(index));
     updateUI();
   }
 
@@ -458,20 +484,23 @@ export function createWaterSortGame(state, env) {
     if (busy) return;
     pushHistory(from, to);
     busy = true;
+    bottleElements.forEach(button => button.classList.remove('pour-source', 'pour-target'));
     const sourceButton = q('.wb-water-bottle[data-bottle="' + from + '"]');
     const targetButton = q('.wb-water-bottle[data-bottle="' + to + '"]');
     if (sourceButton) sourceButton.classList.add('pour-source');
     if (targetButton) targetButton.classList.add('pour-target');
     if (sourceButton?.getBoundingClientRect && targetButton?.getBoundingClientRect) {
-      const board = q('#wb-water-board');
       const a = sourceButton.getBoundingClientRect(), b = targetButton.getBoundingClientRect(), rect = board.getBoundingClientRect();
       const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top - a.top;
       const stream = doc.createElement('span');
       stream.className = 'wb-water-stream';
       stream.style.cssText = 'left:' + (a.left + a.width / 2 - rect.left + board.scrollLeft) + 'px;top:' + (a.top - rect.top + board.scrollTop + 5) + 'px;width:' + Math.hypot(dx, dy) + 'px;transform:rotate(' + Math.atan2(dy, dx) + 'rad);--water:' + WATER_COLORS[topRun(bottles[from]).color];
       board.appendChild(stream);
+      later(() => stream.remove(), 250);
     }
     const commit = () => {
+      sourceButton?.classList.remove('pour-source');
+      targetButton?.classList.remove('pour-target');
       const targetBefore = bottles[to].length;
       const result = pourWater(bottles, from, to);
       if (!result.moved) {
@@ -657,10 +686,13 @@ export function createWaterSortGame(state, env) {
   root.querySelector('[data-tool="extra"]').addEventListener('click', useExtraBottle);
   root.querySelector('[data-tool="reset"]').addEventListener('click', resetLevel);
   root.querySelector('[data-tool="finish"]').addEventListener('click', requestFinish);
+  board.addEventListener('click', event => {
+    const button = event.target.closest?.('.wb-water-bottle');
+    if (button && board.contains(button)) selectBottle(Number(button.dataset.bottle));
+  });
 
   function destroy() {
     if (destroyed) return;
-    save(true);
     destroyed = true;
     timers.forEach(timer => win.clearTimeout(timer));
     timers.clear();
@@ -676,9 +708,9 @@ export function createWaterSortGame(state, env) {
   doc.addEventListener?.('visibilitychange', saveOnHidden);
   if (win.ResizeObserver) {
     boardObserver = new win.ResizeObserver(() => {
-      if (!destroyed) layoutBoard(q('#wb-water-board'));
+      if (!destroyed) layoutBoard(board);
     });
-    boardObserver.observe(q('#wb-water-board'));
+    boardObserver.observe(board);
   }
   env.setScore(score);
   env.speak(state?.bottles ? 'resume' : 'start');
