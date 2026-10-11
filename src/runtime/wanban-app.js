@@ -211,6 +211,7 @@ export async function initWanbanXiaowu(options = {}) {
   const progressDeleteCache = new Set();
   let pendingRecords = null;
   let recordsCache = null;
+  let recordsSaveTimer = null;
   let progressCache = null;
   let scoresCache = null;
   let linesCache = null;
@@ -1402,8 +1403,9 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function summaryReq() { return localStorage.getItem(STORAGE_SUMMARY_REQ) || ''; }
   function saveSummaryReq(v) { try { localStorage.setItem(STORAGE_SUMMARY_REQ, String(v || '')); } catch(e) {} }
-  const PROGRESS_SAVE_DELAY = 1200;
-  const PROGRESS_SAVE_MAX_DELAY = 15000;
+  const PROGRESS_SAVE_DELAY = 300;
+  const PROGRESS_SAVE_MAX_DELAY = 5000;
+  const PROGRESS_EXIT_SAVE_DELAY = 32;
   function progressShardKey(game) { return STORAGE_PROGRESS_SHARD_PREFIX + String(game || ''); }
   function progressShardKeys() {
     try {
@@ -1522,6 +1524,17 @@ export async function initWanbanXiaowu(options = {}) {
     } else {
       warnStorageFailure();
     }
+  }
+  function scheduleProgressSave(game, delay = PROGRESS_SAVE_DELAY) {
+    if (!game || !progressSaveCache[game]) return;
+    const now = Date.now();
+    if (!progressSaveStartedAt[game]) progressSaveStartedAt[game] = now;
+    if (progressSaveTimers[game]) clearTimeout(progressSaveTimers[game]);
+    const maxRemaining = Math.max(0, PROGRESS_SAVE_MAX_DELAY - (now - progressSaveStartedAt[game]));
+    progressSaveTimers[game] = getHostWindow().setTimeout(() => {
+      delete progressSaveTimers[game];
+      flushProgressSave(game);
+    }, Math.min(Math.max(0, delay), maxRemaining));
   }
   function flushProgressDelete(game) {
     if (!game || !progressDeleteCache.has(game)) return;
@@ -1683,14 +1696,7 @@ export async function initWanbanXiaowu(options = {}) {
       flushProgressSave(game);
       return;
     }
-    const now = Date.now();
-    if (!progressSaveStartedAt[game]) progressSaveStartedAt[game] = now;
-    if (progressSaveTimers[game]) clearTimeout(progressSaveTimers[game]);
-    const maxRemaining = Math.max(0, PROGRESS_SAVE_MAX_DELAY - (now - progressSaveStartedAt[game]));
-    progressSaveTimers[game] = setTimeout(() => {
-      delete progressSaveTimers[game];
-      scheduleDeferredPersistenceFlush();
-    }, Math.min(PROGRESS_SAVE_DELAY, maxRemaining));
+    scheduleProgressSave(game);
   }
   function clearProgress(game) {
     if (progressSaveTimers[game]) {
@@ -1874,15 +1880,27 @@ export async function initWanbanXiaowu(options = {}) {
     if (backup) backup.hidden = !failed;
   }
   function flushRecordsSave() {
+    if (recordsSaveTimer != null) {
+      getHostWindow().clearTimeout(recordsSaveTimer);
+      recordsSaveTimer = null;
+    }
     if (pendingRecords && saveJSON(STORAGE_RECORDS, pendingRecords)) pendingRecords = null;
     refreshRecordSaveStatus();
     return !pendingRecords;
+  }
+  function scheduleRecordsSaveSoon(delay = 80) {
+    if (!pendingRecords || recordsSaveTimer != null) return;
+    recordsSaveTimer = getHostWindow().setTimeout(() => {
+      recordsSaveTimer = null;
+      flushRecordsSave();
+    }, delay);
   }
   function stageRecordsSave(v) {
     recordsCache = safeObject(v);
     pendingRecords = recordsCache;
     cardScoreDisplayCache.clear();
     refreshRecordSaveStatus();
+    scheduleRecordsSaveSoon();
     scheduleDeferredPersistenceFlush();
     return recordsCache;
   }
@@ -1980,7 +1998,9 @@ export async function initWanbanXiaowu(options = {}) {
     const sorted = Array.from(groups.values()).sort((a,b) => b.best - a.best || b.wins - a.wins || b.total - a.total || b.last - a.last);
     return sorted[0]?.name || '';
   }
-  function scoreDisplay(game) { const g = GAME_META[game] || {}; const sc = scores()[game]; if (game === 'sudoku') return '最高：' + sudokuBestScore() + '分'; if (g.mode === 'double') { const st = roleGameStats(game); return '胜率：' + st.wins + '/' + st.total; } return '最高：' + ((sc || 0) + (g.unit || '分')); }
+  function scoreDisplay(game) {
+    return immediateCardScoreDisplay(game, scores()).replace(/^当前/, '');
+  }
   function cardScoreDisplay(game) {
     const g = GAME_META[game] || {};
     const cacheKey = game + '::' + (g.mode === 'double' ? companionName() : 'single');
@@ -2005,6 +2025,23 @@ export async function initWanbanXiaowu(options = {}) {
       display = '当前最高分：' + ((sc || 0) + (g.unit || '分'));
     }
     return setBoundedMapValue(cardScoreDisplayCache, cacheKey, display, 96);
+  }
+  function immediateCardScoreDisplay(game, scoreSnapshot) {
+    const g = GAME_META[game] || {};
+    const sc = scoreSnapshot?.[game];
+    if (game === 'memory') {
+      const direct = parseInt(scoreSnapshot?.memoryBestMoves, 10);
+      const derived = Number(scoreSnapshot?.memory || 0) ? Math.round((1840 - Number(scoreSnapshot.memory)) / 25) : 0;
+      const best = direct > 0 ? direct : (derived >= 8 && derived <= 200 ? derived : 0);
+      return '最短次数：' + (best ? best + '次' : '无');
+    }
+    if (game === 'sudoku') return '当前最高分：' + Math.max(0, Number(sc || 0)) + '分';
+    if (g.mode === 'double') {
+      const user = Math.max(0, Number(isPlainObject(sc) ? sc.user : sc) || 0);
+      const ta = Math.max(0, Number(isPlainObject(sc) ? sc.ta : 0) || 0);
+      return '胜率：' + user + '/' + (user + ta);
+    }
+    return '当前最高分：' + ((sc || 0) + (g.unit || '分'));
   }
   function predecodeGameIcon(src, priority = 'auto') {
     const url = String(src || '');
@@ -2182,8 +2219,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (!all[game]) all[game] = [];
     all[game] = [item].concat(all[game].filter(record => record.id !== id)).slice(0, 100);
     if (deferWrite) {
-      recordsCache = all;
-      pendingRecords = all;
+      stageRecordsSave(all);
     } else saveRecords(all);
     currentRoundProgressRecordId = id;
     progressSaveCache[game] = Object.assign({}, state, { progressRecordId:id, savedAt:Date.now() });
@@ -3703,7 +3739,11 @@ export async function initWanbanXiaowu(options = {}) {
     if (opts.save) {
       commitGameActiveDuration(true);
       if (wasStarted && opts.record) recordInterruptedGame(stoppedGame, { deferWrite:deferImmediateProgressWrites });
-      if (deferImmediateProgressWrites) scheduleDeferredPersistenceFlush();
+      if (deferImmediateProgressWrites) {
+        scheduleProgressSave(stoppedGame, PROGRESS_EXIT_SAVE_DELAY);
+        scheduleRecordsSaveSoon(PROGRESS_EXIT_SAVE_DELAY + 32);
+        scheduleDeferredPersistenceFlush();
+      }
       else flushAllProgressSaves(true);
     }
     if (activeGameController) {
@@ -8761,9 +8801,10 @@ export async function initWanbanXiaowu(options = {}) {
     syncPopupModeClass();
     const body = qs('#wb-body'); body.className = 'wb-body';
     const ids = Object.values(GAME_META).filter(g => g.mode === mode).map(g => g.id);
+    const scoreSnapshot = scores();
     body.innerHTML = '<div class="wb-cardgrid">' + ids.map(id => {
       const g = GAME_META[id];
-      return '<div class="wb-game-card" data-game="' + id + '">' + gameIconHTML(g) + '<div class="wb-game-info"><div class="wb-game-name">' + esc(g.name) + '</div><div class="wb-muted" data-game-score="' + id + '">读取中…</div></div></div>';
+      return '<div class="wb-game-card" data-game="' + id + '">' + gameIconHTML(g) + '<div class="wb-game-info"><div class="wb-game-name">' + esc(g.name) + '</div><div class="wb-muted" data-game-score="' + id + '">' + esc(immediateCardScoreDisplay(id, scoreSnapshot)) + '</div></div></div>';
     }).join('') + '</div>';
     const grid = qs('.wb-cardgrid', body);
     const cardFromEvent = event => event.target?.closest?.('.wb-game-card');
@@ -8780,33 +8821,42 @@ export async function initWanbanXiaowu(options = {}) {
       currentGame = card.dataset.game;
       if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode;
       scheduleWindowStateSave(currentTab, currentGame);
-      const saved = progressSaveCache[currentGame] || (progressReadCache.has(currentGame) ? gameProgress(currentGame) : undefined);
+      const saved = gameProgress(currentGame);
       renderGame(currentGame, saved);
     });
     observeGameCardIcons(grid, true);
-    const pendingStats = ids.slice();
-    const fillStats = deadline => {
+    const pendingStats = mode === 'double' ? ids.slice() : [];
+    const fillStats = () => {
       if (renderToken !== gameListRenderToken || !grid?.isConnected || currentGame) return;
       const inputPending = !!getHostWindow().navigator?.scheduling?.isInputPending?.({ includeContinuous:true });
-      if (!inputPending) {
-        do {
-          const id = pendingStats.shift();
-          const target = qs('[data-game-score="' + id + '"]', grid);
-          if (target) target.textContent = cardScoreDisplay(id);
-          if (!progressReadCache.has(id) && !progressSaveCache[id]) readGameProgress(id);
-        } while (pendingStats.length && deadline?.timeRemaining?.() > 5);
+      if (!inputPending && pendingStats.length) {
+        const id = pendingStats.shift();
+        const target = qs('[data-game-score="' + id + '"]', grid);
+        if (target) target.textContent = cardScoreDisplay(id);
       }
       if (!pendingStats.length || renderToken !== gameListRenderToken || currentGame) return;
       const view = getHostWindow();
       if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(fillStats, { timeout:1200 });
-      else view.setTimeout(() => fillStats(null), 40);
+      else view.setTimeout(fillStats, inputPending ? 64 : 24);
+    };
+    const pendingProgress = ids.slice();
+    const warmProgressFrame = () => {
+      if (renderToken !== gameListRenderToken || !grid?.isConnected || currentGame) return;
+      for (let i = 0; i < 4 && pendingProgress.length; i++) {
+        const id = pendingProgress.shift();
+        if (!progressReadCache.has(id) && !progressSaveCache[id]) readGameProgress(id);
+      }
+      if (pendingProgress.length) getHostWindow().requestAnimationFrame(warmProgressFrame);
     };
     afterNextPaint(() => {
       if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
-      const view = getHostWindow();
-      if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(fillStats, { timeout:1200 });
-      else view.setTimeout(() => fillStats(null), 40);
+      if (pendingStats.length) {
+        const view = getHostWindow();
+        if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(fillStats, { timeout:1200 });
+        else view.setTimeout(fillStats, 24);
+      }
     });
+    getHostWindow().requestAnimationFrame(warmProgressFrame);
     scheduleGameIconWarmup();
   }
 
@@ -10037,10 +10087,8 @@ export async function initWanbanXiaowu(options = {}) {
       if (num) num.textContent = '✓';
       if (status) status.textContent = '正在恢复进度...';
       if (cancel) cancel.disabled = true;
-      afterNextPaint(() => {
-        Promise.resolve(startCurrentGame(game, state, { resume:true })).finally(() => {
-          if (mask?.parentNode) mask.remove();
-        });
+      Promise.resolve(startCurrentGame(game, state, { resume:true })).finally(() => {
+        if (mask?.parentNode) mask.remove();
       });
     };
     if (cancel) cancel.onclick = () => { if (timer) clearInterval(timer); if (mask && mask.parentNode) mask.remove(); };
@@ -11563,6 +11611,7 @@ export async function initWanbanXiaowu(options = {}) {
         try { activeGameController?.save?.(); } catch(e) {}
         commitGameActiveDuration(true);
         deferImmediateProgressWrites = previousDeferWrites;
+        scheduleProgressSave(currentGame, PROGRESS_EXIT_SAVE_DELAY);
         scheduleDeferredPersistenceFlush();
       });
       return;
@@ -11900,9 +11949,7 @@ function showGameRecords(game, page) {
       reward();
     };
     pendingGameRewards.add(run);
-    const view = getHostWindow();
-    if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(run, { timeout:1800 });
-    else view.setTimeout(run, 180);
+    getHostWindow().setTimeout(run, 120);
   }
   function flushPendingGameRewards() {
     Array.from(pendingGameRewards).forEach(run => run());
@@ -11916,9 +11963,7 @@ function showGameRecords(game, page) {
     pendingGameOverSettlements.add(run);
     afterNextPaint(() => {
       if (!pendingGameOverSettlements.has(run)) return;
-      const view = getHostWindow();
-      if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(() => run({ render:true }), { timeout:180 });
-      else view.setTimeout(() => run({ render:true }), 16);
+      getHostWindow().setTimeout(() => run({ render:true }), 0);
     });
   }
   function flushPendingGameOverSettlements() {
@@ -15610,6 +15655,7 @@ function showGameRecords(game, page) {
     let details = state?.details || { matches:0, shuffles, moveouts, badLuck:false, fullTraySurvived:false, endlessLayers:1 };
     let consecutiveShuffles = state?.consecutiveShuffles || 0;
     let lastBlockedIds = new Set();
+    let cachedRenderMetrics = null, cachedBoardMetrics = null, boardMetricsMeasured = false, boardMetricsWarmPending = false;
     box.innerHTML = '<div class="wb-uyangle-panel ' + (choice.compact ? 'wb-uyangle-hard' : '') + '"><div class="wb-uyangle-top"><span class="wb-pill" id="wb-uyangle-left"></span><span class="wb-pill" id="wb-uyangle-status"></span></div><div class="wb-uyangle-progress"><div class="wb-uyangle-progress-fill" id="wb-uyangle-progress-fill"></div><span id="wb-uyangle-progress-text"></span></div><div class="wb-uyangle-board" id="wb-uyangle-board"></div><div class="wb-uyangle-hold" id="wb-uyangle-hold"></div><div class="wb-uyangle-tray-wrap"><div class="wb-uyangle-tray" id="wb-uyangle-tray"></div></div><div class="wb-actions wb-uyangle-actions"><button type="button" class="wb-btn" id="wb-uyangle-moveout">移出 <span class="wb-sudoku-badge" id="wb-uyangle-move-badge">3</span></button><button type="button" class="wb-btn primary" id="wb-uyangle-shuffle">打乱 <span class="wb-sudoku-badge" id="wb-uyangle-shuffle-badge">0</span></button></div></div>';
     const uyangleBoard = qs('#wb-uyangle-board', box), uyangleTray = qs('#wb-uyangle-tray', box), uyangleHold = qs('#wb-uyangle-hold', box);
     uyangleBoard.onclick = event => {
@@ -15705,6 +15751,33 @@ function showGameRecords(game, page) {
     function slotsHTML(cards, pickable, size){
       return Array.from({ length:size || 7 }, (_, i) => '<div class="wb-uyangle-slot">' + (cards[i] ? miniHTML(cards[i], pickable ? 'pickable' : '', pickable ? 'data-i="'+i+'"' : '') : '') + '</div>').join('');
     }
+    function syncBoardNodes(alive, layout, minLayer){
+      const existing = new Map(Array.from(uyangleBoard.children).map(node => [Number(node.dataset.id), node]));
+      alive.slice().sort((a,b) => a.layer - b.layer || a.id - b.id).forEach(tile => {
+        let node = existing.get(tile.id);
+        if (!node) {
+          node = getHostDocument().createElement('button');
+          node.type = 'button';
+          node.className = 'wb-uyangle-tile';
+          node.dataset.id = String(tile.id);
+          const image = getHostDocument().createElement('img');
+          image.alt = '';
+          node.appendChild(image);
+          uyangleBoard.appendChild(node);
+        } else existing.delete(tile.id);
+        const blocked = layout.blocked.has(tile.id), pos = layout.positions.get(tile.id);
+        if (node.classList.contains('blocked') !== blocked) node.classList.toggle('blocked', blocked);
+        if (node.disabled !== blocked) node.disabled = blocked;
+        const left = pos.left + '%', top = pos.top + '%', zIndex = String(10 + (Number(tile.layer) || 0) - minLayer);
+        if (node.style.left !== left) node.style.left = left;
+        if (node.style.top !== top) node.style.top = top;
+        if (node.style.zIndex !== zIndex) node.style.zIndex = zIndex;
+        const image = node.firstElementChild;
+        const src = iconUrl(tile.icon);
+        if (image?.getAttribute('src') !== src) image.src = src;
+      });
+      existing.forEach(node => node.remove());
+    }
     function removeTriple(icon){
       let need = 3, removed = 0;
       const take = arr => {
@@ -15739,6 +15812,7 @@ function showGameRecords(game, page) {
       const nextMaxLayer = Math.max(0, ...next.map(t => Number(t.layer) || 0));
       const layerDrop = minLayer - nextMaxLayer - 1;
       tiles = active.concat(next.map(t => Object.assign({}, t, { id:t.id + offset, layer:(Number(t.layer) || 0) + layerDrop })));
+      cachedRenderMetrics = null;
       seen.last10 = 0;
       details.endlessLayers = (details.endlessLayers || 1) + 1;
       draw();
@@ -15827,13 +15901,26 @@ function showGameRecords(game, page) {
       qs('#wb-uyangle-progress-text', box).textContent = endless ? ('已消除 ' + (details.matches || 0) + ' 组') : ('进度 ' + progress + '%');
       qs('#wb-uyangle-move-badge', box).textContent = String(Math.max(0, 3 - moveouts));
       qs('#wb-uyangle-shuffle-badge', box).textContent = String(Math.max(0, SHUFFLE_MAX - shuffles));
-      const metrics = renderMetrics(), boardMetrics = uyangleBoardMetrics(board), layout = blockedLayout(alive, metrics, boardMetrics);
+      const metrics = cachedRenderMetrics || (cachedRenderMetrics = renderMetrics());
+      const boardMetrics = cachedBoardMetrics || (cachedBoardMetrics = uyangleBoardMetrics(board));
+      const layout = blockedLayout(alive, metrics, boardMetrics);
       lastBlockedIds = layout.blocked;
       const minLayer = alive.length ? Math.min(...alive.map(t => Number(t.layer) || 0)) : 0;
-      patchElementHTML(board, alive.slice().sort((a,b) => a.layer - b.layer || a.id - b.id).map(t => {
-        const blocked = layout.blocked.has(t.id), pos = layout.positions.get(t.id);
-        return '<button type="button" class="wb-uyangle-tile '+(blocked?'blocked':'')+'" data-id="'+t.id+'" style="left:'+pos.left+'%;top:'+pos.top+'%;z-index:'+(10 + (Number(t.layer) || 0) - minLayer)+';" '+(blocked?'disabled':'')+'><img src="'+esc(iconUrl(t.icon))+'" alt=""></button>';
-      }).join(''));
+      syncBoardNodes(alive, layout, minLayer);
+      if (!boardMetricsMeasured && !boardMetricsWarmPending && alive.length) {
+        boardMetricsWarmPending = true;
+        getHostWindow().requestAnimationFrame(() => {
+          boardMetricsWarmPending = false;
+          if (!uyangleBoard.isConnected || currentGame !== 'uyangle' || over) return;
+          cachedBoardMetrics = uyangleBoardMetrics(uyangleBoard);
+          boardMetricsMeasured = true;
+          const current = activeTiles();
+          const warmedLayout = blockedLayout(current, cachedRenderMetrics || (cachedRenderMetrics = renderMetrics()), cachedBoardMetrics);
+          lastBlockedIds = warmedLayout.blocked;
+          const warmedMinLayer = current.length ? Math.min(...current.map(t => Number(t.layer) || 0)) : 0;
+          syncBoardNodes(current, warmedLayout, warmedMinLayer);
+        });
+      }
       patchElementHTML(uyangleHold, slotsHTML(hold, false, 3));
       patchElementHTML(uyangleTray, slotsHTML(tray, moveMode, 7));
       const moveBtn = qs('#wb-uyangle-moveout', box);

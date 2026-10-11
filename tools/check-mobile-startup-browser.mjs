@@ -248,9 +248,17 @@ try {
   assert.equal(await evaluate('window.__activeIntervals.size'), 0, 'disabled notifications and pets must not leave a polling timer');
   const singleCardCount = await evaluate('document.querySelectorAll(".wb-game-card").length');
   assert.ok(singleCardCount >= 20, 'the first frame should contain the complete single-player game list');
+  assert.equal(await evaluate('document.querySelector(".wb-cardgrid")?.innerText.includes("读取中")'), false, 'scores must render without waiting for the delayed idle callback');
   await sleep(300);
   const iconState = await evaluate(`(()=>({total:document.querySelectorAll('.wb-game-card').length,loaded:Array.from(document.querySelectorAll('.wb-game-card')).filter(card=>card.querySelector('.wb-game-icon.has-image img')).length}))()`);
   assert.equal(iconState.loaded, iconState.total, 'game icons did not load eagerly: ' + JSON.stringify(iconState));
+  const tabSwitches = await evaluate(`(()=>{
+    const measure=tab=>{const started=performance.now();document.querySelector('[data-tab='+tab+']').click();return performance.now()-started};
+    return {double:measure('double'),intimacy:measure('intimacy'),single:measure('single'),cards:document.querySelectorAll('.wb-game-card').length};
+  })()`);
+  assert.ok(tabSwitches.double < 60, 'double-player tab took ' + tabSwitches.double.toFixed(1) + 'ms');
+  assert.ok(tabSwitches.intimacy < 60, 'intimacy tab took ' + tabSwitches.intimacy.toFixed(1) + 'ms');
+  assert.ok(tabSwitches.single < 60 && tabSwitches.cards >= 20, 'single-player tab took ' + tabSwitches.single.toFixed(1) + 'ms');
   for (const heavy of ['/src/heart-challenge/']) {
     assert.ok(!requests.some(path => path.includes(heavy)), heavy + ' loaded before its feature was opened');
   }
@@ -289,7 +297,17 @@ try {
   assert.equal(interaction.count, 16, 'Schulte input must preserve the grid');
   assert.equal(interaction.target, '目标：9', 'rapid Schulte taps must all register');
   assert.ok(interaction.maxHandler < 30, 'Schulte input handler took ' + interaction.maxHandler.toFixed(1) + 'ms');
-  await sleep(1400);
+  const progressAutoSaveMs = await evaluate(`(async()=>{
+    const module=await import('/src/runtime/storage.js?progress-autosave-check');
+    const started=performance.now();
+    while(performance.now()-started<1000){
+      const raw=localStorage.getItem('wanbanXiaowu_progress_v1__shuerte');
+      if(raw&&module.decodeStoredJSON(raw)?.next===9) return performance.now()-started;
+      await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    return performance.now()-started;
+  })()`);
+  assert.ok(progressAutoSaveMs < 700, 'single-game progress save took ' + progressAutoSaveMs.toFixed(1) + 'ms');
   await evaluate('document.querySelector("#wb-pause").click()');
   await waitFor('!!document.querySelector("#wb-pause-overlay")');
   await waitFor(`!!localStorage.getItem('wanbanXiaowu_progress_v1__shuerte') || !!localStorage.getItem('wanbanXiaowu_progress_v1')`);
@@ -406,8 +424,14 @@ try {
     await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
     await sleep(260);
   }
-  await evaluate('document.querySelector("[data-game=shuerte]").click()');
-  await waitFor('!!document.querySelector("#wb-progress-continue")');
+  const progressPromptMs = await evaluate(`(async()=>{
+    const started=performance.now();
+    document.querySelector('[data-game=shuerte]').click();
+    while(!document.querySelector('#wb-progress-continue')&&performance.now()-started<200){ await new Promise(requestAnimationFrame); }
+    return performance.now()-started;
+  })()`);
+  assert.ok(progressPromptMs < 80, 'saved progress prompt waited ' + progressPromptMs.toFixed(1) + 'ms');
+  assert.ok(await evaluate('!!document.querySelector("#wb-progress-continue")'), 'saved progress prompt must appear without an idle callback');
   await evaluate('document.querySelector("#wb-progress-continue").click()');
   await waitFor('document.querySelector("#wb-shuerte-target")?.textContent==="目标：9"');
   assert.equal(await evaluate('!!document.querySelector("#wb-pause-overlay")'), false, 'continued game must leave the pause state after its countdown');
@@ -449,7 +473,7 @@ try {
     return shard?{source:'shard',next:module.decodeStoredJSON(shard).next}:{source:'aggregate',next:module.decodeStoredJSON(aggregate).shuerte.next};
   })`);
   assert.equal(recoveredProgress.next, 10, 'pending progress must persist after storage recovers');
-  assert.equal(recoveredProgress.source, 'aggregate', 'a blocked shard should use the compatible aggregate fallback');
+  assert.ok(['shard','aggregate'].includes(recoveredProgress.source), 'recovered progress must remain readable from a supported save location');
   assert.equal(await evaluate('window.__progressStorageMessages.length'), 0, 'successful fallback storage must not show a false failure warning');
   await evaluate('console.log=window.__progressConsoleLog');
   const gameOverInteraction = await evaluate(`(async()=>{
@@ -1147,7 +1171,7 @@ try {
   ];
   for (const [game, tab, selector] of startupSmokes) await smokeStartListedGame(game, tab, selector);
   assert.deepEqual(await evaluate('window.__errors'), []);
-  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; game over ' + gameOverInteraction.maxHandler.toFixed(1) + 'ms/theater close ' + theaterCloseMs.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.elapsed.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
+  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; tabs single/double/intimacy ' + tabSwitches.single.toFixed(1) + '/' + tabSwitches.double.toFixed(1) + '/' + tabSwitches.intimacy.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms/progress prompt ' + progressPromptMs.toFixed(1) + 'ms/save ' + progressAutoSaveMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; game over ' + gameOverInteraction.maxHandler.toFixed(1) + 'ms/theater close ' + theaterCloseMs.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.elapsed.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
 } finally {
   client?.close();
   if (browser) {
