@@ -25,7 +25,7 @@ function hostDocuments() {
 
 function ensureStyles() {
   if (stylesPromise) return stylesPromise;
-  const href = new URL('./style.css?v=4.2.1', import.meta.url).href;
+  const href = new URL('./style.css?v=4.2.2', import.meta.url).href;
   stylesPromise = Promise.all(hostDocuments().map(doc => new Promise((resolve, reject) => {
     const existing = doc.querySelector('link[data-wanban-style="1"]');
     if (existing?.sheet) { resolve(); return; }
@@ -43,17 +43,21 @@ function ensureStyles() {
   return stylesPromise;
 }
 
-async function loadRuntime(open = false) {
+function prepareRuntime() {
   if (!runtimePromise) {
     runtimePromise = Promise.all([
-      import('./src/runtime/wanban-app.js?v=4.2.1'),
+      import('./src/runtime/wanban-app.js?v=4.2.2'),
       ensureStyles(),
     ]).then(([runtime]) => runtime).catch(error => {
       runtimePromise = null;
       throw error;
     });
   }
-  const runtime = await runtimePromise;
+  return runtimePromise;
+}
+
+async function loadRuntime(open = false) {
+  const runtime = await prepareRuntime();
   await runtime.initWanbanXiaowu({ open });
 }
 
@@ -88,6 +92,9 @@ function mountLauncher(doc) {
   wrap.tabIndex = 0;
   wrap.innerHTML = '<div class="list-group-item flex-container flexGap5 interactable" id="' + MENU_ID + '" title="玩伴小屋"><div class="fa-fw fa-solid fa-gamepad extensionsMenuExtensionButton"></div><span>玩伴小屋</span></div>';
   const item = wrap.firstElementChild;
+  const prepare = () => prepareRuntime().catch(error => console.warn('[玩伴小屋] intent preload failed:', error));
+  item.addEventListener('pointerdown', prepare, { passive:true });
+  item.addEventListener('pointerenter', prepare, { passive:true, once:true });
   item.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();

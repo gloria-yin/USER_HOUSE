@@ -221,17 +221,17 @@ try {
   assert.ok(!requests.some(path => path.includes('wanban-app.js')), 'disabled background features must not warm the main runtime');
   assert.ok(!requests.includes('/style.css'), 'the full stylesheet must stay out of the startup path');
 
-  await evaluate('window.__openStarted=performance.now();document.querySelector("#wanbanXiaowu-menu-item").click()');
+  await evaluate(`(()=>{window.__openStarted=performance.now();const item=document.querySelector('#wanbanXiaowu-menu-item');item.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',isPrimary:true}));item.click()})()`);
   await waitFor('performance.getEntriesByType("resource").some(entry=>entry.name.includes("wanban-app.js"))');
   await waitFor('!!document.querySelector("#wanbanXiaowu-popup")');
   const openMs = await evaluate('performance.now()-window.__openStarted');
   assert.ok(requests.some(path => path.includes('wanban-app.js')), 'clicking the launcher should load the runtime');
   assert.ok(requests.includes('/style.css'), 'clicking the launcher should load the stylesheet');
   assert.equal(await evaluate('window.__activeIntervals.size'), 0, 'disabled notifications and pets must not leave a polling timer');
-  assert.equal(await evaluate('document.querySelectorAll(".wb-game-card").length'), 5, 'the mobile first frame should render one small card batch');
+  assert.ok(await evaluate('document.querySelectorAll(".wb-game-card").length') >= 5, 'the mobile first frame should render its visible card batch');
   await sleep(300);
-  const firstIcons = await evaluate(`(()=>({loaded:document.querySelectorAll('.wb-game-card .wb-game-icon.has-image img').length,html:Array.from(document.querySelectorAll('.wb-game-icon')).map(icon=>icon.outerHTML)}))()`);
-  assert.equal(firstIcons.loaded, 5, 'first game icons did not load: ' + JSON.stringify(firstIcons) + ' requests=' + JSON.stringify(requests.filter(path=>path.includes('game-icons'))));
+  const firstIcons = await evaluate(`(()=>({loaded:Array.from(document.querySelectorAll('.wb-game-card')).slice(0,5).filter(card=>card.querySelector('.wb-game-icon.has-image img')).length,html:Array.from(document.querySelectorAll('.wb-game-icon')).slice(0,5).map(icon=>icon.outerHTML)}))()`);
+  assert.equal(firstIcons.loaded, 5, 'first visible game icons did not load: ' + JSON.stringify(firstIcons) + ' requests=' + JSON.stringify(requests.filter(path=>path.includes('game-icons'))));
   await sleep(1200);
   assert.ok(await evaluate('document.querySelectorAll(".wb-game-card").length') > 5, 'remaining cards should render during idle time');
   for (const heavy of ['water-sort-bank.js', '/src/games/zuma.js', '/src/games/water-sort.js', '/src/games/flappy-bird.js', '/src/heart-challenge/']) {
@@ -244,7 +244,8 @@ try {
   assert.ok(await evaluate('!!document.querySelector("[data-game=shuerte]")'), 'scrolling should reveal the Schulte grid card');
   await evaluate('document.querySelector("[data-game=shuerte]").scrollIntoView({block:"center"})');
   await waitFor('document.querySelector("[data-game=shuerte] .wb-game-icon")?.classList.contains("has-image")');
-  await evaluate('document.querySelector("[data-game=shuerte]").click()');
+  const gameEntryMs = await evaluate(`(()=>{const started=performance.now();document.querySelector('[data-game=shuerte]').click();return performance.now()-started})()`);
+  assert.ok(gameEntryMs < 30, 'opening a game shell took ' + gameEntryMs.toFixed(1) + 'ms');
   await waitFor('!!document.querySelector("#wb-start-cover-btn")');
   await evaluate('document.querySelector("#wb-start-cover-btn").click()');
   await waitFor('!!document.querySelector("#wb-choice-mask [data-choice=easy]")');
@@ -325,8 +326,8 @@ try {
     return {elapsed:performance.now()-started,stableHeader:window.__stableHeader===document.querySelector('.wb-head')};
   })()`);
   assert.equal(homeSwitch.stableHeader, true, 'tab switches should preserve the popup header');
-  assert.equal(await evaluate('document.querySelectorAll(".wb-game-card").length'), 5, 'returning home should keep the bounded mobile first batch');
-  await waitFor('document.querySelectorAll(".wb-game-card .wb-game-icon.has-image img").length===5');
+  assert.ok(await evaluate('document.querySelectorAll(".wb-game-card").length') >= 5, 'returning home should render the visible mobile card batch immediately');
+  await waitFor('Array.from(document.querySelectorAll(".wb-game-card")).slice(0,5).every(card=>card.querySelector(".wb-game-icon.has-image img"))');
   assert.ok(homeSwitch.elapsed < 60, 'home switch took ' + homeSwitch.elapsed.toFixed(1) + 'ms');
   const secondSettingsSwitch = await evaluate(`(()=>{
     const started=performance.now();
@@ -351,8 +352,22 @@ try {
   assert.equal(await evaluate(`import('/src/runtime/storage.js?settings-close-check').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1')).breakLimitPrompt)`), '遮罩关闭保存验证', 'backdrop close must flush debounced settings');
   await sleep(1300);
   const releasedReadCounts = await evaluate(`Object.fromEntries(['wanbanXiaowu_apiPresets_v1','wanbanXiaowu_worldPresets_v1','wanbanXiaowu_summaries_v1','wanbanXiaowu_roleContexts_v2'].map(key=>[key,__storageReads[key]||0]))`);
-  await evaluate('document.querySelector("#wanbanXiaowu-menu-item").click()');
-  await waitFor('document.querySelectorAll(".wb-game-card").length===5');
+  const reopenedList = await evaluate(`(async()=>{
+    const started=performance.now();
+    document.querySelector('#wanbanXiaowu-menu-item').click();
+    const handler=performance.now()-started;
+    for(let frame=0;frame<12;frame++){
+      const cards=Array.from(document.querySelectorAll('.wb-game-card'));
+      if(cards.length>=5&&cards.slice(0,5).every(card=>card.querySelector('.wb-game-icon.has-image img'))) break;
+      await new Promise(requestAnimationFrame);
+    }
+    return {handler,ready:performance.now()-started,cards:document.querySelectorAll('.wb-game-card').length,icons:Array.from(document.querySelectorAll('.wb-game-card')).slice(0,5).filter(card=>card.querySelector('.wb-game-icon.has-image img')).length};
+  })()`);
+  assert.ok(reopenedList.cards >= 5, 'reopening should restore the visible card batch immediately');
+  assert.equal(reopenedList.icons, 5, 'reopening should reuse all decoded visible icons');
+  assert.ok(reopenedList.handler < 60, 'reopen handler took ' + reopenedList.handler.toFixed(1) + 'ms');
+  assert.ok(reopenedList.ready < 150, 'reopened list and icons took ' + reopenedList.ready.toFixed(1) + 'ms');
+  await waitFor('document.querySelectorAll(".wb-game-card").length>=5');
   await evaluate('document.querySelector("[data-tab=settings]").click()');
   await waitFor('document.querySelectorAll(".wb-settings-grid > .wb-panel").length===6');
   const reopenedReadCounts = await evaluate(`Object.fromEntries(['wanbanXiaowu_apiPresets_v1','wanbanXiaowu_worldPresets_v1','wanbanXiaowu_summaries_v1','wanbanXiaowu_roleContexts_v2'].map(key=>[key,__storageReads[key]||0]))`);
@@ -1067,7 +1082,7 @@ try {
   ];
   for (const [game, tab, selector] of startupSmokes) await smokeStartListedGame(game, tab, selector);
   assert.deepEqual(await evaluate('window.__errors'), []);
-  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
+  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
 } finally {
   client?.close();
   if (browser) {

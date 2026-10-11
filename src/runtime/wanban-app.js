@@ -4,10 +4,10 @@ import { yaml } from '../../../../../../lib.js';
 import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 import { NUMBER_KLOTSKI_BEST_STORAGE_KEY, createNumberKlotskiGame, isNumberKlotskiSolved, isSolvableNumberKlotskiBoard } from '../games/number-klotski.js';
-import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../games/spider-rules.js?v=4.2.1';
+import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../games/spider-rules.js?v=4.2.2';
 import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js';
 import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
-import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.2.1';
+import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.2.2';
 import { parsePetInfo, parsePetStoryLines, assertPetInfo } from './pet-info.js';
 import { petStoryMemoryText } from './pet-memory.js';
 import { parseGeneratedJson } from './generated-json.js';
@@ -145,11 +145,14 @@ export async function initWanbanXiaowu(options = {}) {
   let gameIconObserver = null;
   let gameListLoadObserver = null;
   const modularGameFactoryLoaders = {
-    zuma:() => import('../games/zuma.js?v=4.2.1').then(module => module.createZumaGame),
-    watersort:() => import('../games/water-sort.js?v=4.2.1').then(module => module.createWaterSortGame),
-    flappybird:() => import('../games/flappy-bird.js?v=4.2.1').then(module => module.createFlappyBirdGame),
+    zuma:() => import('../games/zuma.js?v=4.2.2').then(module => module.createZumaGame),
+    watersort:() => import('../games/water-sort.js?v=4.2.2').then(module => module.createWaterSortGame),
+    flappybird:() => import('../games/flappy-bird.js?v=4.2.2').then(module => module.createFlappyBirdGame),
   };
   const modularGameFactoryPromises = new Map();
+  const decodedGameIconCache = new Map();
+  const cardScoreDisplayCache = new Map();
+  let gameIconWarmupHandle = null;
   function loadModularGameFactory(id) {
     const loader = modularGameFactoryLoaders[id];
     if (!loader) return Promise.resolve(null);
@@ -161,6 +164,11 @@ export async function initWanbanXiaowu(options = {}) {
       modularGameFactoryPromises.set(id, promise);
     }
     return modularGameFactoryPromises.get(id);
+  }
+  function prepareGameEntry(id) {
+    if (modularGameFactoryLoaders[id]) loadModularGameFactory(id).catch(() => {});
+    const icon = GAME_META[id]?.iconImage;
+    if (icon) predecodeGameIcon(icon, 'high');
   }
   let snakeTimer = null;
   let tetrisTimer = null;
@@ -247,6 +255,7 @@ export async function initWanbanXiaowu(options = {}) {
   let pendingPopupCloseFinalizer = null;
 
   const GAME_ICON_BASE = new URL('../../assets/game-icons/', import.meta.url).href;
+  const gameCardIcon = filename => GAME_ICON_BASE + filename + '?v=4.2.2';
   const PET_ASSET_BASE = new URL('../../assets/pets/', import.meta.url).href;
   const PET_EGG_OPTIONS = Object.freeze([
     { id:'blue', label:'蓝色蛋' },
@@ -293,42 +302,42 @@ export async function initWanbanXiaowu(options = {}) {
   const JUMP_DOWN_URL = GAME_ICON_BASE + 'jump-down.png';
   const FIRST_MOVER_GAMES = ['ludo', 'tictactoe', 'gomoku', 'territory', 'oldmaid', 'reversi', 'bombnumber', 'connect4d', 'draughts'];
   const GAME_META = {
-    tetris: { id: 'tetris', name: '俄罗斯方块', mode: 'single', unit: '分', icon: '▦', iconImage: GAME_ICON_BASE + 'tetris.png' },
-    snake: { id: 'snake', name: '贪吃蛇', mode: 'single', unit: '分', icon: '●', iconImage: GAME_ICON_BASE + 'snake.jpg' },
-    game2048: { id: 'game2048', name: '2048', mode: 'single', unit: '分', icon: '2048', iconImage: GAME_ICON_BASE + 'game2048.png' },
-    watermelon: { id: 'watermelon', name: '合成大西瓜', mode: 'single', unit: '分', icon: '瓜', iconImage: GAME_ICON_BASE + 'watermelon.png' },
-    memory: { id: 'memory', name: '翻牌记忆', mode: 'single', unit: '分', icon: '◇', iconImage: GAME_ICON_BASE + 'memory.png' },
-    jump: { id: 'jump', name: '跳一跳', mode: 'single', unit: '分', icon: '跳', iconImage: GAME_ICON_BASE + 'jump.jpg' },
-    plank: { id: 'plank', name: '搭木板', mode: 'single', unit: '分', icon: '板', iconImage: GAME_ICON_BASE + 'plank.jpg' },
-    sudoku: { id: 'sudoku', name: '数独', mode: 'single', unit: '分', icon: '9', iconImage: GAME_ICON_BASE + 'sudoku.jpg' },
-    minesweeper: { id: 'minesweeper', name: '扫雷', mode: 'single', unit: '分', icon: '雷', iconImage: GAME_ICON_BASE + 'minesweeper.png' },
-    uyangle: { id: 'uyangle', name: 'U了个U', mode: 'single', unit: '分', icon: 'U', iconImage: GAME_ICON_BASE + 'sheep.png' },
-    screw: { id: 'screw', name: '拧螺丝', mode: 'single', unit: '分', icon: '螺', iconImage: GAME_ICON_BASE + 'screw.png' },
-    popstar: { id: 'popstar', name: '消灭星星', mode: 'single', unit: '分', icon: '星', iconImage: GAME_ICON_BASE + 'star.png' },
-    paopao: { id: 'paopao', name: '泡泡龙', mode: 'single', unit: '分', icon: '泡', iconImage: GAME_ICON_BASE + 'paoapao.png' },
-    game1010: { id: 'game1010', name: '1010!', mode: 'single', unit: '分', icon: '1010', iconImage: GAME_ICON_BASE + '1010.png' },
-    turkey: { id: 'turkey', name: '土耳其方块', mode: 'single', unit: '分', icon: '土', iconImage: GAME_ICON_BASE + 'turkey.png' },
-    spider: { id: 'spider', name: '无尽蜘蛛纸牌', mode: 'single', unit: '分', icon: '蛛', iconImage: GAME_ICON_BASE + 'spider.png' },
-    linklink: { id: 'linklink', name: '连连看', mode: 'single', unit: '分', icon: '连', iconImage: GAME_ICON_BASE + 'lian.png' },
-    shuerte: { id: 'shuerte', name: '舒尔特方格', mode: 'single', unit: '分', icon: '舒', iconImage: GAME_ICON_BASE + 'shuerte.png' },
-    zuma: { id: 'zuma', name: '祖玛', mode: 'single', unit: '分', icon: '珠', iconImage: GAME_ICON_BASE + 'zuma.png' },
-    watersort: { id: 'watersort', name: '倒瓶子', mode: 'single', unit: '分', icon: '瓶', iconImage: GAME_ICON_BASE + 'watersort.png' },
-    flappybird: { id: 'flappybird', name: '像素鸟', mode: 'single', unit: '分', icon: '鸟', iconImage: GAME_ICON_BASE + 'flappybird.png' },
-    numberklotski: { id: 'numberklotski', name: '数字华容道', mode: 'single', unit: '分', icon: '15', iconImage: GAME_ICON_BASE + 'number-klotski.png' },
-    ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: GAME_ICON_BASE + 'ludo.jpg' },
-    guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: GAME_ICON_BASE + 'guessnumber.jpg' },
-    wordguess: { id: 'wordguess', name: '我说你猜', mode: 'double', unit: '胜', icon: '谜', iconImage: GAME_ICON_BASE + 'wordguess.jpg' },
-    tictactoe: { id: 'tictactoe', name: '井字棋', mode: 'double', unit: '胜', icon: '×○', iconImage: GAME_ICON_BASE + 'tictactoe.jpg' },
-    gomoku: { id: 'gomoku', name: '五子棋', mode: 'double', unit: '胜', icon: '五', iconImage: GAME_ICON_BASE + 'gomoku.jpg' },
-    territory: { id: 'territory', name: '电子围地盘', mode: 'double', unit: '胜', icon: '□', iconImage: GAME_ICON_BASE + 'territory.jpg' },
-    oldmaid: { id: 'oldmaid', name: '抽鬼牌', mode: 'double', unit: '胜', icon: '鬼', iconImage: GAME_ICON_BASE + 'oldmaid.jpg' },
-    reversi: { id: 'reversi', name: '翻转棋', mode: 'double', unit: '胜', icon: '●○', iconImage: GAME_ICON_BASE + 'reversi.jpg' },
-    bombnumber: { id: 'bombnumber', name: '数字炸弹', mode: 'double', unit: '胜', icon: '爆', iconImage: GAME_ICON_BASE + 'bombnumber.jpg' },
-    connect4d: { id: 'connect4d', name: '立体四子棋', mode: 'double', unit: '胜', icon: '4D', iconImage: GAME_ICON_BASE + 'connect4d.jpg' },
-    draughts: { id: 'draughts', name: '跳棋', mode: 'double', unit: '胜', icon: '跳', iconImage: GAME_ICON_BASE + 'draughts.png' },
-    blackjack: { id: 'blackjack', name: '21点', mode: 'double', unit: '胜', icon: '21', iconImage: GAME_ICON_BASE + '21p.png' },
-    westernchess: { id: 'westernchess', name: '国际象棋', mode: 'double', unit: '胜', icon: '♛', iconImage: GAME_ICON_BASE + 'western_chess.png' },
-    chinesechess: { id: 'chinesechess', name: '中国象棋', mode: 'double', unit: '胜', icon: '象', iconImage: GAME_ICON_BASE + 'chinese_chess.png' }
+    tetris: { id: 'tetris', name: '俄罗斯方块', mode: 'single', unit: '分', icon: '▦', iconImage: gameCardIcon('tetris.png') },
+    snake: { id: 'snake', name: '贪吃蛇', mode: 'single', unit: '分', icon: '●', iconImage: gameCardIcon('snake.jpg') },
+    game2048: { id: 'game2048', name: '2048', mode: 'single', unit: '分', icon: '2048', iconImage: gameCardIcon('game2048.png') },
+    watermelon: { id: 'watermelon', name: '合成大西瓜', mode: 'single', unit: '分', icon: '瓜', iconImage: gameCardIcon('watermelon.png') },
+    memory: { id: 'memory', name: '翻牌记忆', mode: 'single', unit: '分', icon: '◇', iconImage: gameCardIcon('memory.png') },
+    jump: { id: 'jump', name: '跳一跳', mode: 'single', unit: '分', icon: '跳', iconImage: gameCardIcon('jump.jpg') },
+    plank: { id: 'plank', name: '搭木板', mode: 'single', unit: '分', icon: '板', iconImage: gameCardIcon('plank.jpg') },
+    sudoku: { id: 'sudoku', name: '数独', mode: 'single', unit: '分', icon: '9', iconImage: gameCardIcon('sudoku.jpg') },
+    minesweeper: { id: 'minesweeper', name: '扫雷', mode: 'single', unit: '分', icon: '雷', iconImage: gameCardIcon('minesweeper.png') },
+    uyangle: { id: 'uyangle', name: 'U了个U', mode: 'single', unit: '分', icon: 'U', iconImage: gameCardIcon('sheep.png') },
+    screw: { id: 'screw', name: '拧螺丝', mode: 'single', unit: '分', icon: '螺', iconImage: gameCardIcon('screw.png') },
+    popstar: { id: 'popstar', name: '消灭星星', mode: 'single', unit: '分', icon: '星', iconImage: gameCardIcon('star.png') },
+    paopao: { id: 'paopao', name: '泡泡龙', mode: 'single', unit: '分', icon: '泡', iconImage: gameCardIcon('paoapao.png') },
+    game1010: { id: 'game1010', name: '1010!', mode: 'single', unit: '分', icon: '1010', iconImage: gameCardIcon('1010.png') },
+    turkey: { id: 'turkey', name: '土耳其方块', mode: 'single', unit: '分', icon: '土', iconImage: gameCardIcon('turkey.png') },
+    spider: { id: 'spider', name: '无尽蜘蛛纸牌', mode: 'single', unit: '分', icon: '蛛', iconImage: gameCardIcon('spider.png') },
+    linklink: { id: 'linklink', name: '连连看', mode: 'single', unit: '分', icon: '连', iconImage: gameCardIcon('lian.png') },
+    shuerte: { id: 'shuerte', name: '舒尔特方格', mode: 'single', unit: '分', icon: '舒', iconImage: gameCardIcon('shuerte.png') },
+    zuma: { id: 'zuma', name: '祖玛', mode: 'single', unit: '分', icon: '珠', iconImage: gameCardIcon('zuma.png') },
+    watersort: { id: 'watersort', name: '倒瓶子', mode: 'single', unit: '分', icon: '瓶', iconImage: gameCardIcon('watersort.png') },
+    flappybird: { id: 'flappybird', name: '像素鸟', mode: 'single', unit: '分', icon: '鸟', iconImage: gameCardIcon('flappybird.png') },
+    numberklotski: { id: 'numberklotski', name: '数字华容道', mode: 'single', unit: '分', icon: '15', iconImage: gameCardIcon('number-klotski.png') },
+    ludo: { id: 'ludo', name: '双人飞行棋', mode: 'double', unit: '胜', icon: '✈', iconImage: gameCardIcon('ludo.jpg') },
+    guessnumber: { id: 'guessnumber', name: '猜数字', mode: 'double', unit: '胜', icon: '1234', iconImage: gameCardIcon('guessnumber.jpg') },
+    wordguess: { id: 'wordguess', name: '我说你猜', mode: 'double', unit: '胜', icon: '谜', iconImage: gameCardIcon('wordguess.jpg') },
+    tictactoe: { id: 'tictactoe', name: '井字棋', mode: 'double', unit: '胜', icon: '×○', iconImage: gameCardIcon('tictactoe.jpg') },
+    gomoku: { id: 'gomoku', name: '五子棋', mode: 'double', unit: '胜', icon: '五', iconImage: gameCardIcon('gomoku.jpg') },
+    territory: { id: 'territory', name: '电子围地盘', mode: 'double', unit: '胜', icon: '□', iconImage: gameCardIcon('territory.jpg') },
+    oldmaid: { id: 'oldmaid', name: '抽鬼牌', mode: 'double', unit: '胜', icon: '鬼', iconImage: gameCardIcon('oldmaid.jpg') },
+    reversi: { id: 'reversi', name: '翻转棋', mode: 'double', unit: '胜', icon: '●○', iconImage: gameCardIcon('reversi.jpg') },
+    bombnumber: { id: 'bombnumber', name: '数字炸弹', mode: 'double', unit: '胜', icon: '爆', iconImage: gameCardIcon('bombnumber.jpg') },
+    connect4d: { id: 'connect4d', name: '立体四子棋', mode: 'double', unit: '胜', icon: '4D', iconImage: gameCardIcon('connect4d.jpg') },
+    draughts: { id: 'draughts', name: '跳棋', mode: 'double', unit: '胜', icon: '跳', iconImage: gameCardIcon('draughts.png') },
+    blackjack: { id: 'blackjack', name: '21点', mode: 'double', unit: '胜', icon: '21', iconImage: gameCardIcon('21p.png') },
+    westernchess: { id: 'westernchess', name: '国际象棋', mode: 'double', unit: '胜', icon: '♛', iconImage: gameCardIcon('western_chess.png') },
+    chinesechess: { id: 'chinesechess', name: '中国象棋', mode: 'double', unit: '胜', icon: '象', iconImage: gameCardIcon('chinese_chess.png') }
   };
 
   const DEFAULT_SETTINGS = {
@@ -843,6 +852,7 @@ export async function initWanbanXiaowu(options = {}) {
   function saveScores(value) {
     if (!saveJSON(STORAGE_SCORES, value)) return false;
     scoresCache = safeObject(value);
+    cardScoreDisplayCache.clear();
     return true;
   }
   function lines() {
@@ -1716,6 +1726,7 @@ export async function initWanbanXiaowu(options = {}) {
   function saveRecords(v) {
     recordsCache = safeObject(v);
     pendingRecords = recordsCache;
+    cardScoreDisplayCache.clear();
     return flushRecordsSave();
   }
   function companionName() { const cfg = settings(); const ctx = getHostContext(); const char = ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null); const charData = char?.data || char || {}; return (cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}'); }
@@ -1809,7 +1820,85 @@ export async function initWanbanXiaowu(options = {}) {
     return sorted[0]?.name || '';
   }
   function scoreDisplay(game) { const g = GAME_META[game] || {}; const sc = scores()[game]; if (game === 'sudoku') return '最高：' + sudokuBestScore() + '分'; if (g.mode === 'double') { const st = roleGameStats(game); return '胜率：' + st.wins + '/' + st.total; } return '最高：' + ((sc || 0) + (g.unit || '分')); }
-  function cardScoreDisplay(game) { const g = GAME_META[game] || {}; const sc = scores()[game]; if (game === 'memory') { const best = memoryBestMoves(); return '最短次数：' + (best ? best + '次' : '无'); } if (game === 'wordguess') { const name = wordGuessBestCompanion(); return '最默契：' + (name || '无'); } if (game === 'guessnumber') { const best = guessNumberBestTries(); return '最小次数：' + (best ? best + '次' : '无'); } if (game === 'sudoku') return '当前最高分：' + sudokuBestScore() + '分'; if (g.mode === 'double') { const st = roleGameStats(game); return '胜率：' + st.wins + '/' + st.total; } return '当前最高分：' + ((sc || 0) + (g.unit || '分')); }
+  function cardScoreDisplay(game) {
+    const g = GAME_META[game] || {};
+    const cacheKey = game + '::' + (g.mode === 'double' ? companionName() : 'single');
+    if (cardScoreDisplayCache.has(cacheKey)) return cardScoreDisplayCache.get(cacheKey);
+    const sc = scores()[game];
+    let display;
+    if (game === 'memory') {
+      const best = memoryBestMoves();
+      display = '最短次数：' + (best ? best + '次' : '无');
+    } else if (game === 'wordguess') {
+      const name = wordGuessBestCompanion();
+      display = '最默契：' + (name || '无');
+    } else if (game === 'guessnumber') {
+      const best = guessNumberBestTries();
+      display = '最小次数：' + (best ? best + '次' : '无');
+    } else if (game === 'sudoku') {
+      display = '当前最高分：' + sudokuBestScore() + '分';
+    } else if (g.mode === 'double') {
+      const st = roleGameStats(game);
+      display = '胜率：' + st.wins + '/' + st.total;
+    } else {
+      display = '当前最高分：' + ((sc || 0) + (g.unit || '分'));
+    }
+    return setBoundedMapValue(cardScoreDisplayCache, cacheKey, display, 96);
+  }
+  function predecodeGameIcon(src, priority = 'auto') {
+    const url = String(src || '');
+    if (!url) return Promise.resolve(false);
+    const cached = decodedGameIconCache.get(url);
+    if (cached) return cached.promise;
+    const view = getHostWindow();
+    const ImageCtor = view?.Image;
+    if (!ImageCtor) return Promise.resolve(false);
+    const image = new ImageCtor();
+    image.decoding = 'async';
+    try { image.fetchPriority = priority; } catch (_) {}
+    const promise = new Promise(resolve => {
+      let settled = false;
+      const finish = loaded => {
+        if (settled) return;
+        settled = true;
+        image.onload = null;
+        image.onerror = null;
+        resolve(loaded);
+      };
+      image.onload = () => {
+        if (typeof image.decode !== 'function') { finish(true); return; }
+        image.decode().then(() => finish(true), () => finish(true));
+      };
+      image.onerror = () => finish(false);
+      image.src = url;
+      if (image.complete) Promise.resolve().then(() => finish(image.naturalWidth > 0));
+    });
+    decodedGameIconCache.set(url, { image, promise });
+    return promise;
+  }
+  function scheduleGameIconWarmup() {
+    if (gameIconWarmupHandle !== null) return;
+    const urls = Array.from(new Set(Object.values(GAME_META).map(game => game.iconImage).filter(Boolean)));
+    if (urls.every(url => decodedGameIconCache.has(url))) return;
+    const view = getHostWindow();
+    const warm = deadline => {
+      gameIconWarmupHandle = null;
+      if (currentGame) return;
+      const batch = [];
+      const maxBatch = memoryConstrainedDevice() ? 2 : 4;
+      for (const url of urls) {
+        if (decodedGameIconCache.has(url)) continue;
+        batch.push(predecodeGameIcon(url, 'low'));
+        if (batch.length >= maxBatch || (deadline?.timeRemaining && deadline.timeRemaining() < 4)) break;
+      }
+      if (batch.length) Promise.allSettled(batch).then(scheduleGameIconWarmup);
+    };
+    if (typeof view.requestIdleCallback === 'function') {
+      gameIconWarmupHandle = view.requestIdleCallback(warm, { timeout:1200 });
+    } else {
+      gameIconWarmupHandle = view.setTimeout(() => warm(null), 180);
+    }
+  }
   function gameIconHTML(g) {
     const fallback = '<span>' + esc(g.icon || '') + '</span>';
     if (!g.iconImage) return '<div class="wb-game-icon">' + fallback + '</div>';
@@ -1827,6 +1916,7 @@ export async function initWanbanXiaowu(options = {}) {
     };
     img.onerror = () => { img.remove(); };
     img.src = src;
+    predecodeGameIcon(src, 'high');
   }
   function observeGameCardIcons(container, eager = false) {
     const icons = qsa('.wb-game-icon', container).filter(icon => icon.querySelector('img[data-src]'));
@@ -1847,7 +1937,7 @@ export async function initWanbanXiaowu(options = {}) {
           gameIconObserver?.unobserve(entry.target);
           loadGameCardIcon(entry.target);
         });
-      }, { root:qs('#wb-body'), rootMargin:'180px 0px', threshold:0.01 });
+      }, { root:qs('#wb-body'), rootMargin:'720px 0px', threshold:0.01 });
     }
     icons.forEach(icon => gameIconObserver.observe(icon));
   }
@@ -8462,7 +8552,7 @@ export async function initWanbanXiaowu(options = {}) {
     const grid = qs('.wb-cardgrid', body);
     const mobile = isMobileHost();
     const firstBatch = mobile ? 5 : 9;
-    const batchSize = mobile ? 5 : 9;
+    const batchSize = mobile ? 8 : 12;
     let cursor = 0;
     const appendBatch = count => {
       if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
@@ -8474,6 +8564,8 @@ export async function initWanbanXiaowu(options = {}) {
       }).join('');
       const cards = Array.from(wrapper.children);
       cards.forEach(card => {
+        card.addEventListener('pointerdown', () => prepareGameEntry(card.dataset.game), { passive:true, once:true });
+        card.addEventListener('pointerenter', () => prepareGameEntry(card.dataset.game), { passive:true, once:true });
         card.onclick = () => {
           cancelGameListRendering();
           currentGame = card.dataset.game;
@@ -8491,35 +8583,14 @@ export async function initWanbanXiaowu(options = {}) {
         qs('.wb-game-list-sentinel', grid)?.remove();
         return;
       }
-      let sentinel = qs('.wb-game-list-sentinel', grid);
-      if (!sentinel) {
-        sentinel = getHostDocument().createElement('div');
-        sentinel.className = 'wb-game-list-sentinel';
-        sentinel.setAttribute('aria-hidden', 'true');
-        grid.appendChild(sentinel);
-      }
-      if (!gameListLoadObserver) {
-        const view = getHostWindow();
-        if (!view.IntersectionObserver) {
-          view.setTimeout(() => {
-            if (renderToken === gameListRenderToken && sentinel?.isConnected) appendBatch(batchSize);
-          }, 180);
-          return;
-        }
-        const observer = new view.IntersectionObserver(entries => {
-          if (!entries.some(entry => entry.isIntersecting)) return;
-          observer.disconnect();
-          if (gameListLoadObserver === observer) gameListLoadObserver = null;
-          sentinel?.remove();
-          appendBatch(batchSize);
-        }, { root:body, rootMargin:'320px 0px', threshold:0.01 });
-        gameListLoadObserver = observer;
-        view.setTimeout(() => {
-          if (renderToken === gameListRenderToken && gameListLoadObserver === observer && sentinel?.isConnected) observer.observe(sentinel);
-        }, 180);
-      }
+      const view = getHostWindow();
+      view.requestAnimationFrame(() => {
+        if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
+        appendBatch(batchSize);
+      });
     };
     appendBatch(firstBatch);
+    scheduleGameIconWarmup();
   }
 
   function markdownLiteHTML(text) {
@@ -8970,8 +9041,8 @@ export async function initWanbanXiaowu(options = {}) {
       const quota = e && (e.name === 'QuotaExceededError' || e.code === 22 || /quota/i.test(e.message || ''));
       throw new Error(quota ? '手机端本地存储空间不足，已放弃导入并保留原数据。' : ('写入失败，已放弃导入并保留原数据：' + (e && e.message ? e.message : e)));
     }
-    if (Object.hasOwn(plan, STORAGE_RECORDS)) { pendingRecords = null; recordsCache = null; }
-    if (Object.hasOwn(plan, STORAGE_SCORES)) scoresCache = null;
+    if (Object.hasOwn(plan, STORAGE_RECORDS)) { pendingRecords = null; recordsCache = null; cardScoreDisplayCache.clear(); }
+    if (Object.hasOwn(plan, STORAGE_SCORES)) { scoresCache = null; cardScoreDisplayCache.clear(); }
     if (Object.hasOwn(plan, STORAGE_LINES)) linesCache = null;
     if (Object.hasOwn(plan, STORAGE_ROLE_LINES)) roleLinesCache = null;
     if (Object.hasOwn(plan, STORAGE_LINE_PRESET_SELECTION)) linePresetSelectionCache = null;
@@ -11024,7 +11095,7 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function renderGame(id) {
     if (!gameStarted && settings().lastHostCardId !== characterCardId(currentHostCharacter())) syncCurrentHostRoleContext();
-    stopGame();
+    stopGame({ deferWrites:true });
     currentRoundProgressRecordId = '';
     currentRoundRoleContext = null;
     currentGame = id;
@@ -11037,10 +11108,11 @@ export async function initWanbanXiaowu(options = {}) {
     const lineTools = cfg.companion ? '<div class="wb-line-tools"><select class="wb-select" id="wb-line-preset-select"></select><button class="wb-btn primary" id="wb-generate-lines">生成</button></div>' : '';
     const wordBankTools = id === 'wordguess' ? '<select class="wb-select" id="wb-word-bank-source-inline" title="我说你猜题库"><option value="role">角色题库</option><option value="default">默认题库</option></select>' : '';
     const pauseBtn = '<button class="wb-btn" id="wb-pause">暂停</button>';
-    const companionPanel = cfg.companion ? '<div class="wb-panel wb-side-companion">' + companionHTML() + '</div>' : '';
+    const companionPanel = cfg.companion ? '<div class="wb-panel wb-side-companion"></div>' : '';
     const dockSide = companionDockSide(cfg);
     const layoutClass = (cfg.companion ? ('companion-pc-' + (dockSide === 'start' ? 'left' : 'right') + ' companion-mobile-' + (dockSide === 'start' ? 'top' : 'bottom')) : 'no-companion') + ' game-layout-' + id;
     body.innerHTML = '<div class="wb-layout ' + layoutClass + '"><div class="wb-panel wb-game-main"><div class="wb-toolbar"><button class="wb-btn" id="wb-back">返回</button><div class="wb-stat"><span class="wb-pill wb-title-row"><span class="wb-game-title-text">' + esc(g.name) + '</span><button class="wb-rule-btn" id="wb-game-rules" title="游戏介绍" aria-label="游戏介绍" type="button">💡</button></span><span class="wb-pill" id="wb-score">本局：0</span><span class="wb-pill" id="wb-high">' + esc(scoreDisplay(id)) + '</span></div><div class="wb-actions">' + wordBankTools + lineTools + '<button class="wb-btn" id="wb-game-records">记录</button>' + pauseBtn + '<button class="wb-btn" id="wb-restart">重开</button></div></div><div class="wb-board-wrap wb-gamebox-' + esc(id) + '" id="wb-gamebox"><div class="wb-start-cover"><div>准备开始</div><button class="wb-btn primary" id="wb-start-cover-btn">开始游戏</button></div></div></div>' + companionPanel + '</div>';
+    prepareGameEntry(id);
     primeMessageNotifyBaseline();
     gameStarted = false; gamePaused = true;
     qs('#wb-back').onclick = () => {
@@ -11064,10 +11136,14 @@ export async function initWanbanXiaowu(options = {}) {
     }
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.onclick = togglePause;
     qs('#wb-restart').onclick = () => { commitGameActiveDuration(true); gamePaused = true; showGamePauseOverlay(); const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续'; showConfirm('确认重开', '确定要重开当前游戏吗？当前进度会丢失。', () => { stopGame({ save:false, record:false }); clearProgress(id); currentRoundProgressRecordId = ''; renderGame(id); }, () => startPauseResumeCountdown()); };
-    renderLinePresetSelect(id);
     const presetSelect = qs('#wb-line-preset-select'); if (presetSelect) presetSelect.onchange = () => applyLinePresetSelection(id, presetSelect.value);
     const genBtn = qs('#wb-generate-lines'); if (genBtn) genBtn.onclick = () => openSingleGenerateChoice(id);
     updateLineGenerationStatusUI();
+    getHostWindow().requestAnimationFrame(() => {
+      if (currentGame !== id || !body?.isConnected || body.className.indexOf('wb-game-mode') < 0) return;
+      refreshGameCompanionPanel();
+      renderLinePresetSelect(id);
+    });
     if (!needsFirstMoverChoice(id) && !['linklink','blackjack','numberklotski'].includes(id) && DEFAULT_LINES[id] && DEFAULT_LINES[id].start) speak(id, 'start');
     scheduleGameEntryPrompt(id, qs('#wb-start-cover-btn'));
   }

@@ -3,7 +3,7 @@
   "loading_order": 50,
   "js": "index.js",
   "author": "Gloria",
-  "version": "4.2.1",
+  "version": "4.2.2",
   "homePage": "",
   "auto_update": false,
   "minimum_client_version": "1.12.0",
