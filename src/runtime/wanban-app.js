@@ -4,10 +4,10 @@ import { yaml } from '../../../../../../lib.js';
 import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 import { NUMBER_KLOTSKI_BEST_STORAGE_KEY, createNumberKlotskiGame, isNumberKlotskiSolved, isSolvableNumberKlotskiBoard } from '../games/number-klotski.js';
-import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../games/spider-rules.js?v=4.2.2';
+import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../games/spider-rules.js?v=4.3.4';
 import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js';
 import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
-import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.2.2';
+import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.3.4';
 import { parsePetInfo, parsePetStoryLines, assertPetInfo } from './pet-info.js';
 import { petStoryMemoryText } from './pet-memory.js';
 import { parseGeneratedJson } from './generated-json.js';
@@ -145,9 +145,9 @@ export async function initWanbanXiaowu(options = {}) {
   let gameIconObserver = null;
   let gameListLoadObserver = null;
   const modularGameFactoryLoaders = {
-    zuma:() => import('../games/zuma.js?v=4.2.2').then(module => module.createZumaGame),
-    watersort:() => import('../games/water-sort.js?v=4.2.2').then(module => module.createWaterSortGame),
-    flappybird:() => import('../games/flappy-bird.js?v=4.2.2').then(module => module.createFlappyBirdGame),
+    zuma:() => import('../games/zuma.js?v=4.3.4').then(module => module.createZumaGame),
+    watersort:() => import('../games/water-sort.js?v=4.3.4').then(module => module.createWaterSortGame),
+    flappybird:() => import('../games/flappy-bird.js?v=4.3.4').then(module => module.createFlappyBirdGame),
   };
   const modularGameFactoryPromises = new Map();
   const decodedGameIconCache = new Map();
@@ -253,9 +253,12 @@ export async function initWanbanXiaowu(options = {}) {
   let transientCacheCleanupUsesIdle = false;
   let transientCacheCleanupGeneration = 0;
   let pendingPopupCloseFinalizer = null;
+  let deferredWindowStateHandle = null;
+  let deferredWindowStateUsesIdleCallback = false;
+  let pendingWindowState = null;
 
   const GAME_ICON_BASE = new URL('../../assets/game-icons/', import.meta.url).href;
-  const gameCardIcon = filename => GAME_ICON_BASE + filename + '?v=4.2.2';
+  const gameCardIcon = filename => GAME_ICON_BASE + filename + '?v=4.3.4';
   const PET_ASSET_BASE = new URL('../../assets/pets/', import.meta.url).href;
   const PET_EGG_OPTIONS = Object.freeze([
     { id:'blue', label:'蓝色蛋' },
@@ -827,7 +830,35 @@ export async function initWanbanXiaowu(options = {}) {
     if (!cfg.rememberWindow) return;
     const nextTab = tab || currentTab || cfg.lastTab || 'single';
     const nextGame = game || '';
-    setSettings({ lastTab: nextTab, lastGame: nextGame });
+    setSettingsIfChanged({ lastTab: nextTab, lastGame: nextGame });
+  }
+  function cancelDeferredWindowStateSave() {
+    if (deferredWindowStateHandle == null) return;
+    const win = getHostWindow();
+    if (deferredWindowStateUsesIdleCallback && typeof win.cancelIdleCallback === 'function') win.cancelIdleCallback(deferredWindowStateHandle);
+    else win.clearTimeout(deferredWindowStateHandle);
+    deferredWindowStateHandle = null;
+    deferredWindowStateUsesIdleCallback = false;
+  }
+  function flushDeferredWindowStateSave() {
+    cancelDeferredWindowStateSave();
+    const next = pendingWindowState;
+    pendingWindowState = null;
+    if (next) saveWindowState(next.tab, next.game);
+  }
+  function scheduleWindowStateSave(tab, game) {
+    pendingWindowState = { tab:tab || currentTab || 'single', game:game || '' };
+    if (deferredWindowStateHandle != null) return;
+    const win = getHostWindow();
+    const run = () => {
+      deferredWindowStateHandle = null;
+      deferredWindowStateUsesIdleCallback = false;
+      flushDeferredWindowStateSave();
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      deferredWindowStateUsesIdleCallback = true;
+      deferredWindowStateHandle = win.requestIdleCallback(run, { timeout:600 });
+    } else deferredWindowStateHandle = win.setTimeout(run, 32);
   }
   function restoreWindowState() {
     const cfg = settings();
@@ -1535,7 +1566,10 @@ export async function initWanbanXiaowu(options = {}) {
     if (!progressSaveStartedAt[game]) progressSaveStartedAt[game] = now;
     if (progressSaveTimers[game]) clearTimeout(progressSaveTimers[game]);
     const maxRemaining = Math.max(0, PROGRESS_SAVE_MAX_DELAY - (now - progressSaveStartedAt[game]));
-    progressSaveTimers[game] = setTimeout(() => flushProgressSave(game), Math.min(PROGRESS_SAVE_DELAY, maxRemaining));
+    progressSaveTimers[game] = setTimeout(() => {
+      delete progressSaveTimers[game];
+      scheduleDeferredPersistenceFlush();
+    }, Math.min(PROGRESS_SAVE_DELAY, maxRemaining));
   }
   function clearProgress(game) {
     if (progressSaveTimers[game]) {
@@ -3158,6 +3192,13 @@ export async function initWanbanXiaowu(options = {}) {
   }
 
   function modalMaskClass() { return 'wb-modal-mask ' + themeClass(); }
+	  function removePopupModalMasks() {
+	    const doc = getHostDocument();
+	    const shell = qs('#' + SHELL_ID, doc);
+	    const popup = qs('#' + POPUP_ID, doc);
+	    qsa('.wb-modal-mask', popup || shell).forEach(mask => mask.remove());
+	    if (shell) shell.style.overflowY = '';
+	  }
 	  function appendModalMask(mask) {
 	    const doc = getHostDocument();
 	    const win = getHostWindow();
@@ -5407,7 +5448,7 @@ export async function initWanbanXiaowu(options = {}) {
         if (action === 'status') { el.classList.toggle('status-on'); updatePetDesktopPanels(el); }
         if (action === 'talk') { el.classList.toggle('chat-on'); updatePetDesktopPanels(el); }
         if (action === 'home') {
-          stopGame();
+          stopGame({ deferWrites:true });
           setSettings({ petDesktopEnabled:false, petDesktopState:'normal', petForm:petCurrentForm() });
           petReturnHouseOnRender = true;
           syncPetDesktop();
@@ -5526,6 +5567,8 @@ export async function initWanbanXiaowu(options = {}) {
     const doc = getHostDocument();
     doc.addEventListener('visibilitychange', () => {
       if (doc.hidden) {
+        if (pendingPopupCloseFinalizer) pendingPopupCloseFinalizer();
+        flushDeferredWindowStateSave();
         flushSettingsProgress();
         pauseGameForInactiveSurface();
         flushAllProgressSaves();
@@ -5536,6 +5579,7 @@ export async function initWanbanXiaowu(options = {}) {
   function buildPopup(options) {
     if (pendingPopupCloseFinalizer) pendingPopupCloseFinalizer();
     if (confirmPetGenerationLeave(() => buildPopup(options))) return;
+	  removePopupModalMasks();
 	  cancelTransientCacheCleanup();
 	    applySelectedFont();
     invalidateCurrentHostAvatarCache();
@@ -5555,6 +5599,7 @@ export async function initWanbanXiaowu(options = {}) {
       bindRuntimeVisibility();
       if (!shell.dataset.leaveBound) {
         win.addEventListener('pagehide', () => {
+          flushDeferredWindowStateSave();
           flushSettingsProgress();
           if (!gameStarted || !currentGame) { flushAllProgressSaves(); return; }
           try { activeGameController?.save?.(); } catch(e) {}
@@ -5581,7 +5626,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (options?.tab && ['single', 'double', 'intimacy', 'settings'].includes(options.tab)) {
       currentTab = options.tab;
       currentGame = null;
-      saveWindowState(currentTab, '');
+      scheduleWindowStateSave(currentTab, '');
     } else restoreWindowState();
     render();
   }
@@ -5598,16 +5643,17 @@ export async function initWanbanXiaowu(options = {}) {
     cancelGameListRendering();
     cancelGameEntryPrompt();
     qs('#wb-message-notify-mask')?.remove();
+	  removePopupModalMasks();
 
     const finalize = () => {
       if (pendingPopupCloseFinalizer !== finalize) return;
       pendingPopupCloseFinalizer = null;
       flushSettingsProgress();
-      saveWindowState(currentTab, currentGame);
+      scheduleWindowStateSave(currentTab, currentGame);
       stopHeartChallenge();
       if (gameStarted && currentGame) commitGameActiveDuration(false, true);
-      if (activeGameController || (gameStarted && currentGame)) stopGame();
-      else flushAllProgressSaves();
+      if (activeGameController || (gameStarted && currentGame)) stopGame({ deferWrites:true });
+      else scheduleDeferredPersistenceFlush();
       const body = qs('#wb-body', p);
       if (body) {
         body.replaceChildren();
@@ -5642,18 +5688,23 @@ export async function initWanbanXiaowu(options = {}) {
     const countBadge = n => '<span class="wb-tab-count">' + esc(n) + '</span>';
     p.innerHTML = '<div class="wb-head"><div class="wb-title">玩伴小屋</div><div class="wb-tabs"><button class="wb-tab" data-tab="single">单人游戏' + countBadge(singleCount) + '</button><button class="wb-tab" data-tab="double">双人游戏' + countBadge(doubleCount) + '</button><button class="wb-tab" data-tab="intimacy">亲密互动' + countBadge(1) + '</button><button class="wb-tab" data-tab="settings">设置</button></div><div class="wb-head-meta" aria-label="当前版本 V' + esc(EXTENSION_VERSION) + '，本游戏发布者 Gloria"><span><i>当前版本</i>V' + esc(EXTENSION_VERSION) + '</span><span><i>发布者</i>Gloria</span></div><button class="wb-iconbtn" id="wb-close" title="关闭">×</button></div><div class="wb-body" id="wb-body"></div>';
     qsa('.wb-tab', p).forEach(b => {
-      b.onclick = () => {
-        flushSettingsProgress();
-        stopGame();
-        currentGame = null;
-        currentTab = b.dataset.tab;
-        saveWindowState(currentTab, '');
-        render();
-      };
+      b.onclick = () => switchMainTab(b.dataset.tab);
     });
     qs('#wb-close', p).onclick = () => {
       closePopupShell();
     };
+  }
+  function switchMainTab(nextTab, swipeAnimation) {
+    if (!['single', 'double', 'intimacy', 'settings'].includes(nextTab)) return;
+    if (confirmPetGenerationLeave(() => switchMainTab(nextTab, swipeAnimation))) return;
+    flushSettingsProgress();
+    stopGame({ deferWrites:true });
+    removePopupModalMasks();
+    currentGame = null;
+    currentTab = nextTab;
+    if (swipeAnimation) mainSwipeAnimation = swipeAnimation;
+    scheduleWindowStateSave(currentTab, '');
+    render();
   }
   function render() {
     if (confirmPetGenerationLeave(render)) return;
@@ -5711,7 +5762,7 @@ export async function initWanbanXiaowu(options = {}) {
       if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
       const i = tabs.indexOf(currentTab);
       const next = tabs[Math.max(0, Math.min(tabs.length - 1, i + (dx < 0 ? 1 : -1)))];
-      if (next && next !== currentTab) { flushSettingsProgress(); stopGame(); currentGame = null; mainSwipeAnimation = dx < 0 ? 'wb-swipe-enter-left' : 'wb-swipe-enter-right'; currentTab = next; saveWindowState(currentTab, ''); render(); }
+      if (next && next !== currentTab) switchMainTab(next, dx < 0 ? 'wb-swipe-enter-left' : 'wb-swipe-enter-right');
     };
   }
 
@@ -5866,7 +5917,7 @@ export async function initWanbanXiaowu(options = {}) {
         cards:heartCardSources, user:heartUserSource, userAvatars:heartUserAvatars,
         apis:() => apiPresets().map(p => ({ id:heartApiId(p), name:p.name || p.apiModel || 'API 预设' })),
         home:() => { heartController = null; renderIntimacy(); },
-        settings:() => { heartController = null; currentTab = 'settings'; currentGame = null; saveWindowState(currentTab, ''); render(); },
+        settings:() => { heartController = null; switchMainTab('settings'); },
         request:({ api, prompt, system, maxTokens, onDelta, signal }) => {
           const selected = api ? apiPresets().find(p => heartApiId(p) === api) : settings();
           if (!selected) throw new Error('所选 API 预设已删除或更名，请重新选择。');
@@ -8570,7 +8621,7 @@ export async function initWanbanXiaowu(options = {}) {
           cancelGameListRendering();
           currentGame = card.dataset.game;
           if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode;
-          saveWindowState(currentTab, currentGame);
+          scheduleWindowStateSave(currentTab, currentGame);
           renderGame(currentGame);
         };
         grid.appendChild(card);
@@ -8808,7 +8859,7 @@ export async function initWanbanXiaowu(options = {}) {
 	    const companionDockMobile = companionDock === 'start' ? 'top' : 'bottom';
 	    const patch = { companion, theme, selectedFont, rememberWindow, floatingBallEnabled, messageNotify, theaterEnabled, autoLog, companionDock, companionDockPc, companionDockMobile };
 	    if (rememberWindow) { patch.lastTab = currentTab || 'single'; patch.lastGame = currentGame || ''; }
-	    setSettings(patch);
+	    setSettingsIfChanged(patch);
 	    syncPopupModeClass();
 	    applySelectedFont();
 	    syncFloatingBall();
@@ -11102,7 +11153,7 @@ export async function initWanbanXiaowu(options = {}) {
     currentRoundLineEvents = [];
     currentRoundTheaterInfo = null;
     if (GAME_META[id]) currentTab = GAME_META[id].mode;
-    saveWindowState(currentTab, id);
+    scheduleWindowStateSave(currentTab, id);
     syncPopupModeClass();
     const g = GAME_META[id]; const cfg = settings(); const body = qs('#wb-body'); body.className = 'wb-body wb-game-mode';
     const lineTools = cfg.companion ? '<div class="wb-line-tools"><select class="wb-select" id="wb-line-preset-select"></select><button class="wb-btn primary" id="wb-generate-lines">生成</button></div>' : '';
@@ -11120,7 +11171,7 @@ export async function initWanbanXiaowu(options = {}) {
       currentGame = null;
       syncPopupModeClass();
       renderSelect(currentTab);
-      getHostWindow().setTimeout(() => saveWindowState(currentTab, ''), 0);
+      scheduleWindowStateSave(currentTab, '');
     };
     qs('#wb-start-cover-btn').onclick = () => startCurrentGame(id);
     qs('#wb-game-rules').onclick = e => { e.stopPropagation(); showGameRules(id); };
@@ -11520,7 +11571,7 @@ function showGameRecords(game, page) {
     appendModalMask(mask);
     qs('#wb-progress-continue', mask).onclick = () => { startContinueCountdown(mask, game, state); };
     qs('#wb-progress-new', mask).onclick = () => { mask.remove(); clearProgress(game); renderGame(game); };
-    qs('#wb-progress-back', mask).onclick = () => { mask.remove(); currentGame = null; saveWindowState(currentTab, ''); syncPopupModeClass(); renderSelect(currentTab); };
+    qs('#wb-progress-back', mask).onclick = () => { mask.remove(); currentGame = null; scheduleWindowStateSave(currentTab, ''); syncPopupModeClass(); renderSelect(currentTab); };
   }
 
 	  function doubleTheaterFallback(game, outcome, special, roleName) {

@@ -25,7 +25,7 @@ function hostDocuments() {
 
 function ensureStyles() {
   if (stylesPromise) return stylesPromise;
-  const href = new URL('./style.css?v=4.2.2', import.meta.url).href;
+  const href = new URL('./style.css?v=4.3.4', import.meta.url).href;
   stylesPromise = Promise.all(hostDocuments().map(doc => new Promise((resolve, reject) => {
     const existing = doc.querySelector('link[data-wanban-style="1"]');
     if (existing?.sheet) { resolve(); return; }
@@ -46,7 +46,7 @@ function ensureStyles() {
 function prepareRuntime() {
   if (!runtimePromise) {
     runtimePromise = Promise.all([
-      import('./src/runtime/wanban-app.js?v=4.2.2'),
+      import('./src/runtime/wanban-app.js?v=4.3.4'),
       ensureStyles(),
     ]).then(([runtime]) => runtime).catch(error => {
       runtimePromise = null;

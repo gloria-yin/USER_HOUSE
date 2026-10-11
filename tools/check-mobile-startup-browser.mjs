@@ -292,12 +292,22 @@ try {
   })()`);
   const settingsSwitch = await evaluate(`(()=>{
     window.__stableHeader=document.querySelector('.wb-head');
+    const nativeSet=Storage.prototype.setItem;
+    let syncWrites=0;
+    Storage.prototype.setItem=function(...args){
+      syncWrites++;
+      const blockedUntil=performance.now()+12;
+      while(performance.now()<blockedUntil){}
+      return nativeSet.apply(this,args);
+    };
     const started=performance.now();
-    document.querySelector('[data-tab=settings]').click();
-    return performance.now()-started;
+    try { document.querySelector('[data-tab=settings]').click(); }
+    finally { Storage.prototype.setItem=nativeSet; }
+    return {elapsed:performance.now()-started,syncWrites};
   })()`);
   assert.equal(await evaluate('document.querySelectorAll(".wb-settings-grid > .wb-panel").length'), 6, 'settings should render every panel');
-  assert.ok(settingsSwitch < 100, 'settings switch took ' + settingsSwitch.toFixed(1) + 'ms');
+  assert.equal(settingsSwitch.syncWrites, 0, 'settings switch performed synchronous storage writes');
+  assert.ok(settingsSwitch.elapsed < 100, 'settings switch took ' + settingsSwitch.elapsed.toFixed(1) + 'ms');
   const settingsScroll = await evaluate(`(async()=>{
     const body=document.querySelector('#wb-body');
     const samples=[];
@@ -321,11 +331,16 @@ try {
   assert.ok(settingsScroll.maxLongTask < 80, 'settings produced a ' + settingsScroll.maxLongTask.toFixed(1) + 'ms long task');
   assert.ok(settingsScroll.maxFrame < 80, 'settings scroll frame took ' + settingsScroll.maxFrame.toFixed(1) + 'ms');
   const homeSwitch = await evaluate(`(()=>{
+    const nativeSet=Storage.prototype.setItem;
+    let syncWrites=0;
+    Storage.prototype.setItem=function(...args){ syncWrites++; return nativeSet.apply(this,args); };
     const started=performance.now();
-    document.querySelector('[data-tab=single]').click();
-    return {elapsed:performance.now()-started,stableHeader:window.__stableHeader===document.querySelector('.wb-head')};
+    try { document.querySelector('[data-tab=single]').click(); }
+    finally { Storage.prototype.setItem=nativeSet; }
+    return {elapsed:performance.now()-started,syncWrites,stableHeader:window.__stableHeader===document.querySelector('.wb-head')};
   })()`);
   assert.equal(homeSwitch.stableHeader, true, 'tab switches should preserve the popup header');
+  assert.equal(homeSwitch.syncWrites, 0, 'home switch performed synchronous storage writes');
   assert.ok(await evaluate('document.querySelectorAll(".wb-game-card").length') >= 5, 'returning home should render the visible mobile card batch immediately');
   await waitFor('Array.from(document.querySelectorAll(".wb-game-card")).slice(0,5).every(card=>card.querySelector(".wb-game-icon.has-image img"))');
   assert.ok(homeSwitch.elapsed < 60, 'home switch took ' + homeSwitch.elapsed.toFixed(1) + 'ms');
@@ -1082,7 +1097,7 @@ try {
   ];
   for (const [game, tab, selector] of startupSmokes) await smokeStartListedGame(game, tab, selector);
   assert.deepEqual(await evaluate('window.__errors'), []);
-  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
+  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.elapsed.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
 } finally {
   client?.close();
   if (browser) {
