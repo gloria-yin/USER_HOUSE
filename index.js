@@ -13,6 +13,13 @@ let booted = false;
 let runtimePromise = null;
 let stylesPromise = null;
 let lastOpenAt = 0;
+const RUNTIME_URL = new URL('./src/runtime/wanban-app.js?v=4.3.4', import.meta.url).href;
+const STYLE_URL = new URL('./style.css?v=4.3.4', import.meta.url).href;
+const GAME_MODULE_URLS = [
+  new URL('./src/games/zuma.js?v=4.3.4', import.meta.url).href,
+  new URL('./src/games/water-sort.js?v=4.3.4', import.meta.url).href,
+  new URL('./src/games/flappy-bird.js?v=4.3.4', import.meta.url).href,
+];
 
 function hostDocuments() {
   const documents = [];
@@ -25,13 +32,12 @@ function hostDocuments() {
 
 function ensureStyles() {
   if (stylesPromise) return stylesPromise;
-  const href = new URL('./style.css?v=4.3.4', import.meta.url).href;
   stylesPromise = Promise.all(hostDocuments().map(doc => new Promise((resolve, reject) => {
     const existing = doc.querySelector('link[data-wanban-style="1"]');
     if (existing?.sheet) { resolve(); return; }
     const link = existing || doc.createElement('link');
     link.rel = 'stylesheet';
-    link.href = href;
+    link.href = STYLE_URL;
     link.dataset.wanbanStyle = '1';
     link.onload = resolve;
     link.onerror = () => reject(new Error('玩伴小屋样式加载失败'));
@@ -46,7 +52,7 @@ function ensureStyles() {
 function prepareRuntime() {
   if (!runtimePromise) {
     runtimePromise = Promise.all([
-      import('./src/runtime/wanban-app.js?v=4.3.4'),
+      import(RUNTIME_URL),
       ensureStyles(),
     ]).then(([runtime]) => runtime).catch(error => {
       runtimePromise = null;
@@ -54,6 +60,30 @@ function prepareRuntime() {
     });
   }
   return runtimePromise;
+}
+
+function addResourceHint(doc, href, rel, as, key) {
+  if (doc.querySelector('link[data-wanban-preload="' + key + '"]')) return;
+  const link = doc.createElement('link');
+  link.rel = rel;
+  link.href = href;
+  if (as) link.as = as;
+  try { link.fetchPriority = 'low'; } catch (_) {}
+  link.dataset.wanbanPreload = key;
+  (doc.head || doc.documentElement).appendChild(link);
+}
+
+function installResourceHints() {
+  hostDocuments().forEach(doc => {
+    addResourceHint(doc, RUNTIME_URL, 'modulepreload', '', 'runtime');
+    addResourceHint(doc, STYLE_URL, 'preload', 'style', 'style');
+  });
+}
+
+function installGameModuleHints() {
+  hostDocuments().forEach(doc => {
+    GAME_MODULE_URLS.forEach((url, index) => addResourceHint(doc, url, 'modulepreload', '', 'game-' + index));
+  });
 }
 
 async function loadRuntime(open = false) {
@@ -119,29 +149,20 @@ function installLauncher() {
   retry();
 }
 
-async function backgroundRuntimeEnabled() {
-  try {
-    const raw = localStorage.getItem('wanbanXiaowu_settings_v1');
-    if (!raw) return false;
-    const { decodeStoredJSON } = await import('./src/runtime/storage.js');
-    const settings = decodeStoredJSON(raw) || {};
-    return !!(settings.messageNotify || settings.petDesktopEnabled || settings.floatingBallEnabled);
-  } catch (_) {
-    return false;
-  }
-}
-
 function scheduleRuntimeWarmup() {
-  const warm = () => loadRuntime(false).catch(error => console.warn('[玩伴小屋] idle warmup failed:', error));
-  setTimeout(async () => {
-    if (await backgroundRuntimeEnabled()) warm();
-  }, 3000);
+  const warm = () => loadRuntime(false).then(installGameModuleHints).catch(error => console.warn('[玩伴小屋] idle warmup failed:', error));
+  const view = hostDocuments()[0]?.defaultView || window;
+  view.setTimeout(() => {
+    if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(warm, { timeout:1600 });
+    else view.setTimeout(warm, 500);
+  }, 200);
 }
 
 async function boot() {
   if (booted) return;
   booted = true;
   await waitForHostReady();
+  installResourceHints();
   installLauncher();
   scheduleRuntimeWarmup();
   console.info('[玩伴小屋] lightweight launcher loaded:', EXTENSION_NAME);

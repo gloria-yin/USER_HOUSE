@@ -31,7 +31,7 @@ addEventListener('error',event=>__errors.push(event.message));
 addEventListener('unhandledrejection',event=>__errors.push(String(event.reason)));
 const longText='移动端性能测试内容'.repeat(500);
 const roles=Array.from({length:32},(_,index)=>({roleKey:'role_'+index,name:'角色 '+index,charName:'角色 '+index,manualCharPersona:longText,worldText:longText,roleUpdatedAt:index}));
-localStorage.setItem('wanbanXiaowu_settings_v1',JSON.stringify({roleKey:'role_0',charName:'角色 0',companion:true}));
+localStorage.setItem('wanbanXiaowu_settings_v1',JSON.stringify({roleKey:'role_0',charName:'角色 0',companion:true,theaterEnabled:true}));
 localStorage.setItem('wanbanXiaowu_progress_v1__turkey',JSON.stringify({
   initialized:true,savedAt:Date.now(),startedAt:Date.now(),score:0,moves:0,combo:0,
   tools:{thunder:3,stardust:3,hammer:3},seen:{},details:{},
@@ -234,30 +234,27 @@ try {
   await waitFor('window.__launcherReady===true && !!document.querySelector("#wanbanXiaowu-menu-item")');
   await sleep(3300);
 
-  assert.ok(!requests.some(path => path.includes('wanban-app.js')), 'disabled background features must not warm the main runtime');
-  assert.ok(!requests.includes('/style.css'), 'the full stylesheet must stay out of the startup path');
+  assert.ok(requests.some(path => path.includes('wanban-app.js')), 'the main runtime should warm before the first house open');
+  assert.ok(requests.includes('/style.css'), 'the stylesheet should warm before the first house open');
+  for (const modulePath of ['/src/games/zuma.js', '/src/games/water-sort.js', '/src/games/flappy-bird.js']) {
+    assert.ok(requests.some(path => path.includes(modulePath)), modulePath + ' should be preloaded');
+  }
 
   await evaluate(`(()=>{window.__openStarted=performance.now();const item=document.querySelector('#wanbanXiaowu-menu-item');item.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',isPrimary:true}));item.click()})()`);
   await waitFor('performance.getEntriesByType("resource").some(entry=>entry.name.includes("wanban-app.js"))');
   await waitFor('!!document.querySelector("#wanbanXiaowu-popup")');
   const openMs = await evaluate('performance.now()-window.__openStarted');
-  assert.ok(requests.some(path => path.includes('wanban-app.js')), 'clicking the launcher should load the runtime');
-  assert.ok(requests.includes('/style.css'), 'clicking the launcher should load the stylesheet');
+  assert.ok(openMs < 250, 'opening the prewarmed house took ' + openMs.toFixed(1) + 'ms');
   assert.equal(await evaluate('window.__activeIntervals.size'), 0, 'disabled notifications and pets must not leave a polling timer');
-  assert.ok(await evaluate('document.querySelectorAll(".wb-game-card").length') >= 5, 'the mobile first frame should render its visible card batch');
+  const singleCardCount = await evaluate('document.querySelectorAll(".wb-game-card").length');
+  assert.ok(singleCardCount >= 20, 'the first frame should contain the complete single-player game list');
   await sleep(300);
-  const firstIcons = await evaluate(`(()=>({loaded:Array.from(document.querySelectorAll('.wb-game-card')).slice(0,5).filter(card=>card.querySelector('.wb-game-icon.has-image img')).length,html:Array.from(document.querySelectorAll('.wb-game-icon')).slice(0,5).map(icon=>icon.outerHTML)}))()`);
-  assert.equal(firstIcons.loaded, 5, 'first visible game icons did not load: ' + JSON.stringify(firstIcons) + ' requests=' + JSON.stringify(requests.filter(path=>path.includes('game-icons'))));
-  await sleep(1200);
-  assert.ok(await evaluate('document.querySelectorAll(".wb-game-card").length') > 5, 'remaining cards should render during idle time');
-  for (const heavy of ['water-sort-bank.js', '/src/games/zuma.js', '/src/games/water-sort.js', '/src/games/flappy-bird.js', '/src/heart-challenge/']) {
+  const iconState = await evaluate(`(()=>({total:document.querySelectorAll('.wb-game-card').length,loaded:Array.from(document.querySelectorAll('.wb-game-card')).filter(card=>card.querySelector('.wb-game-icon.has-image img')).length}))()`);
+  assert.equal(iconState.loaded, iconState.total, 'game icons did not load eagerly: ' + JSON.stringify(iconState));
+  for (const heavy of ['/src/heart-challenge/']) {
     assert.ok(!requests.some(path => path.includes(heavy)), heavy + ' loaded before its feature was opened');
   }
-  for (let i = 0; i < 8 && !(await evaluate('!!document.querySelector("[data-game=shuerte]")')); i++) {
-    await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
-    await sleep(260);
-  }
-  assert.ok(await evaluate('!!document.querySelector("[data-game=shuerte]")'), 'scrolling should reveal the Schulte grid card');
+  assert.ok(await evaluate('!!document.querySelector("[data-game=shuerte]")'), 'the Schulte grid card should exist immediately');
   await evaluate('document.querySelector("[data-game=shuerte]").scrollIntoView({block:"center"})');
   await waitFor('document.querySelector("[data-game=shuerte] .wb-game-icon")?.classList.contains("has-image")');
   const gameEntryMs = await evaluate(`(()=>{const started=performance.now();document.querySelector('[data-game=shuerte]').click();return performance.now()-started})()`);
@@ -295,6 +292,7 @@ try {
   await sleep(1400);
   await evaluate('document.querySelector("#wb-pause").click()');
   await waitFor('!!document.querySelector("#wb-pause-overlay")');
+  await waitFor(`!!localStorage.getItem('wanbanXiaowu_progress_v1__shuerte') || !!localStorage.getItem('wanbanXiaowu_progress_v1')`);
   assert.equal(await evaluate(`import('/src/runtime/storage.js?progress-check').then(module=>{
     const shard=localStorage.getItem('wanbanXiaowu_progress_v1__shuerte');
     const aggregate=localStorage.getItem('wanbanXiaowu_progress_v1');
@@ -454,18 +452,42 @@ try {
   assert.equal(recoveredProgress.source, 'aggregate', 'a blocked shard should use the compatible aggregate fallback');
   assert.equal(await evaluate('window.__progressStorageMessages.length'), 0, 'successful fallback storage must not show a false failure warning');
   await evaluate('console.log=window.__progressConsoleLog');
-  await evaluate(`(async()=>{
+  const gameOverInteraction = await evaluate(`(async()=>{
+    window.__nativeRandom=Math.random;
+    Math.random=()=>0;
     const board=document.querySelector('#wb-shuerte-board');
+    const handlers=[];
     for(let value=10;value<=16;value++){
       const button=Array.from(board.children).find(cell=>cell.querySelector('.wb-shuerte-number')?.textContent===String(value));
+      const started=performance.now();
       button.click();
+      handlers.push(performance.now()-started);
       await new Promise(requestAnimationFrame);
     }
+    return {
+      maxHandler:Math.max(...handlers),
+      resultVisible:!!document.querySelector('#wb-gameover-mask'),
+      nextDisabled:document.querySelector('#wb-next-round')?.disabled,
+      closeDisabled:document.querySelector('#wb-over-close')?.disabled,
+    };
   })()`);
+  assert.equal(gameOverInteraction.resultVisible, true, 'game-over result must render in the completion handler');
+  assert.equal(gameOverInteraction.nextDisabled, false, 'next-round must be clickable on the first result frame');
+  assert.equal(gameOverInteraction.closeDisabled, false, 'game-over close must be clickable on the first result frame');
+  assert.ok(gameOverInteraction.maxHandler < 30, 'game-over completion handler took ' + gameOverInteraction.maxHandler.toFixed(1) + 'ms');
+  await waitFor('!!document.querySelector("#wb-text-mask")');
+  const theaterCloseMs = await evaluate(`(()=>{const started=performance.now();document.querySelector('#wb-text-close').click();return performance.now()-started})()`);
+  assert.ok(theaterCloseMs < 30, 'theater close handler took ' + theaterCloseMs.toFixed(1) + 'ms');
+  await evaluate('Math.random=window.__nativeRandom');
   await waitFor('!!document.querySelector("#wb-generate-log:not([disabled])")');
   await evaluate('document.querySelector("#wb-generate-log").click()');
   await waitFor('document.querySelector("#wb-generate-log")?.textContent==="查看日志"');
+  await waitFor(`import('/src/runtime/storage.js?record-wait').then(module=>!!module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_records_v1'))?.shuerte?.[0]?.log)`);
   assert.equal(await evaluate(`import('/src/runtime/storage.js?record-check').then(module=>!!module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_records_v1')).shuerte?.[0]?.log)`), true, 'generated game log must be stored with its record');
+  await waitFor(`import('/src/runtime/storage.js?pet-reward-wait').then(module=>{
+    const saved=module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_petState_v1__test_mobile_pet_story'))?.state;
+    return Number(saved?.growth||0)>=4&&Object.values(saved?.days||{}).some(day=>Number(day?.play||0)>=1);
+  })`);
 
   await evaluate('document.querySelector("#wb-generate-lines").click()');
   await waitFor('!!document.querySelector("#wb-single-generate-mask [data-kind=all]")');
@@ -1125,7 +1147,7 @@ try {
   ];
   for (const [game, tab, selector] of startupSmokes) await smokeStartListedGame(game, tab, selector);
   assert.deepEqual(await evaluate('window.__errors'), []);
-  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.elapsed.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
+  console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; game over ' + gameOverInteraction.maxHandler.toFixed(1) + 'ms/theater close ' + theaterCloseMs.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.elapsed.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
 } finally {
   client?.close();
   if (browser) {

@@ -195,6 +195,8 @@ export async function initWanbanXiaowu(options = {}) {
   let currentRoundLineEvents = [];
   let currentRoundRoleContext = null;
   let currentRoundTheaterInfo = null;
+  const pendingGameOverSettlements = new Set();
+  const pendingGameRewards = new Set();
   let progressSaveTimers = {};
   let progressSaveCache = {};
   let progressSaveStartedAt = {};
@@ -1571,7 +1573,11 @@ export async function initWanbanXiaowu(options = {}) {
     doc.addEventListener('keydown', markInput, { capture:true, passive:true });
     doc.addEventListener('touchstart', markInput, { capture:true, passive:true });
   }
-  function flushAllProgressSaves() {
+  function flushAllProgressSaves(forcePendingUiWork) {
+    if (forcePendingUiWork) {
+      flushPendingGameOverSettlements();
+      flushPendingGameRewards();
+    }
     cancelDeferredPersistenceFlush();
     Array.from(progressDeleteCache).forEach(flushProgressDelete);
     Object.keys(progressSaveCache).forEach(flushProgressSave);
@@ -1857,24 +1863,31 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function refreshRecordSaveStatus() {
     const status = qs('#wb-record-save-status');
-    if (status) status.textContent = pendingRecords
+    const failed = !!(pendingRecords && failedStorageKeys.has(STORAGE_RECORDS));
+    if (status) status.textContent = failed
       ? '游戏记录尚未写入本地，暂存在当前页面。请重试保存或导出备份；刷新或关闭网页会丢失未保存内容。'
       : '';
-    if (status?.parentElement) status.parentElement.style.display = pendingRecords ? '' : 'none';
+    if (status?.parentElement) status.parentElement.style.display = failed ? '' : 'none';
     const retry = qs('#wb-record-save-retry');
-    if (retry) retry.hidden = !pendingRecords;
+    if (retry) retry.hidden = !failed;
     const backup = qs('#wb-record-save-backup');
-    if (backup) backup.hidden = !pendingRecords;
+    if (backup) backup.hidden = !failed;
   }
   function flushRecordsSave() {
     if (pendingRecords && saveJSON(STORAGE_RECORDS, pendingRecords)) pendingRecords = null;
     refreshRecordSaveStatus();
     return !pendingRecords;
   }
-  function saveRecords(v) {
+  function stageRecordsSave(v) {
     recordsCache = safeObject(v);
     pendingRecords = recordsCache;
     cardScoreDisplayCache.clear();
+    refreshRecordSaveStatus();
+    scheduleDeferredPersistenceFlush();
+    return recordsCache;
+  }
+  function saveRecords(v) {
+    stageRecordsSave(v);
     return flushRecordsSave();
   }
   function companionName() { const cfg = settings(); const ctx = getHostContext(); const char = ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null); const charData = char?.data || char || {}; return (cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}'); }
@@ -2029,17 +2042,11 @@ export async function initWanbanXiaowu(options = {}) {
     const urls = Array.from(new Set(Object.values(GAME_META).map(game => game.iconImage).filter(Boolean)));
     if (urls.every(url => decodedGameIconCache.has(url))) return;
     const view = getHostWindow();
-    const warm = deadline => {
+    const warm = () => {
       gameIconWarmupHandle = null;
       if (currentGame) return;
-      const batch = [];
-      const maxBatch = memoryConstrainedDevice() ? 2 : 4;
-      for (const url of urls) {
-        if (decodedGameIconCache.has(url)) continue;
-        batch.push(predecodeGameIcon(url, 'low'));
-        if (batch.length >= maxBatch || (deadline?.timeRemaining && deadline.timeRemaining() < 4)) break;
-      }
-      if (batch.length) Promise.allSettled(batch).then(scheduleGameIconWarmup);
+      const pending = urls.filter(url => !decodedGameIconCache.has(url));
+      if (pending.length) Promise.allSettled(pending.map(url => predecodeGameIcon(url, 'low')));
     };
     if (typeof view.requestIdleCallback === 'function') {
       gameIconWarmupHandle = view.requestIdleCallback(warm, { timeout:1200 });
@@ -2050,7 +2057,7 @@ export async function initWanbanXiaowu(options = {}) {
   function gameIconHTML(g) {
     const fallback = '<span>' + esc(g.icon || '') + '</span>';
     if (!g.iconImage) return '<div class="wb-game-icon">' + fallback + '</div>';
-    return '<div class="wb-game-icon"><img data-src="' + esc(g.iconImage) + '" alt="" loading="lazy" decoding="async">' + fallback + '</div>';
+    return '<div class="wb-game-icon"><img data-src="' + esc(g.iconImage) + '" alt="" loading="eager" decoding="async">' + fallback + '</div>';
   }
   function loadGameCardIcon(icon) {
     const img = icon?.querySelector('img[data-src]');
@@ -2096,20 +2103,39 @@ export async function initWanbanXiaowu(options = {}) {
     if (gameListLoadObserver) gameListLoadObserver.disconnect();
     gameListLoadObserver = null;
   }
+  function scheduleTheaterWarmup(game) {
+    if (theaterCache) return;
+    const view = getHostWindow();
+    view.setTimeout(() => {
+      if (currentGame !== game || theaterCache) return;
+      const warm = () => {
+        if (currentGame !== game || theaterCache || view.navigator?.scheduling?.isInputPending?.({ includeContinuous:true })) return;
+        getTheaterCache();
+      };
+      if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(warm);
+      else if (!gameStarted) view.setTimeout(warm, 80);
+    }, 600);
+  }
   function inferResult(game, title, scoreText) { const t = String((title || '') + ' ' + (scoreText || '')); const g = GAME_META[game] || {}; if (g.mode === 'double') { if (/你赢|1胜/.test(t) && !/平局/.test(t)) return 'user_win'; if (/TA获胜|失败|0胜/.test(t) && !/平局/.test(t)) return 'ta_win'; if (/平局/.test(t)) return 'draw'; return 'finished'; } const m = t.match(/(\d+)\s*分/); return { outcome: 'score', score: m ? parseInt(m[1], 10) : 0 }; }
-  function recordGameResult(game, title, scoreText, explicitResult, meta, deferSave) {
-    commitGameActiveDuration(false);
+  function recordGameResult(game, title, scoreText, explicitResult, meta, deferSave, snapshot) {
+    const snap = snapshot || {};
+    if (!snap.durationCommitted) commitGameActiveDuration(false);
     const all = records(); const g = GAME_META[game] || { name: game, mode: 'single' }; const result = explicitResult || inferResult(game, title, scoreText);
-    const id = currentRoundProgressRecordId || ('rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
+    const id = snap.progressRecordId || currentRoundProgressRecordId || ('rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
     const existing = (all[game] || []).find(record => record.id === id);
-    const item = { id, playedAt:existing?.playedAt || new Date().toLocaleString(), savedAt:Date.now(), durationMs:currentGameDurationMs(), game:g.name, result, scoreText:displayCharTextForGame(scoreText || '', game), companion:displayCharNameForGame(game), details:meta && meta.details ? meta.details : null, log:existing?.log || '', roleContext:currentRoundRoleContext ? isolatedRole(currentRoundRoleContext) : null };
+    const item = { id, playedAt:existing?.playedAt || snap.playedAt || new Date().toLocaleString(), savedAt:Date.now(), durationMs:Number.isFinite(snap.durationMs) ? snap.durationMs : currentGameDurationMs(), game:g.name, result, scoreText:snap.scoreText || displayCharTextForGame(scoreText || '', game), companion:snap.companion || displayCharNameForGame(game), details:meta && meta.details ? meta.details : null, log:existing?.log || '', roleContext:snap.roleContext ? isolatedRole(snap.roleContext) : (currentRoundRoleContext ? isolatedRole(currentRoundRoleContext) : null) };
     if (!all[game]) all[game] = [];
     all[game] = [item].concat(all[game].filter(record => record.id !== id)).slice(0, 100);
     if (!deferSave) saveRecords(all);
-    currentRoundProgressRecordId = '';
-    try { petApplyGameReward(g, result, item.durationMs, currentRoundRecord); }
-    catch (error) { console.warn('[玩伴小屋] pet game reward failed:', error); toast('宠物陪玩奖励保存失败：' + error.message); }
-    return deferSave ? { item, all } : item;
+    if (!snapshot) currentRoundProgressRecordId = '';
+    const reward = () => {
+      try {
+        if (!snapshot || snap.petTarget) petApplyGameReward(g, result, item.durationMs, snapshot ? !!snap.recordBroken : currentRoundRecord, snap.petTarget, snap.petInfo);
+      }
+      catch (error) { console.warn('[玩伴小屋] pet game reward failed:', error); toast('宠物陪玩奖励保存失败：' + error.message); }
+    };
+    if (!deferSave) reward();
+    return deferSave ? { item, all, reward } : item;
   }
   function progressScoreValue(state) {
     const values = [state?.score, state?.totalScore, state?.total, state?.userScore];
@@ -2500,7 +2526,17 @@ export async function initWanbanXiaowu(options = {}) {
 	    const t = r.favoriteTheater;
 	    return normalizeTheaterText(t.text || t.lines || t);
 	  }
-	  function updateRecord(game, id, patch) { const all = records(); const arr = all[game] || []; const idx = arr.findIndex(r => r.id === id); if (idx < 0) return null; arr[idx] = Object.assign({}, arr[idx], patch || {}); all[game] = arr; saveRecords(all); return arr[idx]; }
+  function updateRecord(game, id, patch, deferSave) {
+    const all = records();
+    const arr = all[game] || [];
+    const idx = arr.findIndex(r => r.id === id);
+    if (idx < 0) return null;
+    arr[idx] = Object.assign({}, arr[idx], patch || {});
+    all[game] = arr;
+    if (deferSave) stageRecordsSave(all);
+    else saveRecords(all);
+    return arr[idx];
+  }
   function deleteRecord(game, id) { const all = records(); all[game] = (all[game] || []).filter(r => r.id !== id); saveRecords(all); }
   function recentGameLogs(game, companion) {
     const key = companion || companionRoleKey();
@@ -2802,7 +2838,7 @@ export async function initWanbanXiaowu(options = {}) {
     const rules = gameTheaterConditionRules(game, roleName).split('\n');
     return rules.find(x => x.indexOf(special + '：') === 0) || (theaterTitleForSpecial(special) + '：命中该特殊小剧场条件。');
   }
-  function singleSpecialTheater(game, scoreText, meta, durationMs) {
+  function singleSpecialTheater(game, scoreText, meta, durationMs, recordBroken = currentRoundRecord) {
     const score = parseScoreNumber(scoreText);
     meta = meta || {};
     const candidates = [];
@@ -2817,7 +2853,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (game === 'shuerte' && meta.focusRun) candidates.push('shuerte_focus');
     if (game === 'shuerte' && meta.regret) candidates.push('shuerte_regret');
     if (game === 'shuerte') {
-      if (currentRoundRecord) candidates.push('record');
+      if (recordBroken) candidates.push('record');
       if (durationMs >= 1200000) candidates.push('long_run');
       return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : '';
     }
@@ -2828,14 +2864,14 @@ export async function initWanbanXiaowu(options = {}) {
       if (Number(d.size || meta.size) === 6) candidates.push('klotski_master');
       if (Number(d.undos || meta.undoCount || 0) >= 10) candidates.push('klotski_undo');
       if (Number(d.elapsedMs || meta.elapsedMs || durationMs) >= 1200000) candidates.push('klotski_persistence');
-      if (currentRoundRecord || d.newBest || meta.newBest) candidates.push('record');
+      if (recordBroken || d.newBest || meta.newBest) candidates.push('record');
       return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : '';
     }
     if (game === 'minesweeper' && meta.badLuck) candidates.push('bad_luck');
     if (game === 'minesweeper' && meta.regret) candidates.push('minesweeper_regret');
     if (game === 'minesweeper' && meta.won && (meta.riskyChordSuccesses || 0) > 5) candidates.push('mine_lucky');
     if (game === 'minesweeper') {
-      if (currentRoundRecord) candidates.push('record');
+      if (recordBroken) candidates.push('record');
       if (!candidates.length && meta.won) candidates.push('super_good');
       return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : '';
     }
@@ -2902,15 +2938,15 @@ export async function initWanbanXiaowu(options = {}) {
     if (game === 'linklink' && (meta.completedAll || meta.details?.completedAll)) candidates.push('link_master');
     if (durationMs <= 15000 && ((game === 'tetris' && score < 200) || (game === 'snake' && score < 30) || ((game === 'jump' || game === 'plank') && score < 3) || (game === 'watermelon' && score < 120) || (game === 'game2048' && score < 128))) candidates.push('super_bad');
     if (game !== 'linklink' && durationMs >= 1200000) candidates.push('long_run');
-    if (currentRoundRecord) candidates.push('record');
+    if (recordBroken) candidates.push('record');
     if (game === 'screw' && !candidates.length) candidates.push(meta.completed ? 'screw_success' : 'screw_fail');
     return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : '';
   }
-  function doubleSpecialTheater(game, outcome, scoreText, meta) {
+  function doubleSpecialTheater(game, outcome, scoreText, meta, recordBroken = currentRoundRecord) {
     meta = meta || {};
     if (game === 'westernchess') { const d=meta.details||meta||{}, arr=[]; if((d.promotions||0)>0) arr.push('chess_promotion'); if((d.castles||0)>0) arr.push('chess_castle'); if(outcome==='draw') arr.push('chess_stalemate'); if(outcome==='user_win' && (d.userChecks||0)>=3) arr.push('chess_checkstorm'); if(outcome==='user_win' && (meta.materialSwing || d.materialSwing || 0) >= 800) arr.push('chess_material'); return arr.length ? arr[Math.floor(Math.random()*arr.length)] : ''; }
     if (game === 'chinesechess') { const d=meta.details||meta||{}, arr=[]; if((d.cannonHits||0)>0) arr.push('chinese_cannon'); if((d.riverCross||0)>0) arr.push('chinese_river'); if(outcome==='draw' || /困毙|长回合/.test(d.endReason||'')) arr.push('chinese_stalemate'); if(outcome==='user_win' && (d.userChecks||0)>=3) arr.push('chinese_checkstorm'); if(outcome==='user_win' && (meta.materialSwing || d.materialSwing || 0) >= 800) arr.push('chinese_material'); return arr.length ? arr[Math.floor(Math.random()*arr.length)] : ''; }
-    if (game === 'blackjack') { const d=meta.details||meta||{}; const arr=[]; if((d.blackjacks||0)>0) arr.push('bj_blackjack'); if((d.exact21||0)>0) arr.push('bj_exact21'); if(d.sixCard) arr.push('bj_six'); if(d.peekWin) arr.push('bj_peek_win'); if(d.tripleBust) arr.push('bad_luck'); if(d.charTripleBust) arr.push('bj_char_bust'); if((d.maxStreak||0)>=5) arr.push('bj_win5'); if(d.wonTiebreak) arr.push('bj_tiebreak'); if(d.peekBust) arr.push('bj_peek_bust'); if(currentRoundRecord) arr.push('record'); return arr.length ? arr[Math.floor(Math.random()*arr.length)] : ''; }
+    if (game === 'blackjack') { const d=meta.details||meta||{}; const arr=[]; if((d.blackjacks||0)>0) arr.push('bj_blackjack'); if((d.exact21||0)>0) arr.push('bj_exact21'); if(d.sixCard) arr.push('bj_six'); if(d.peekWin) arr.push('bj_peek_win'); if(d.tripleBust) arr.push('bad_luck'); if(d.charTripleBust) arr.push('bj_char_bust'); if((d.maxStreak||0)>=5) arr.push('bj_win5'); if(d.wonTiebreak) arr.push('bj_tiebreak'); if(d.peekBust) arr.push('bj_peek_bust'); if(recordBroken) arr.push('record'); return arr.length ? arr[Math.floor(Math.random()*arr.length)] : ''; }
     if (game === 'connect4d' && outcome === 'draw') return 'balanced';
     if (game === 'ludo' && Number(meta.userFlights || meta.details?.userFlights || 0) > 3) return 'flight_show';
     if (outcome === 'user_win') {
@@ -3668,7 +3704,7 @@ export async function initWanbanXiaowu(options = {}) {
       commitGameActiveDuration(true);
       if (wasStarted && opts.record) recordInterruptedGame(stoppedGame, { deferWrite:deferImmediateProgressWrites });
       if (deferImmediateProgressWrites) scheduleDeferredPersistenceFlush();
-      else flushAllProgressSaves();
+      else flushAllProgressSaves(true);
     }
     if (activeGameController) {
       try { activeGameController.destroy?.(); } catch(e) {}
@@ -4947,42 +4983,47 @@ export async function initWanbanXiaowu(options = {}) {
     if (auto) state.petAction = auto;
     return state;
   }
-  function petApplyGameReward(gameMeta, result, durationMs, recordBroken) {
-    if (!petHasCurrentPet()) return;
-    let state = applyPetVisitAndDecay(petTestState());
-    if (state.ended) return;
-    const mode = gameMeta && gameMeta.mode;
-    const outcome = resultOutcome(result);
-    const growthAdd = mode === 'double' && outcome !== 'draw' && outcome !== 'finished'
-      ? (outcome === 'user_win' ? 6 : 4)
-      : (Number(durationMs || 0) >= 3600000 ? 6 : 4);
-    const recordBonus = recordBroken ? 5 : 0;
-    const today = todayKey();
-    const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
-    day.play = Number(day.play || 0) + 1;
-    if (recordBonus) day.record = Number(day.record || 0) + recordBonus;
-    day.snapshot = petSnapshotData(state);
-    if (state.stage !== 'egg') state.happiness = Math.min(100, Number(state.happiness || 0) + 5);
-    const beforeGrowth = Number(state.growth || 0);
-    state.growth = Math.min(petStageCap(state.stage), beforeGrowth + growthAdd + recordBonus);
-    const added = Math.max(0, Number(state.growth || 0) - beforeGrowth);
-    day.growth = Number(day.growth || 0) + added;
-    petToastGrowth((gameMeta && gameMeta.name ? gameMeta.name : '小游戏') + '陪玩', added);
-    state.days = Object.assign({}, state.days || {}, { [today]:day });
-    const sideCounts = Object.assign({}, state.sideCounts || {});
-    const triggered = new Set(state.sideTriggered || []);
-    (petTestInfoCache?.side_story || []).forEach(side => {
-      const trigger = side.trigger || {};
-      if (trigger.behavior !== 'play') return;
-      if (!petSideTriggerActionAllowed(trigger, state)) return;
-      sideCounts[side.id] = Number(sideCounts[side.id] || 0) + 1;
-      if ((state.completedSide || []).includes(side.id)) return;
-      if (trigger.behavior_trigger_type === 'count' && sideCounts[side.id] >= Number(trigger.threshold || 0)) triggered.add(side.id);
-      if (trigger.behavior_trigger_type === 'probability' && Math.random() < Number(trigger.probability || 0)) triggered.add(side.id);
+  function petApplyGameReward(gameMeta, result, durationMs, recordBroken, targetOverride, infoOverride) {
+    if (!targetOverride && !petHasCurrentPet()) return;
+    const target = targetOverride || petStorageTarget();
+    const info = infoOverride || petTestInfoCache || { side_story:[] };
+    let added = 0;
+    updatePetTargetState(target, storedState => {
+      let state = applyPetVisitAndDecay(storedState);
+      if (state.ended) return state;
+      const mode = gameMeta && gameMeta.mode;
+      const outcome = resultOutcome(result);
+      const growthAdd = mode === 'double' && outcome !== 'draw' && outcome !== 'finished'
+        ? (outcome === 'user_win' ? 6 : 4)
+        : (Number(durationMs || 0) >= 3600000 ? 6 : 4);
+      const recordBonus = recordBroken ? 5 : 0;
+      const today = todayKey();
+      const day = Object.assign({ feed:0, pet:0, poke:0, outing:0, play:0 }, state.days[today] || {});
+      day.play = Number(day.play || 0) + 1;
+      if (recordBonus) day.record = Number(day.record || 0) + recordBonus;
+      day.snapshot = petSnapshotData(state);
+      if (state.stage !== 'egg') state.happiness = Math.min(100, Number(state.happiness || 0) + 5);
+      const beforeGrowth = Number(state.growth || 0);
+      state.growth = Math.min(petStageCap(state.stage), beforeGrowth + growthAdd + recordBonus);
+      added = Math.max(0, Number(state.growth || 0) - beforeGrowth);
+      day.growth = Number(day.growth || 0) + added;
+      state.days = Object.assign({}, state.days || {}, { [today]:day });
+      const sideCounts = Object.assign({}, state.sideCounts || {});
+      const triggered = new Set(state.sideTriggered || []);
+      (info.side_story || []).forEach(side => {
+        const trigger = side.trigger || {};
+        if (trigger.behavior !== 'play') return;
+        if (!petSideTriggerActionAllowed(trigger, state)) return;
+        sideCounts[side.id] = Number(sideCounts[side.id] || 0) + 1;
+        if ((state.completedSide || []).includes(side.id)) return;
+        if (trigger.behavior_trigger_type === 'count' && sideCounts[side.id] >= Number(trigger.threshold || 0)) triggered.add(side.id);
+        if (trigger.behavior_trigger_type === 'probability' && Math.random() < Number(trigger.probability || 0)) triggered.add(side.id);
+      });
+      state.sideCounts = sideCounts;
+      state.sideTriggered = Array.from(triggered);
+      return updatePetPendingStories(state, info);
     });
-    state.sideCounts = sideCounts;
-    state.sideTriggered = Array.from(triggered);
-    savePetTestState(updatePetPendingStories(state, petTestInfoCache || { side_story:[] }));
+    petToastGrowth((gameMeta && gameMeta.name ? gameMeta.name : '小游戏') + '陪玩', added);
   }
   function petApplyDesktopBallReward(amount, recordBroken) {
     if (!petHasCurrentPet()) return petTestState();
@@ -5688,7 +5729,7 @@ export async function initWanbanXiaowu(options = {}) {
         flushDeferredWindowStateSave();
         flushSettingsProgress();
         pauseGameForInactiveSurface();
-        flushAllProgressSaves();
+        flushAllProgressSaves(true);
         clearPetTimers();
       } else if (settings().petDesktopEnabled) syncPetDesktop();
     });
@@ -5718,10 +5759,10 @@ export async function initWanbanXiaowu(options = {}) {
         win.addEventListener('pagehide', () => {
           flushDeferredWindowStateSave();
           flushSettingsProgress();
-          if (!gameStarted || !currentGame) { flushAllProgressSaves(); return; }
+          if (!gameStarted || !currentGame) { flushAllProgressSaves(true); return; }
           try { activeGameController?.save?.(); } catch(e) {}
           commitGameActiveDuration(true, true);
-          flushAllProgressSaves();
+          flushAllProgressSaves(true);
           recordInterruptedGame(currentGame);
           flushRecordsSave();
         });
@@ -8720,65 +8761,52 @@ export async function initWanbanXiaowu(options = {}) {
     syncPopupModeClass();
     const body = qs('#wb-body'); body.className = 'wb-body';
     const ids = Object.values(GAME_META).filter(g => g.mode === mode).map(g => g.id);
-    body.innerHTML = '<div class="wb-cardgrid"></div>';
+    body.innerHTML = '<div class="wb-cardgrid">' + ids.map(id => {
+      const g = GAME_META[id];
+      return '<div class="wb-game-card" data-game="' + id + '">' + gameIconHTML(g) + '<div class="wb-game-info"><div class="wb-game-name">' + esc(g.name) + '</div><div class="wb-muted" data-game-score="' + id + '">读取中…</div></div></div>';
+    }).join('') + '</div>';
     const grid = qs('.wb-cardgrid', body);
-    const mobile = isMobileHost();
-    const firstBatch = mobile ? 5 : 9;
-    const batchSize = mobile ? 8 : 12;
-    let cursor = 0;
-    const appendBatch = count => {
-      if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
-      const end = Math.min(ids.length, cursor + count);
-      const wrapper = getHostDocument().createElement('div');
-      wrapper.innerHTML = ids.slice(cursor, end).map(id => {
-        const g = GAME_META[id];
-        return '<div class="wb-game-card" data-game="' + id + '">' + gameIconHTML(g) + '<div class="wb-game-info"><div class="wb-game-name">' + esc(g.name) + '</div><div class="wb-muted">' + esc(cardScoreDisplay(id)) + '</div></div></div>';
-      }).join('');
-      const cards = Array.from(wrapper.children);
-      cards.forEach(card => {
-        card.addEventListener('pointerdown', () => prepareGameEntry(card.dataset.game), { passive:true, once:true });
-        card.addEventListener('pointerenter', () => prepareGameEntry(card.dataset.game), { passive:true, once:true });
-        card.onclick = () => {
-          cancelGameListRendering();
-          currentGame = card.dataset.game;
-          if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode;
-          scheduleWindowStateSave(currentTab, currentGame);
-          const saved = progressSaveCache[currentGame] || (progressReadCache.has(currentGame) ? gameProgress(currentGame) : undefined);
-          renderGame(currentGame, saved);
-        };
-        grid.appendChild(card);
-      });
-      const warmIds = ids.slice(cursor, end);
-      const warmProgress = deadline => {
-        if (renderToken !== gameListRenderToken || currentGame) return;
-        while (warmIds.length && (!deadline?.timeRemaining || deadline.timeRemaining() > 3)) {
-          const game = warmIds.shift();
-          if (!progressReadCache.has(game) && !progressSaveCache[game]) readGameProgress(game);
-          if (!deadline?.timeRemaining) break;
-        }
-        if (!warmIds.length || renderToken !== gameListRenderToken || currentGame) return;
-        const view = getHostWindow();
-        if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(warmProgress, { timeout:1200 });
-        else view.setTimeout(() => warmProgress(null), 90);
-      };
-      const warmView = getHostWindow();
-      if (typeof warmView.requestIdleCallback === 'function') warmView.requestIdleCallback(warmProgress, { timeout:1200 });
-      else warmView.setTimeout(() => warmProgress(null), 90);
-      observeGameCardIcons(grid, cursor === 0);
-      cursor = end;
-      if (cursor >= ids.length) {
-        gameListLoadObserver?.disconnect();
-        gameListLoadObserver = null;
-        qs('.wb-game-list-sentinel', grid)?.remove();
-        return;
-      }
-      const view = getHostWindow();
-      view.requestAnimationFrame(() => {
-        if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
-        appendBatch(batchSize);
-      });
+    const cardFromEvent = event => event.target?.closest?.('.wb-game-card');
+    const prepareFromEvent = event => {
+      const card = cardFromEvent(event);
+      if (card && grid.contains(card)) prepareGameEntry(card.dataset.game);
     };
-    appendBatch(firstBatch);
+    grid.addEventListener('pointerdown', prepareFromEvent, { passive:true });
+    grid.addEventListener('pointerover', prepareFromEvent, { passive:true });
+    grid.addEventListener('click', event => {
+      const card = cardFromEvent(event);
+      if (!card || !grid.contains(card)) return;
+      cancelGameListRendering();
+      currentGame = card.dataset.game;
+      if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode;
+      scheduleWindowStateSave(currentTab, currentGame);
+      const saved = progressSaveCache[currentGame] || (progressReadCache.has(currentGame) ? gameProgress(currentGame) : undefined);
+      renderGame(currentGame, saved);
+    });
+    observeGameCardIcons(grid, true);
+    const pendingStats = ids.slice();
+    const fillStats = deadline => {
+      if (renderToken !== gameListRenderToken || !grid?.isConnected || currentGame) return;
+      const inputPending = !!getHostWindow().navigator?.scheduling?.isInputPending?.({ includeContinuous:true });
+      if (!inputPending) {
+        do {
+          const id = pendingStats.shift();
+          const target = qs('[data-game-score="' + id + '"]', grid);
+          if (target) target.textContent = cardScoreDisplay(id);
+          if (!progressReadCache.has(id) && !progressSaveCache[id]) readGameProgress(id);
+        } while (pendingStats.length && deadline?.timeRemaining?.() > 5);
+      }
+      if (!pendingStats.length || renderToken !== gameListRenderToken || currentGame) return;
+      const view = getHostWindow();
+      if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(fillStats, { timeout:1200 });
+      else view.setTimeout(() => fillStats(null), 40);
+    };
+    afterNextPaint(() => {
+      if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
+      const view = getHostWindow();
+      if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(fillStats, { timeout:1200 });
+      else view.setTimeout(() => fillStats(null), 40);
+    });
     scheduleGameIconWarmup();
   }
 
@@ -9267,7 +9295,7 @@ export async function initWanbanXiaowu(options = {}) {
   function exportAllData() {
     flushSettingsProgress();
     if (gameStarted) { try { activeGameController?.save?.(); } catch (_) {} }
-    flushAllProgressSaves();
+    flushAllProgressSaves(true);
     const data = { app:'玩伴小屋', scriptId:SCRIPT_ID, version:EXTENSION_VERSION, exportedAt:new Date().toISOString(), items:{} };
     exportDataKeys().forEach(key => {
       if (key === STORAGE_SETTINGS) data.items[key] = settingsWithoutApi(loadJSON(key, {}));
@@ -11161,6 +11189,7 @@ export async function initWanbanXiaowu(options = {}) {
     addMenuItem();
     bindRuntimeVisibility();
     bindPersistenceInputTracking();
+    scheduleGameIconWarmup();
     runtimeReady = true;
     if (runtimeOpenRequested && runtimeOpenHandler) {
       runtimeOpenRequested = false;
@@ -11358,6 +11387,7 @@ export async function initWanbanXiaowu(options = {}) {
     });
     if (!needsFirstMoverChoice(id) && !['linklink','blackjack','numberklotski'].includes(id) && DEFAULT_LINES[id] && DEFAULT_LINES[id].start) speak(id, 'start');
     scheduleGameEntryPrompt(id, qs('#wb-start-cover-btn'), prefetchedProgress);
+    scheduleTheaterWarmup(id);
     if (shouldSyncRole) afterNextPaint(() => {
       if (currentGame === id && !gameStarted) syncCurrentHostRoleContext();
     });
@@ -11840,11 +11870,11 @@ function showGameRecords(game, page) {
 	    appendModalMask(mask);
 	    if (canFavorite) {
 	      const rec = (records()[meta.game] || []).find(r => r.id === meta.recordId);
-	      updateRecord(meta.game, meta.recordId, { theaterInfo: Object.assign({}, rec && rec.theaterInfo ? rec.theaterInfo : {}, { title: title || '角色互动小剧场', text }) });
+	      updateRecord(meta.game, meta.recordId, { theaterInfo: Object.assign({}, rec && rec.theaterInfo ? rec.theaterInfo : {}, { title: title || '角色互动小剧场', text }) }, true);
 	    }
 	    const fav = qs('#wb-theater-favorite', mask);
 	    if (fav) fav.onclick = () => {
-	      updateRecord(meta.game, meta.recordId, { favoriteTheater: { title: title || '角色互动小剧场', text, savedAt: Date.now() } });
+	      updateRecord(meta.game, meta.recordId, { favoriteTheater: { title: title || '角色互动小剧场', text, savedAt: Date.now() } }, true);
 	      fav.textContent = '♥ 已收藏';
 	      fav.disabled = true;
 	      toast('已收藏小剧场到游戏记录');
@@ -11855,15 +11885,46 @@ function showGameRecords(game, page) {
     const cfg = settings(); const rec = (records()[game] || []).find(r => r.id === recordId); if (!rec) { toast('未找到游戏记录'); return ''; }
     const roleName = rec.companion || displayCharNameForGame(game);
     const fallback = roleName + '回顾了这局' + ((GAME_META[game] || {}).name || '游戏') + '：' + (rec.scoreText || formatRecordResult(rec.result)) + '。用时不长，但关键过程很清楚；你有几步处理得不错，也有可以调整的地方。下次再开局，可以从这次的转折点开始改。';
-    if (!cfg.apiUrl || !cfg.apiModel) { updateRecord(game, recordId, { log:fallback }); toast('已生成离线日志'); return fallback; }
+    if (!cfg.apiUrl || !cfg.apiModel) { updateRecord(game, recordId, { log:fallback }, true); toast('已生成离线日志'); return fallback; }
 	    const theaterInfo = rec.theaterInfo || {};
 	    const logCfg = rec.roleContext ? withRoleContext(cfg, rec.roleContext) : rolePromptConfig(roleName, cfg);
 	    const normalizedScoreText = String(rec.scoreText || '').replace(new RegExp(String(roleName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '{{char}}').replace(new RegExp('TA' + '赢', 'g'), '{{char}}赢').replace(/TA/g, '{{char}}');
 	    const theaterText = String(theaterInfo.text || (rec.favoriteTheater && rec.favoriteTheater.text) || '').trim();
 	    const prompt = [(logCfg.breakLimitPrompt || '').trim(), specialLanguageRequirement('log', logCfg), ...(promptTemplates().gameLog || PROMPT_TEMPLATES.gameLog),'游戏：' + ((GAME_META[game] || {}).name || game),'','游戏情况（记录表字段，均为 user 视角）：\n' + gameLogSituation(game, rec) + '\n' + gameLogFieldRules(game, roleName),'','原始结算文本：\n' + normalizedScoreText,'','结果：\n' + formatRecordResultForPrompt(rec.result),'','用时：\n' + formatDuration(rec.durationMs),'','本局详细过程数据：\n' + gameLogDetailText(game, rec),'','本局触发过的角色语录：\n' + lineEventLogText(rec.lineEvents),'','本局触发的小剧场主题：\n' + (theaterInfo.title || '角色互动小剧场'),'','本局小剧场触发条件：\n' + (theaterInfo.condition || theaterConditionForSpecial(game, theaterInfo.special || '', roleName)),'','本局实际小剧场内容：\n' + (theaterText || '无'),'','当前游戏全部特殊小剧场规则：\n' + gameTheaterConditionRules(game, roleName),'','前几次同角色同游戏日志：\n' + (recentGameLogs(game, roleKeyOf(logCfg) || roleName) || '无'),'','陪伴者：\n' + roleName,'','角色描述：\n' + currentCharDescription(logCfg),'','世界背景：\n' + (selectedWorldText(logCfg) || '无'),'','大总结：\n' + (selectedSummaryText(logCfg) || '无')].filter(Boolean).join('\n');
-	    let log = fallback; try { log = await callApiText(logCfg, prompt, promptTemplates().systems.gameLog || PROMPT_TEMPLATES.systems.gameLog); } catch(e) { toast('日志生成失败，已使用本地日志'); } updateRecord(game, recordId, { log }); return log;
+	    let log = fallback; try { log = await callApiText(logCfg, prompt, promptTemplates().systems.gameLog || PROMPT_TEMPLATES.systems.gameLog); } catch(e) { toast('日志生成失败，已使用本地日志'); } updateRecord(game, recordId, { log }, true); return log;
   }
-  async function showGameOver(game, title, scoreText, result, meta) {
+  function queuePendingGameReward(reward) {
+    if (typeof reward !== 'function') return;
+    const run = () => {
+      if (!pendingGameRewards.delete(run)) return;
+      reward();
+    };
+    pendingGameRewards.add(run);
+    const view = getHostWindow();
+    if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(run, { timeout:1800 });
+    else view.setTimeout(run, 180);
+  }
+  function flushPendingGameRewards() {
+    Array.from(pendingGameRewards).forEach(run => run());
+  }
+  function queueGameOverSettlement(settle) {
+    const run = options => {
+      if (!pendingGameOverSettlements.delete(run)) return;
+      try { settle(options || {}); }
+      catch (error) { console.error('[玩伴小屋] game settlement failed:', error); toast('本局结算暂存失败，请先导出备份'); }
+    };
+    pendingGameOverSettlements.add(run);
+    afterNextPaint(() => {
+      if (!pendingGameOverSettlements.has(run)) return;
+      const view = getHostWindow();
+      if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(() => run({ render:true }), { timeout:180 });
+      else view.setTimeout(() => run({ render:true }), 16);
+    });
+  }
+  function flushPendingGameOverSettlements() {
+    Array.from(pendingGameOverSettlements).forEach(run => run({ render:false }));
+  }
+  function showGameOver(game, title, scoreText, result, meta) {
     const doc = getHostDocument();
     const old = qs('#wb-gameover-mask', doc); if (old) old.remove();
     if (snakeTimer) clearInterval(snakeTimer);
@@ -11877,67 +11938,99 @@ function showGameRecords(game, page) {
     const inferred = result || inferResult(game, title, scoreText);
     const g = GAME_META[game] || { name: '游戏', unit: '分' };
     const gameOverSettings = settings();
-    // Paint the result first. Record serialization and localStorage writes can take
-    // several seconds on mobile devices when the history is large.
-    commitGameActiveDuration(false);
+    const durationMs = currentGameDurationMs();
+    const companion = displayCharNameForGame(game);
+    const roleContext = currentRoundRoleContext ? isolatedRole(currentRoundRoleContext) : null;
+    const settlement = {
+      game, title, scoreText, result:inferred, meta:meta || {}, durationMs,
+      companion, roleContext, roleKey:roleKeyOf(roleContext) || activeGameRoleKey(game),
+      progressRecordId:currentRoundProgressRecordId || ('rec_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)),
+      playedAt:new Date().toLocaleString(), scoreTextDisplay:displayCharTextForGame(scoreText || '', game),
+      lineEvents:currentRoundLineEvents.slice(-120), recordBroken:!!currentRoundRecord, dismissed:false,
+    };
+    gameAccumulatedMs = durationMs;
+    gameActiveStartedAt = 0;
     clearGameDurationRewardTimer();
     gamePaused = true;
     gameStarted = false;
+    currentRoundProgressRecordId = '';
     const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
-    const high = scoreDisplay(game);
+    const high = qs('#wb-high', doc)?.textContent || '本局记录已更新';
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-gameover-mask';
 	    const logAction = gameOverSettings.companion ? '<button class="wb-btn" id="wb-generate-log" disabled>生成日志</button>' : '';
-	    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">' + esc(title || '游戏结束') + '</div><div style="margin-bottom:14px;line-height:1.8;"><div>游戏：' + esc(g.name) + '</div><div>' + esc(displayCharTextForGame(scoreText || '本局分数：0' + g.unit, game)) + '</div><div>' + esc(high) + '</div><div>陪伴者：' + esc(displayCharNameForGame(game)) + '</div></div><div class="wb-actions"><button class="wb-btn primary" id="wb-next-round" disabled>开启下一把</button>' + logAction + '<button class="wb-btn" id="wb-over-close" disabled>留在本局</button></div></div>';
+	    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">' + esc(title || '游戏结束') + '</div><div style="margin-bottom:14px;line-height:1.8;"><div>游戏：' + esc(g.name) + '</div><div>' + esc(settlement.scoreTextDisplay || '本局分数：0' + g.unit) + '</div><div>' + esc(high) + '</div><div>陪伴者：' + esc(companion) + '</div></div><div class="wb-actions"><button class="wb-btn primary" id="wb-next-round">开启下一把</button>' + logAction + '<button class="wb-btn" id="wb-over-close">留在本局</button></div></div>';
     appendModalMask(mask);
     const saveStatus = doc.createElement('div');
     saveStatus.className = 'wb-api-status';
-    saveStatus.innerHTML = '<div id="wb-record-save-status" role="status">正在保存结算…</div><div class="wb-actions"><button class="wb-btn" id="wb-record-save-retry" hidden>重试保存记录</button><button class="wb-btn" id="wb-record-save-backup" hidden>导出备份</button></div>';
+    saveStatus.innerHTML = '<div id="wb-record-save-status" role="status"></div><div class="wb-actions"><button class="wb-btn" id="wb-record-save-retry" hidden>重试保存记录</button><button class="wb-btn" id="wb-record-save-backup" hidden>导出备份</button></div>';
     qs('.wb-modal', mask).appendChild(saveStatus);
-    await new Promise(resolve => {
-      const view = doc.defaultView || getHostWindow();
-      if (typeof view?.requestAnimationFrame === 'function') view.requestAnimationFrame(() => view.setTimeout(resolve, 0));
-      else if (typeof view?.setTimeout === 'function') view.setTimeout(resolve, 0);
-      else setTimeout(resolve, 0);
-    });
-    clearProgress(game);
-    if (g.mode === 'double' && inferred === 'ta_win' && !result) addTaWin(game);
-    const recorded = recordGameResult(game, title, scoreText, inferred, meta, true);
-    const rec = recorded.item;
-    const outcome = resultOutcome(inferred);
-    let special = '';
-    if (g.mode === 'double') { special = doubleSpecialTheater(game, outcome, scoreText, meta); const streak = game === 'bombnumber' ? 0 : doubleStreak(game, outcome, rec.companion); if ((!special || game === 'gomoku') && outcome === 'user_win' && streak >= 3) special = 'win_streak3'; if ((!special || game === 'gomoku') && outcome === 'ta_win' && streak >= 3) special = 'lose_streak3'; }
-    else special = singleSpecialTheater(game, scoreText, meta, rec.durationMs || 0);
-    const allowDrawTheater = !(outcome === 'draw' && ['gomoku','oldmaid','ludo'].includes(game));
-    const shouldShowTheater = !!(gameOverSettings.companion && gameOverSettings.theaterEnabled && allowDrawTheater && (special || Math.random() < 0.6));
-    if (shouldShowTheater) {
-      currentRoundTheaterInfo = { special, title:special ? theaterTitleForSpecial(special) : '角色互动小剧场', condition:theaterConditionForSpecial(game, special, rec.companion), allRules:gameTheaterConditionRules(game, rec.companion) };
-    } else {
-      const reason = gameOverSettings.companion && gameOverSettings.theaterEnabled
-        ? (allowDrawTheater ? '本局未触发小剧场。普通小剧场仅有60%概率触发；特殊小剧场未命中。' : '本局为平局，当前游戏不触发平局小剧场。')
-        : '小剧场未开启。';
-      currentRoundTheaterInfo = { special:'', title:'无', condition:reason, allRules:gameTheaterConditionRules(game, rec.companion) };
-    }
-    rec.lineEvents = currentRoundLineEvents.slice(-120);
-    rec.theaterInfo = currentRoundTheaterInfo;
-    saveRecords(recorded.all);
     qs('#wb-record-save-retry', mask).onclick = () => { flushRecordsSave(); };
     qs('#wb-record-save-backup', mask).onclick = exportAllData;
     refreshRecordSaveStatus();
-    if (shouldShowTheater) {
-      const roleName = activeGameRoleName(game);
-      const cachedTheater = getTheaterCache()[theaterCacheKey(game, outcome, special)] || doubleTheaterFallback(game, outcome, special, roleName);
-	      showTheaterModal(special ? theaterTitleForSpecial(special) : '角色互动小剧场', cachedTheater, { game, recordId: rec.id });
-    }
-    const logBtnHandler = async () => { const btn = qs('#wb-generate-log', mask); if (!btn) return; btn.disabled = true; btn.textContent = '生成中...'; await generateGameLog(game, rec.id); btn.disabled = false; btn.textContent = '查看日志'; btn.onclick = () => { const latest = (records()[game] || []).find(r => r.id === rec.id); if (latest) showRecordLogModal(latest, game); }; };
-	    const logBtn = qs('#wb-generate-log', mask); if (logBtn) logBtn.onclick = logBtnHandler;
-    if (logBtn) logBtn.disabled = false;
-    if (gameOverSettings.companion && gameOverSettings.autoLog) setTimeout(logBtnHandler, 80);
-    qs('#wb-next-round', mask).disabled = false;
-    qs('#wb-over-close', mask).disabled = false;
-    qs('#wb-next-round', mask).onclick = () => { mask.remove(); renderGame(game); startCurrentGame(game); };
-    qs('#wb-over-close', mask).onclick = () => mask.remove();
+    qs('#wb-next-round', mask).onclick = () => {
+      settlement.dismissed = true;
+      mask.remove();
+      renderGame(game);
+      startCurrentGame(game);
+    };
+    qs('#wb-over-close', mask).onclick = () => { settlement.dismissed = true; mask.remove(); };
+    clearProgress(game);
+    queueGameOverSettlement(({ render }) => {
+      if (g.mode === 'double' && inferred === 'ta_win' && !result) addTaWin(game);
+      let petTarget = null;
+      try { if (petHasCurrentPet()) petTarget = Object.assign({}, petStorageTarget()); } catch (_) {}
+      const recorded = recordGameResult(game, title, scoreText, inferred, settlement.meta, true, {
+        durationCommitted:true,
+        durationMs:settlement.durationMs,
+        progressRecordId:settlement.progressRecordId,
+        playedAt:settlement.playedAt,
+        scoreText:settlement.scoreTextDisplay,
+        companion:settlement.companion,
+        roleContext:settlement.roleContext,
+        recordBroken:settlement.recordBroken,
+        petTarget,
+        petInfo:petTestInfoCache,
+      });
+      const rec = recorded.item;
+      const outcome = resultOutcome(inferred);
+      let special = '';
+      if (g.mode === 'double') {
+        special = doubleSpecialTheater(game, outcome, scoreText, settlement.meta, settlement.recordBroken);
+        const streak = game === 'bombnumber' ? 0 : doubleStreak(game, outcome, rec.companion);
+        if ((!special || game === 'gomoku') && outcome === 'user_win' && streak >= 3) special = 'win_streak3';
+        if ((!special || game === 'gomoku') && outcome === 'ta_win' && streak >= 3) special = 'lose_streak3';
+      } else special = singleSpecialTheater(game, scoreText, settlement.meta, rec.durationMs || 0, settlement.recordBroken);
+      const allowDrawTheater = !(outcome === 'draw' && ['gomoku','oldmaid','ludo'].includes(game));
+      const shouldShowTheater = !!(gameOverSettings.companion && gameOverSettings.theaterEnabled && allowDrawTheater && (special || Math.random() < 0.6));
+      const theaterInfo = shouldShowTheater
+        ? { special, title:special ? theaterTitleForSpecial(special) : '角色互动小剧场', condition:theaterConditionForSpecial(game, special, rec.companion), allRules:gameTheaterConditionRules(game, rec.companion) }
+        : { special:'', title:'无', condition:gameOverSettings.companion && gameOverSettings.theaterEnabled ? (allowDrawTheater ? '本局未触发小剧场。普通小剧场仅有60%概率触发；特殊小剧场未命中。' : '本局为平局，当前游戏不触发平局小剧场。') : '小剧场未开启。', allRules:gameTheaterConditionRules(game, rec.companion) };
+      rec.lineEvents = settlement.lineEvents;
+      rec.theaterInfo = theaterInfo;
+      stageRecordsSave(recorded.all);
+      if (!gameStarted && currentGame === game) currentRoundTheaterInfo = theaterInfo;
+      queuePendingGameReward(recorded.reward);
+      refreshRecordSaveStatus();
+      const shellVisible = qs('#' + SHELL_ID, doc)?.classList.contains('wb-shell-visible');
+      if (shouldShowTheater && render && !settlement.dismissed && mask.isConnected && shellVisible) {
+        const cachedTheater = getTheaterCache()[theaterCacheKeyForName(settlement.roleKey, game, outcome, special)] || doubleTheaterFallback(game, outcome, special, rec.companion);
+        showTheaterModal(theaterInfo.title, cachedTheater, { game, recordId:rec.id });
+      }
+      const logBtn = qs('#wb-generate-log', mask);
+      const logBtnHandler = async () => {
+        if (logBtn) { logBtn.disabled = true; logBtn.textContent = '生成中...'; }
+        await generateGameLog(game, rec.id);
+        if (logBtn) {
+          logBtn.disabled = false;
+          logBtn.textContent = '查看日志';
+          logBtn.onclick = () => { const latest = (records()[game] || []).find(r => r.id === rec.id); if (latest) showRecordLogModal(latest, game); };
+        }
+      };
+      if (logBtn) { logBtn.disabled = false; logBtn.onclick = logBtnHandler; }
+      if (gameOverSettings.companion && gameOverSettings.autoLog) getHostWindow().setTimeout(logBtnHandler, 80);
+    });
   }
 
   function renderLinePresetSelect(game) {
