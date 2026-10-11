@@ -166,14 +166,15 @@ async function openListedGame(game, tab = 'single') {
   }
   assert.ok(await evaluate(`!!document.querySelector('[data-game="${game}"]')`), game + ' card was not rendered');
   await evaluate(`document.querySelector('[data-game="${game}"]').click()`);
-  await waitFor('!!document.querySelector("#wb-start-cover-btn")');
+  const autoStarted = game === 'linklink' ? '#ll-board' : (game === 'blackjack' ? '.wb-bj' : '');
+  await waitFor('!!document.querySelector("#wb-start-cover-btn")' + (autoStarted ? ` || !!document.querySelector(${JSON.stringify(autoStarted)})` : ''));
 }
 async function smokeStartListedGame(game, tab, selector) {
   if (!(await evaluate('!!document.querySelector(".wb-cardgrid")'))) {
     await evaluate('document.querySelector("#wb-back")?.click()');
   }
   await openListedGame(game, tab);
-  await evaluate('window.__errors.length=0;document.querySelector("#wb-start-cover-btn").click()');
+  await evaluate('window.__errors.length=0;document.querySelector("#wb-start-cover-btn")?.click()');
   for (let i = 0; i < 160 && !(await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`)); i++) {
     const action = await evaluate(`(()=>{
       const progress=document.querySelector('#wb-progress-new');
@@ -189,6 +190,21 @@ async function smokeStartListedGame(game, tab, selector) {
     await sleep(action ? 70 : 30);
   }
   assert.ok(await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`), game + ' did not start');
+  if (game === 'linklink') {
+    const linkInteraction = await evaluate(`(async()=>{
+      const board=document.querySelector('#ll-board');
+      const tiles=Array.from(board.querySelectorAll('.wb-link-tile'));
+      const tile=tiles.find(item=>!item.classList.contains('empty')&&!item.classList.contains('stone'));
+      const started=performance.now();
+      tile.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',isPrimary:true}));
+      const handler=performance.now()-started;
+      await new Promise(requestAnimationFrame);
+      return {handler,selected:tile.classList.contains('sel'),stable:tiles.every((item,index)=>item===board.querySelectorAll('.wb-link-tile')[index])};
+    })()`);
+    assert.equal(linkInteraction.selected, true, 'link-link tap must select the tile');
+    assert.equal(linkInteraction.stable, true, 'link-link selection must reuse every tile node');
+    assert.ok(linkInteraction.handler < 30, 'link-link selection handler took ' + linkInteraction.handler.toFixed(1) + 'ms');
+  }
   const errors = await evaluate('window.__errors.slice()');
   assert.deepEqual(errors, [], game + ' startup errors: ' + JSON.stringify(errors));
   await evaluate('document.querySelector("#wb-back").click()');
@@ -400,6 +416,13 @@ try {
   await evaluate(`(()=>{
     const button=Array.from(document.querySelectorAll('.wb-shuerte-cell')).find(cell=>cell.querySelector('.wb-shuerte-number')?.textContent==='9');
     button.click();
+    window.__progressStorageMessages=[];
+    window.__progressConsoleLog=console.log;
+    console.log=(...args)=>{
+      const message=args.map(String).join(' ');
+      if(message.includes('保存失败：浏览器存储空间不足或不可用')) window.__progressStorageMessages.push(message);
+      window.__progressConsoleLog(...args);
+    };
     window.__nativeStorageSet=Storage.prototype.setItem;
     Storage.prototype.setItem=function(key,value){
       if(key==='wanbanXiaowu_progress_v1__shuerte') throw new DOMException('temporary quota failure','QuotaExceededError');
@@ -407,6 +430,7 @@ try {
     };
     document.querySelector('#wb-pause').click();
     document.querySelector('#wb-close').click();
+    window.dispatchEvent(new Event('pagehide'));
   })()`);
   assert.equal(await evaluate('document.querySelector("#wanbanXiaowu-shell").classList.contains("wb-shell-visible")'), false, 'failed storage writes must still hide the popup immediately');
   await waitFor('document.querySelector("#wb-body").childElementCount===0');
@@ -421,11 +445,15 @@ try {
   await waitFor('!!document.querySelector("#wb-progress-continue")');
   await evaluate('document.querySelector("#wb-progress-continue").click()');
   await waitFor('document.querySelector("#wb-shuerte-target")?.textContent==="目标：10"');
-  assert.equal(await evaluate(`import('/src/runtime/storage.js?progress-check').then(module=>{
+  const recoveredProgress = await evaluate(`import('/src/runtime/storage.js?progress-check').then(module=>{
     const shard=localStorage.getItem('wanbanXiaowu_progress_v1__shuerte');
     const aggregate=localStorage.getItem('wanbanXiaowu_progress_v1');
-    return shard?module.decodeStoredJSON(shard).next:module.decodeStoredJSON(aggregate).shuerte.next;
-  })`), 10, 'pending progress must persist after storage recovers');
+    return shard?{source:'shard',next:module.decodeStoredJSON(shard).next}:{source:'aggregate',next:module.decodeStoredJSON(aggregate).shuerte.next};
+  })`);
+  assert.equal(recoveredProgress.next, 10, 'pending progress must persist after storage recovers');
+  assert.equal(recoveredProgress.source, 'aggregate', 'a blocked shard should use the compatible aggregate fallback');
+  assert.equal(await evaluate('window.__progressStorageMessages.length'), 0, 'successful fallback storage must not show a false failure warning');
+  await evaluate('console.log=window.__progressConsoleLog');
   await evaluate(`(async()=>{
     const board=document.querySelector('#wb-shuerte-board');
     for(let value=10;value<=16;value++){

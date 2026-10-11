@@ -169,6 +169,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (modularGameFactoryLoaders[id]) loadModularGameFactory(id).catch(() => {});
     const icon = GAME_META[id]?.iconImage;
     if (icon) predecodeGameIcon(icon, 'high');
+    if (!progressReadCache.has(id) && !progressSaveCache[id]) readGameProgress(id);
   }
   let snakeTimer = null;
   let tetrisTimer = null;
@@ -197,9 +198,14 @@ export async function initWanbanXiaowu(options = {}) {
   let progressSaveTimers = {};
   let progressSaveCache = {};
   let progressSaveStartedAt = {};
+  const progressReadCache = new Map();
   let deferImmediateProgressWrites = false;
   let deferredPersistenceHandle = null;
   let deferredPersistenceUsesIdleCallback = false;
+  let persistenceRetryNeeded = false;
+  let persistenceRetryDelay = 0;
+  let persistenceInputBound = false;
+  let lastPersistenceInputAt = 0;
   const progressDeleteCache = new Set();
   let pendingRecords = null;
   let recordsCache = null;
@@ -240,7 +246,8 @@ export async function initWanbanXiaowu(options = {}) {
   let lineGenerationStatus = '当前状态：空闲';
   let lineGenerationKind = '';
   let lastStorageWriteError = '';
-  let lastStorageWarningAt = 0;
+  const failedStorageKeys = new Set();
+  let storageFailureWarned = false;
   let batchLineGenerationCancel = false;
   let lineGenerationFailures = {};
   let theaterGenerationFailures = {};
@@ -581,6 +588,11 @@ export async function initWanbanXiaowu(options = {}) {
   function qs(s, root) { return (root || getHostDocument()).querySelector(s); }
   function qsa(s, root) { return Array.from((root || getHostDocument()).querySelectorAll(s)); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+  function afterNextPaint(callback) {
+    const view = getHostWindow();
+    if (typeof view.requestAnimationFrame !== 'function') { view.setTimeout(callback, 0); return; }
+    view.requestAnimationFrame(() => view.setTimeout(callback, 0));
+  }
   let htmlPatchTemplate = null;
   function patchElementHTML(element, html) {
     if (!element) return;
@@ -617,18 +629,30 @@ export async function initWanbanXiaowu(options = {}) {
     patchChildren(element, template.content);
   }
   function loadJSON(key, fallback) { try { const v = localStorage.getItem(key); return v ? decodeStoredJSON(v) : fallback; } catch(e) { console.warn('[玩伴小屋] saved data read failed:', key, e); return fallback; } }
+  function clearStorageFailure(key) {
+    failedStorageKeys.delete(key);
+    if (failedStorageKeys.size) return;
+    storageFailureWarned = false;
+    lastStorageWriteError = '';
+  }
+  function warnStorageFailure() {
+    if (storageFailureWarned) return;
+    storageFailureWarned = true;
+    toast('保存失败：浏览器存储空间不足或不可用。请先导出备份；未保存的数据会留在当前页面并自动重试。');
+  }
   function saveJSON(key, value, options) {
+    const writeOptions = Object.assign({}, options || {});
+    const suppressWarning = !!writeOptions.suppressWarning;
+    delete writeOptions.suppressWarning;
     try {
-      writeStoredJSON(localStorage, key, value, options);
-      lastStorageWriteError = '';
+      writeStoredJSON(localStorage, key, value, writeOptions);
+      clearStorageFailure(key);
       return true;
     } catch(e) {
       lastStorageWriteError = e && e.message ? e.message : '浏览器本地存储写入失败';
+      failedStorageKeys.add(key);
       console.warn('[玩伴小屋] local storage write failed:', key, e);
-      if (Date.now() - lastStorageWarningAt > 10000) {
-        lastStorageWarningAt = Date.now();
-        toast('保存失败：浏览器存储空间不足或不可用。请先导出备份；本次数据尚未保存。');
-      }
+      if (!suppressWarning) warnStorageFailure();
       return false;
     }
   }
@@ -919,7 +943,14 @@ export async function initWanbanXiaowu(options = {}) {
   function currentLinePreset(game) { const sel = linePresetSelection(); return normalizePresetName(sel[roleLineScope(game)] || companionRoleKey()); }
   function activeGameRoleKey(game) { const id = game || currentGame; if (gameStarted && id === currentGame && currentRoundRoleContext) return roleKeyOf(currentRoundRoleContext); return id && GAME_META[id] ? normalizePresetName(currentLinePreset(id)) : companionRoleKey(); }
   function activeGameRoleName(game) { return roleDisplayName(activeGameRoleKey(game)); }
-  function setCurrentLinePreset(game, name) { const sel = linePresetSelection(); sel[roleLineScope(game)] = normalizePresetName(name); saveLinePresetSelection(sel); }
+  function setCurrentLinePreset(game, name) {
+    const sel = linePresetSelection();
+    const scope = roleLineScope(game);
+    const next = normalizePresetName(name);
+    if (normalizePresetName(sel[scope]) === next) return;
+    sel[scope] = next;
+    saveLinePresetSelection(sel);
+  }
   function roleLineSet(game, preset) { const name = normalizePresetName(preset || activeGameRoleKey(game)); return roleLineSetForName(game, name, name); }
   function roleLineSetForName(game, roleName, preset) { const all = roleLines(); const scope = all[roleLineScopeForName(game, roleName)] || {}; return scope[normalizePresetName(preset || roleName)] || null; }
 	  function activeLineSet(game) { return Object.assign({}, DEFAULT_LINES[game] || {}, roleLineSet(game) || {}); }
@@ -1383,6 +1414,20 @@ export async function initWanbanXiaowu(options = {}) {
       try { localStorage.removeItem(key); } catch (_) {}
     });
   }
+  function pruneLegacyProgressEntry(game) {
+    const legacy = safeObject(loadJSON(STORAGE_PROGRESS, {}));
+    if (!Object.prototype.hasOwnProperty.call(legacy, game)) return true;
+    delete legacy[game];
+    try {
+      if (Object.keys(legacy).length) writeStoredJSON(localStorage, STORAGE_PROGRESS, legacy);
+      else localStorage.removeItem(STORAGE_PROGRESS);
+      return true;
+    } catch (error) {
+      // The newer shard is already durable, so failed legacy compaction is not a save failure.
+      console.warn('[玩伴小屋] legacy progress compaction deferred:', game, error);
+      return false;
+    }
+  }
   function progress() {
     if (!progressCache) {
       const merged = safeObject(loadJSON(STORAGE_PROGRESS, {}));
@@ -1396,9 +1441,32 @@ export async function initWanbanXiaowu(options = {}) {
         if (shard.deleted === true) delete merged[game];
         else merged[game] = shard;
       });
+      progressReadCache.forEach((entry, game) => {
+        if (entry?.deleted === true || entry == null) delete merged[game];
+        else if (Number(entry.savedAt || 0) >= Number(merged[game]?.savedAt || 0)) merged[game] = entry;
+      });
       progressCache = merged;
     }
     return progressCache;
+  }
+  function readGameProgress(game) {
+    if (!game || progressDeleteCache.has(game)) return null;
+    if (progressSaveCache[game]) return progressSaveCache[game];
+    if (progressReadCache.has(game)) {
+      const cached = progressReadCache.get(game);
+      return cached?.deleted === true ? null : cached;
+    }
+    const shard = safeObject(loadJSON(progressShardKey(game), null));
+    if (Object.keys(shard).length) {
+      progressReadCache.set(game, shard);
+      if (shard.deleted === true) return null;
+      return shard;
+    }
+    const aggregate = progressCache || safeObject(loadJSON(STORAGE_PROGRESS, {}));
+    if (!progressCache) progressCache = aggregate;
+    const entry = aggregate[game] || null;
+    progressReadCache.set(game, entry);
+    return entry;
   }
   function clearSudokuStateSnapshot() { try { localStorage.removeItem(STORAGE_SUDOKU_STATE); } catch(e) {} }
   function isValidSudokuPuzzle(puz, sol) {
@@ -1415,12 +1483,12 @@ export async function initWanbanXiaowu(options = {}) {
     });
   }
   function buildProgressEntry(game, state) {
-    const prev = progressSaveCache[game] || progress()[game] || {};
+    const prev = progressSaveCache[game] || readGameProgress(game) || {};
     const startedAt = (state && state.startedAt) || prev.startedAt || gameStartAt || Date.now();
     const extra = game === currentGame ? { lineEvents: currentRoundLineEvents.slice(-120), roleContext:currentRoundRoleContext, progressRecordId:currentRoundProgressRecordId || prev.progressRecordId || '' } : {};
     const durationMs = game === currentGame ? currentGameDurationMs() : (state && state.durationMs) || prev.durationMs || 0;
     const petRewardNextMs = game === currentGame ? gamePetRewardNextMs : (state && state.petRewardNextMs) || prev.petRewardNextMs || nextPetGameRewardThreshold(durationMs);
-    return JSON.parse(JSON.stringify(Object.assign({}, state || {}, extra, { initialized:true, savedAt:Date.now(), startedAt, durationMs, petRewardNextMs })));
+    return Object.assign({}, state || {}, extra, { initialized:true, savedAt:Date.now(), startedAt, durationMs, petRewardNextMs });
   }
   function flushProgressSave(game) {
     if (!game || !progressSaveCache[game]) return;
@@ -1431,9 +1499,36 @@ export async function initWanbanXiaowu(options = {}) {
     delete progressSaveStartedAt[game];
     const staged = progressSaveCache[game];
     const entry = buildProgressEntry(game, staged);
-    if (saveJSON(progressShardKey(game), entry, { compress:false })) {
-      progress()[game] = entry;
+    const shardKey = progressShardKey(game);
+    let savedToShard = saveJSON(shardKey, entry, { compress:false, suppressWarning:true });
+    if (!savedToShard) savedToShard = saveJSON(shardKey, entry, { suppressWarning:true });
+    let saved = savedToShard;
+    if (!saved) {
+      const legacy = safeObject(loadJSON(STORAGE_PROGRESS, {}));
+      legacy[game] = entry;
+      saved = saveJSON(STORAGE_PROGRESS, legacy, { suppressWarning:true });
+      if (saved) {
+        try { localStorage.removeItem(shardKey); } catch (_) {}
+        clearStorageFailure(shardKey);
+      }
+    }
+    if (saved) {
+      progressReadCache.set(game, entry);
+      if (progressCache) progressCache[game] = entry;
       delete progressSaveCache[game];
+      if (savedToShard) pruneLegacyProgressEntry(game);
+    } else {
+      warnStorageFailure();
+    }
+  }
+  function flushProgressDelete(game) {
+    if (!game || !progressDeleteCache.has(game)) return;
+    const tombstone = { deleted:true, savedAt:Date.now() };
+    if (saveJSON(progressShardKey(game), tombstone, { compress:false })) {
+      progressDeleteCache.delete(game);
+      progressReadCache.set(game, tombstone);
+      if (progressCache) delete progressCache[game];
+      pruneLegacyProgressEntry(game);
     }
   }
   function cancelDeferredPersistenceFlush() {
@@ -1450,25 +1545,46 @@ export async function initWanbanXiaowu(options = {}) {
     const run = () => {
       deferredPersistenceHandle = null;
       deferredPersistenceUsesIdleCallback = false;
+      const doc = getHostDocument();
+      const inputPending = !!win.navigator?.scheduling?.isInputPending?.({ includeContinuous:true });
+      const sinceInput = Date.now() - lastPersistenceInputAt;
+      const countdownVisible = !!qs('.wb-countdown', doc);
+      if (!doc.hidden && (inputPending || (countdownVisible && !persistenceRetryNeeded) || sinceInput < 650 || (isGameOnlineActive() && sinceInput < 5000))) {
+        scheduleDeferredPersistenceFlush();
+        return;
+      }
       flushAllProgressSaves();
     };
-    if (typeof win.requestIdleCallback === 'function') {
+    if (persistenceRetryNeeded && persistenceRetryDelay > 0) {
+      deferredPersistenceHandle = win.setTimeout(run, persistenceRetryDelay);
+    } else if (typeof win.requestIdleCallback === 'function') {
       deferredPersistenceUsesIdleCallback = true;
-      deferredPersistenceHandle = win.requestIdleCallback(run, { timeout:700 });
-    } else deferredPersistenceHandle = win.setTimeout(run, 32);
+      deferredPersistenceHandle = win.requestIdleCallback(run, { timeout:2500 });
+    } else deferredPersistenceHandle = win.setTimeout(run, 900);
+  }
+  function bindPersistenceInputTracking() {
+    if (persistenceInputBound) return;
+    persistenceInputBound = true;
+    const doc = getHostDocument();
+    const markInput = () => { lastPersistenceInputAt = Date.now(); };
+    doc.addEventListener('pointerdown', markInput, { capture:true, passive:true });
+    doc.addEventListener('keydown', markInput, { capture:true, passive:true });
+    doc.addEventListener('touchstart', markInput, { capture:true, passive:true });
   }
   function flushAllProgressSaves() {
     cancelDeferredPersistenceFlush();
-    Array.from(progressDeleteCache).forEach(clearProgress);
+    Array.from(progressDeleteCache).forEach(flushProgressDelete);
     Object.keys(progressSaveCache).forEach(flushProgressSave);
     flushRecordsSave();
     flushPetStateSaves();
+    persistenceRetryNeeded = !!(Object.keys(progressSaveCache).length || progressDeleteCache.size || pendingRecords || pendingPetStates.size);
+    persistenceRetryDelay = persistenceRetryNeeded ? Math.min(30000, persistenceRetryDelay ? persistenceRetryDelay * 2 : 5000) : 0;
+    if (persistenceRetryNeeded) scheduleDeferredPersistenceFlush();
   }
   function gameProgress(game) {
-    if (progressDeleteCache.has(game)) { clearProgress(game); return null; }
-    flushProgressSave(game);
-    const p = progressSaveCache[game] || progress()[game];
-    if (p?.progressRecordId && (records()[game] || []).some(r => r.id === p.progressRecordId && resultOutcome(r.result) !== 'in_progress')) {
+    if (progressDeleteCache.has(game)) return null;
+    const p = progressSaveCache[game] || readGameProgress(game);
+    if (p?.progressRecordId && recordsCache && (recordsCache[game] || []).some(r => r.id === p.progressRecordId && resultOutcome(r.result) !== 'in_progress')) {
       clearProgress(game);
       return null;
     }
@@ -1535,8 +1651,7 @@ export async function initWanbanXiaowu(options = {}) {
       gameActiveStartedAt = isGameSurfaceVisible() ? Date.now() : 0;
     }
     if (updateStored && currentGame) {
-      const p = progress();
-      const previous = progressSaveCache[currentGame] || p[currentGame];
+      const previous = progressSaveCache[currentGame] || readGameProgress(currentGame);
       if (previous) {
         progressSaveCache[currentGame] = Object.assign({}, previous, {
           durationMs:Math.max(Number(previous.durationMs || 0), gameAccumulatedMs || 0),
@@ -1549,7 +1664,7 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function saveProgress(game, state, options) {
     progressDeleteCache.delete(game);
-    const prev = progressSaveCache[game] || progress()[game] || {};
+    const prev = progressSaveCache[game] || readGameProgress(game) || {};
     const extra = game === currentGame ? { lineEvents:currentRoundLineEvents.slice(-120), roleContext:currentRoundRoleContext, progressRecordId:currentRoundProgressRecordId || prev.progressRecordId || '' } : {};
     progressSaveCache[game] = Object.assign({}, state || {}, extra, {
       initialized:true,
@@ -1579,11 +1694,10 @@ export async function initWanbanXiaowu(options = {}) {
     delete progressSaveStartedAt[game];
     delete progressSaveCache[game];
     if (game === 'sudoku') clearSudokuStateSnapshot();
-    const p = progress();
-    delete p[game];
-    const tombstone = { deleted:true, savedAt:Date.now() };
-    if (saveJSON(progressShardKey(game), tombstone, { compress:false })) progressDeleteCache.delete(game);
-    else progressDeleteCache.add(game);
+    if (progressCache) delete progressCache[game];
+    progressReadCache.set(game, null);
+    progressDeleteCache.add(game);
+    scheduleDeferredPersistenceFlush();
   }
   function consolidateProgressShards() {
     const shardKeys = progressShardKeys();
@@ -2012,8 +2126,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (!game || !gameStarted) return null;
     const deferWrite = !!options?.deferWrite;
     if (!deferWrite) flushProgressSave(game);
-    const allProgress = progress();
-    const state = progressSaveCache[game] || allProgress[game];
+    const state = progressSaveCache[game] || readGameProgress(game);
     if (!state || !hasPlayableProgress(game, state)) return null;
     const all = records();
     const g = GAME_META[game] || { name:game };
@@ -2320,7 +2433,6 @@ export async function initWanbanXiaowu(options = {}) {
   function releaseTransientCaches() {
     const backgroundUsesSettings = !!(settingsCache?.messageNotify || settingsCache?.petDesktopEnabled || settingsCache?.floatingBallEnabled);
     if (!pendingRecords) recordsCache = null;
-    if (!gameStarted && !Object.keys(progressSaveCache).length && !progressDeleteCache.size) consolidateProgressShards();
     if (!Object.keys(progressSaveCache).length && !progressDeleteCache.size) progressCache = null;
     linesCache = null;
     roleLinesCache = null;
@@ -3759,7 +3871,12 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function writePetStateShard(target, state) {
     const key = petStateShardKey(target);
-    if (!saveJSON(key, state, { compress:false })) return false;
+    const saved = saveJSON(key, state, { compress:false, suppressWarning:true })
+      || saveJSON(key, state, { suppressWarning:true });
+    if (!saved) {
+      warnStorageFailure();
+      return false;
+    }
     petStateShardCache.set(key, state);
     return true;
   }
@@ -5583,7 +5700,7 @@ export async function initWanbanXiaowu(options = {}) {
 	  cancelTransientCacheCleanup();
 	    applySelectedFont();
     invalidateCurrentHostAvatarCache();
-    if (settings().lastHostCardId !== characterCardId(currentHostCharacter())) syncCurrentHostRoleContext();
+    const shouldSyncRole = settings().lastHostCardId !== characterCardId(currentHostCharacter());
     const doc = getHostDocument();
     let shell = qs('#' + SHELL_ID, doc);
     if (!shell) {
@@ -5629,6 +5746,10 @@ export async function initWanbanXiaowu(options = {}) {
       scheduleWindowStateSave(currentTab, '');
     } else restoreWindowState();
     render();
+    if (shouldSyncRole) afterNextPaint(() => {
+      const visibleShell = qs('#' + SHELL_ID, getHostDocument());
+      if (visibleShell?.classList.contains('wb-shell-visible')) syncCurrentHostRoleContext();
+    });
   }
   function closePopupShell() {
     if (confirmPetGenerationLeave(closePopupShell)) return;
@@ -8622,10 +8743,27 @@ export async function initWanbanXiaowu(options = {}) {
           currentGame = card.dataset.game;
           if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode;
           scheduleWindowStateSave(currentTab, currentGame);
-          renderGame(currentGame);
+          const saved = progressSaveCache[currentGame] || (progressReadCache.has(currentGame) ? gameProgress(currentGame) : undefined);
+          renderGame(currentGame, saved);
         };
         grid.appendChild(card);
       });
+      const warmIds = ids.slice(cursor, end);
+      const warmProgress = deadline => {
+        if (renderToken !== gameListRenderToken || currentGame) return;
+        while (warmIds.length && (!deadline?.timeRemaining || deadline.timeRemaining() > 3)) {
+          const game = warmIds.shift();
+          if (!progressReadCache.has(game) && !progressSaveCache[game]) readGameProgress(game);
+          if (!deadline?.timeRemaining) break;
+        }
+        if (!warmIds.length || renderToken !== gameListRenderToken || currentGame) return;
+        const view = getHostWindow();
+        if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(warmProgress, { timeout:1200 });
+        else view.setTimeout(() => warmProgress(null), 90);
+      };
+      const warmView = getHostWindow();
+      if (typeof warmView.requestIdleCallback === 'function') warmView.requestIdleCallback(warmProgress, { timeout:1200 });
+      else warmView.setTimeout(() => warmProgress(null), 90);
       observeGameCardIcons(grid, cursor === 0);
       cursor = end;
       if (cursor >= ids.length) {
@@ -9120,6 +9258,7 @@ export async function initWanbanXiaowu(options = {}) {
       progressSaveCache = {};
       progressSaveStartedAt = {};
       progressCache = null;
+      progressReadCache.clear();
       progressDeleteCache.clear();
     }
     petTestInfoCache = null;
@@ -9862,7 +10001,20 @@ export async function initWanbanXiaowu(options = {}) {
       + '<div class="wb-actions"><button class="wb-btn" id="wb-count-cancel">取消</button></div>';
     const cancel = qs('#wb-count-cancel', mask);
     let timer = null;
-    const finish = () => { if (timer) clearInterval(timer); if (mask && mask.parentNode) mask.remove(); startCurrentGame(game, state); };
+    const finish = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+      const num = qs('#wb-progress-count', mask);
+      const status = qs('.wb-muted', mask);
+      if (num) num.textContent = '✓';
+      if (status) status.textContent = '正在恢复进度...';
+      if (cancel) cancel.disabled = true;
+      afterNextPaint(() => {
+        Promise.resolve(startCurrentGame(game, state, { resume:true })).finally(() => {
+          if (mask?.parentNode) mask.remove();
+        });
+      });
+    };
     if (cancel) cancel.onclick = () => { if (timer) clearInterval(timer); if (mask && mask.parentNode) mask.remove(); };
     timer = setInterval(() => {
       left -= 1;
@@ -9888,15 +10040,21 @@ export async function initWanbanXiaowu(options = {}) {
     const cleanup = () => { if (timer) clearInterval(timer); if (pbtn) pbtn.disabled = false; };
     const finish = () => {
       cleanup();
-      if (mask && mask.parentNode) mask.remove();
-      if (!gameStarted || !currentGame) return;
-      gamePaused = false;
-      try { activeGameController?.resume?.(); } catch(e) {}
-      gameActiveStartedAt = Date.now();
-      startGameDurationRewardTimer();
-      hideGamePauseOverlay();
-      const btn = qs('#wb-pause'); if (btn) btn.textContent = '暂停';
-      scheduleRandomGameLine();
+      if (!gameStarted || !currentGame) { if (mask?.parentNode) mask.remove(); return; }
+      const num = qs('#wb-resume-count', mask);
+      const status = qs('.wb-muted', mask);
+      if (num) num.textContent = '✓';
+      if (status) status.textContent = '正在恢复游戏...';
+      afterNextPaint(() => {
+        gamePaused = false;
+        try { activeGameController?.resume?.(); } catch(e) {}
+        gameActiveStartedAt = Date.now();
+        startGameDurationRewardTimer();
+        hideGamePauseOverlay();
+        const btn = qs('#wb-pause'); if (btn) btn.textContent = '暂停';
+        scheduleRandomGameLine();
+        if (mask?.parentNode) mask.remove();
+      });
     };
     qs('#wb-resume-cancel', mask).onclick = () => {
       cleanup();
@@ -11001,21 +11159,25 @@ export async function initWanbanXiaowu(options = {}) {
 
   function init() {
     addMenuItem();
-    loadPromptTextTemplates();
-    getHostWindow().setTimeout(() => {
+    bindRuntimeVisibility();
+    bindPersistenceInputTracking();
+    runtimeReady = true;
+    if (runtimeOpenRequested && runtimeOpenHandler) {
+      runtimeOpenRequested = false;
+      runtimeOpenHandler();
+    }
+    const view = getHostWindow();
+    const finishBackgroundInit = () => {
+      loadPromptTextTemplates();
       syncCurrentHostRoleContext();
       bindMessageNotifyEvents();
       bindRoleContextEvents();
-      bindRuntimeVisibility();
       syncFloatingBall();
       scheduleInitialUpdateCheck();
       scheduleLegacyStorageMaintenance();
-      runtimeReady = true;
-      if (runtimeOpenRequested && runtimeOpenHandler) {
-        runtimeOpenRequested = false;
-        runtimeOpenHandler();
-      }
-    }, 0);
+    };
+    if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(finishBackgroundInit, { timeout:1800 });
+    else view.setTimeout(finishBackgroundInit, 120);
   }
 
   runtimeOpenHandler = buildPopup;
@@ -11028,8 +11190,7 @@ export async function initWanbanXiaowu(options = {}) {
         clearInterval(waitJQ);
         const doc = getHostDocument();
         const state = doc.readyState;
-        const startDelay = runtimeOpenRequested ? 0 : (state === 'complete' ? 1500 : 4000);
-        const go = () => setTimeout(init, startDelay);
+        const go = () => setTimeout(init, 0);
         if (state === 'complete' || state === 'interactive') go();
         else doc.addEventListener('DOMContentLoaded', go);
       }
@@ -11120,7 +11281,7 @@ export async function initWanbanXiaowu(options = {}) {
     gameEntryObserver?.disconnect();
     gameEntryObserver = null;
   }
-  function scheduleGameEntryPrompt(game, startCover) {
+  function scheduleGameEntryPrompt(game, startCover, savedProgress) {
     cancelGameEntryPrompt();
     const check = () => {
       gameEntryTimer = null;
@@ -11137,15 +11298,15 @@ export async function initWanbanXiaowu(options = {}) {
         }
         return;
       }
-      const saved = gameProgress(game);
+      const saved = savedProgress === undefined ? gameProgress(game) : savedProgress;
       cancelGameEntryPrompt();
       if (saved && hasPlayableProgress(game, saved)) showProgressChoice(game, saved);
       else if (game === 'linklink' || game === 'blackjack') startCurrentGame(game);
     };
-    gameEntryTimer = setTimeout(check, 60);
+    check();
   }
-  function renderGame(id) {
-    if (!gameStarted && settings().lastHostCardId !== characterCardId(currentHostCharacter())) syncCurrentHostRoleContext();
+  function renderGame(id, prefetchedProgress) {
+    const shouldSyncRole = !gameStarted && settings().lastHostCardId !== characterCardId(currentHostCharacter());
     stopGame({ deferWrites:true });
     currentRoundProgressRecordId = '';
     currentRoundRoleContext = null;
@@ -11196,7 +11357,10 @@ export async function initWanbanXiaowu(options = {}) {
       renderLinePresetSelect(id);
     });
     if (!needsFirstMoverChoice(id) && !['linklink','blackjack','numberklotski'].includes(id) && DEFAULT_LINES[id] && DEFAULT_LINES[id].start) speak(id, 'start');
-    scheduleGameEntryPrompt(id, qs('#wb-start-cover-btn'));
+    scheduleGameEntryPrompt(id, qs('#wb-start-cover-btn'), prefetchedProgress);
+    if (shouldSyncRole) afterNextPaint(() => {
+      if (currentGame === id && !gameStarted) syncCurrentHostRoleContext();
+    });
   }
 
   function scheduleRandomGameLine() {
@@ -11212,7 +11376,7 @@ export async function initWanbanXiaowu(options = {}) {
 
   async function startCurrentGame(id, savedState, options) {
     if (gameStarted) return;
-    const storedState = gameProgress(id);
+    const storedState = options?.resume && savedState ? savedState : gameProgress(id);
     const forceNew = !!(options && options.forceNew);
     const resumeState = savedState || (!forceNew && storedState && hasPlayableProgress(id, storedState) ? storedState : null);
     if (!resumeState && GAME_CHOICES[id]) {
@@ -11255,6 +11419,16 @@ export async function initWanbanXiaowu(options = {}) {
       coverBtn.disabled = false;
       coverBtn.textContent = '开始游戏';
     }
+    const startCover = qs('#wb-start-cover-btn');
+    if (startCover) {
+      startCover.dataset.loading = '1';
+      startCover.disabled = true;
+      startCover.textContent = options?.resume ? '正在恢复...' : '正在开始...';
+    }
+    await new Promise(resolve => afterNextPaint(resolve));
+    if (currentGame !== id || gameStarted || !startCover?.isConnected) return;
+    delete startCover.dataset.loading;
+    startCover.disabled = false;
     if (!resumeState) clearProgress(id);
     cancelGameEntryPrompt();
     currentRoundRoleContext = !savedRole(companionRoleKey()) && resumeState?.roleContext
@@ -11262,8 +11436,6 @@ export async function initWanbanXiaowu(options = {}) {
     currentRoundProgressRecordId = String(resumeState?.progressRecordId || ('rec_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
     setCurrentLinePreset(id, roleKeyOf(currentRoundRoleContext));
     gameStarted = true;
-    renderLinePresetSelect(id);
-    refreshGameCompanionPanel();
     gamePaused = false;
     firstMoverAwaitingUserAction = !!(needsFirstMoverChoice(id) && savedState && savedState.firstMover && !storedState && !savedState.userActed);
     gameAccumulatedMs = Math.max(0, Number(resumeState?.durationMs || 0));
@@ -11315,6 +11487,11 @@ export async function initWanbanXiaowu(options = {}) {
     if (id === 'chinesechess') startChineseChess(resumeState);
     if (id === 'tetris') startTetris(resumeState);
     scheduleFitGameSurface();
+    afterNextPaint(() => {
+      if (currentGame !== id || !gameStarted) return;
+      renderLinePresetSelect(id);
+      refreshGameCompanionPanel();
+    });
   }
   function modularGameEnvironment(id) {
     return {
@@ -11342,14 +11519,22 @@ export async function initWanbanXiaowu(options = {}) {
   function togglePause() {
     if (!gameStarted) return;
     if (!gamePaused) {
-      try { activeGameController?.save?.(); } catch(e) {}
-      commitGameActiveDuration(true);
+      commitGameActiveDuration(false);
       try { activeGameController?.pause?.(); } catch(e) {}
       gamePaused = true;
       if (randomLineTimer) clearTimeout(randomLineTimer);
       randomLineTimer = null;
       showGamePauseOverlay();
       const pbtn = qs('#wb-pause'); if (pbtn) pbtn.textContent = '继续';
+      afterNextPaint(() => {
+        if (!gameStarted || !currentGame || !gamePaused) return;
+        const previousDeferWrites = deferImmediateProgressWrites;
+        deferImmediateProgressWrites = true;
+        try { activeGameController?.save?.(); } catch(e) {}
+        commitGameActiveDuration(true);
+        deferImmediateProgressWrites = previousDeferWrites;
+        scheduleDeferredPersistenceFlush();
+      });
       return;
     }
     startPauseResumeCountdown();
@@ -12321,7 +12506,22 @@ function showGameRecords(game, page) {
     }
     function simplifyPath(path){ const out=[]; for(let i=0;i<path.length;i++){ if(i>0&&i<path.length-1){ const p=path[i-1], c=path[i], n=path[i+1]; if((p.r===c.r&&c.r===n.r)||(p.c===c.c&&c.c===n.c)) continue; } out.push(path[i]); } return out; }
     function pathStats(path){ let turns=Math.max(0,path.length-2), len=0, outside=false; for(let i=0;i<path.length-1;i++){ len+=Math.abs(path[i].r-path[i+1].r)+Math.abs(path[i].c-path[i+1].c); } path.forEach(p=>{ if(p.r<0||p.r>=st.rows||p.c<0||p.c>=st.cols) outside=true; }); return {turns,len,outside,between:Math.max(0,len-1)}; }
-    async function clickTile(r,c){ if((busy&&pendingRemovals<=0)||over||gamePaused) return; const v=st.board[r]?.[c]; if(!v||v==='#') return; const cur={r,c}; if(selected&&selected.r===r&&selected.c===c){ selected=null; draw(); return; } if(!selected){ selected=cur; draw(); return; } if(st.board[selected.r][selected.c]!==v){ selected=cur; draw(); return; } const path=findPath(selected,cur); if(!path){ markBad(selected,cur); speakMaybe('linklink','wrong',.35); selected=cur; draw(); return; } await removePair(selected,cur,path,false); }
+    function syncLinkTile(r,c){
+      if(r == null || c == null) return;
+      const tile=qs('.wb-link-tile[data-r="'+r+'"][data-c="'+c+'"]',linkBoard);
+      if(!tile) return;
+      const key=r+','+c, fading=fadingTiles.get(key), v=st.board[r]?.[c] || fading;
+      const sel=!fading&&selected&&selected.r===r&&selected.c===c;
+      const hp=!fading&&hintPair&&(hintPair.a.r===r&&hintPair.a.c===c||hintPair.b.r===r&&hintPair.b.c===c);
+      tile.className='wb-link-tile '+(!v?'empty':v==='#'?'stone':fading?'gone':sel?'sel':hp?'hint':'');
+    }
+    function selectLinkTile(next){
+      const previous=selected;
+      selected=next;
+      if(previous) syncLinkTile(previous.r,previous.c);
+      if(next && (!previous || previous.r!==next.r || previous.c!==next.c)) syncLinkTile(next.r,next.c);
+    }
+    async function clickTile(r,c){ if((busy&&pendingRemovals<=0)||over||gamePaused) return; const v=st.board[r]?.[c]; if(!v||v==='#') return; const cur={r,c}; if(selected&&selected.r===r&&selected.c===c){ selectLinkTile(null); return; } if(!selected){ selectLinkTile(cur); return; } if(st.board[selected.r][selected.c]!==v){ selectLinkTile(cur); return; } const path=findPath(selected,cur); if(!path){ const previous=selected; selectLinkTile(cur); markBad(previous,cur); speakMaybe('linklink','wrong',.35); return; } await removePair(selected,cur,path,false); }
     async function removePair(a,b,path,magic){ if(busy||over) return; const av=st.board[a.r]?.[a.c], bv=st.board[b.r]?.[b.c]; if(!av||!bv||av==='#'||bv==='#') return; hintPair=null; selected=null; linePath=path; const activePath=path; lineKind=magic?'magic':''; draw(); await delay(110); if(st.board[a.r]?.[a.c]!==av||st.board[b.r]?.[b.c]!==bv) return; fadingTiles.set(a.r+','+a.c,av); fadingTiles.set(b.r+','+b.c,bv); st.board[a.r][a.c]=null; st.board[b.r][b.c]=null; pendingRemovals++; const now=Date.now(), ps=pathStats(path); let gain=100; if(!magic){ gain += ps.turns===0?30:(ps.turns===1?20:10); if(ps.outside) gain+=10; gain += Math.min(20, ps.between*2); if(st.lastSuccessAt){ const gap=(now-st.lastSuccessAt)/1000; if(gap<=1.2) gain+=50; else if(gap<=2.5) gain+=25; st.combo = gap<=3 ? st.combo+1 : 1; } else st.combo=1; gain += Math.min(100, Math.max(0, st.combo-1)*10); addComboTimeBonus(st.combo); } else st.combo=Math.max(0,st.combo||0);
       st.maxCombo=Math.max(st.maxCombo,st.combo||0); st.details.maxCombo=Math.max(st.details.maxCombo||0,st.maxCombo); st.levelScore+=gain; st.totalScore+=gain; st.pairsCleared++; if(!magic) st.lastSuccessAt=now; idle8=idle15=false; if(noTimeLimit) startLinkTimer(); if(linePath===activePath) linePath=null; if(!magic){ if(ps.turns===0) speakMaybe('linklink','straight',.25); if(ps.turns===2) speakMaybe('linklink','two_turn',.35); if(ps.outside) speakMaybe('linklink','outside',.5); if(st.combo===5) speak('linklink','combo_5'); if(st.combo===10) speak('linklink','combo_10'); if(st.combo===20) speak('linklink','combo_20'); showCombo(st.combo); }
       draw(); save(); setTimeout(()=>{ fadingTiles.delete(a.r+','+a.c); fadingTiles.delete(b.r+','+b.c); pendingRemovals=Math.max(0,pendingRemovals-1); draw(); if(pendingRemovals===0) settleAfterRemovals(); },220); }
@@ -12361,7 +12561,7 @@ function showGameRecords(game, page) {
       showReviveChoice(() => { st.timeLeft = Math.max(st.timeLeft || 0, 30); warned30=false; busy=false; over=false; lastTick=Date.now(); showToast('复活成功，继续找配对'); draw(); save(true); }, settle);
     }
     function finishAll(){ over=true; clearInterval(timer); if(linkLinkTimer===timer) linkLinkTimer=null; st.details.score=st.totalScore; st.details.level=12; st.details.maxCombo=st.maxCombo; setScore('linklink', Math.max(scores().linklink||0, st.totalScore)); updateBest(); showGameOver('linklink','全部通关','累计总分：' + st.totalScore + '分，最高连击：' + st.maxCombo + '，用时：' + formatDuration(Date.now()-st.startedAt), {outcome:'score',score:st.totalScore}, { details:Object.assign({},st.details,{score:st.totalScore,level:12,maxCombo:st.maxCombo,completedAll:true}) }); }
-    function markBad(a,b){ draw(); [a,b].forEach(p=>{ const el=qs('.wb-link-tile[data-r="'+p.r+'"][data-c="'+p.c+'"]',box); if(el){ el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),200); } }); }
+    function markBad(a,b){ [a,b].forEach(p=>{ const el=qs('.wb-link-tile[data-r="'+p.r+'"][data-c="'+p.c+'"]',box); if(el){ el.classList.add('bad'); setTimeout(()=>el.classList.remove('bad'),200); } }); }
     function drawTop(){ qs('#ll-level',box).textContent='第 ' + st.level + ' 关'; qs('#ll-progress-text',box).textContent='本关 ' + st.levelScore + ' / ' + st.target; qs('#ll-total',box).textContent=String(st.totalScore).replace(/\B(?=(\d{3})+(?!\d))/g, ','); const fill=qs('#ll-fill',box); fill.style.width=Math.min(100,st.levelScore/st.target*100)+'%'; fill.classList.toggle('done',st.levelScore>=st.target); const t=qs('#ll-time',box), left=Math.ceil(st.timeLeft), bonusActive=Date.now()<comboBonusFlashUntil; if(noTimeLimit){ t.textContent='∞ 不限时'; t.className='wb-link-time'; return; } t.textContent=(frozenLeft>0?'❄ ':'⏱ ') + String(Math.floor(left/60)).padStart(2,'0') + ':' + String(left%60).padStart(2,'0') + (bonusActive&&comboBonusFlash?(' +' + comboBonusFlash + '秒'):''); t.className='wb-link-time ' + (bonusActive?'bonus ':'' ) + (frozenLeft>0?'freeze':left<=10?'danger':left<=30?'warn':''); }
     function drawTools(){ ['hint','shuffle','freeze','magic'].forEach(k=>{ const el=qs('#ll-'+k+'-left',box); if(el) el.textContent=k==='freeze'&&frozenLeft>0?Math.ceil(frozenLeft):st.tools[k]; const btn=qs('[data-tool="'+k+'"]',box); if(btn) btn.disabled=(st.tools[k]||0)<=0||(k==='freeze'&&frozenLeft>0); }); }
     function draw(){ drawTop(); drawTools(); const rule=qs('#ll-rule',box), lv=LEVELS[levelIndex()]; if(rule) rule.textContent='本关规则：' + (lv.mode==='none'?'完全静止':MODE_TEXT[st.mode]||lv.name); linkBoard.style.setProperty('--ll-cols',st.cols); linkBoard.style.setProperty('--ll-rows',st.rows); linkBoard.style.setProperty('--ll-ratio',st.cols/st.rows); let html=''; for(let r=0;r<st.rows;r++) for(let c=0;c<st.cols;c++){ const key=r+','+c, fading=fadingTiles.get(key), v=st.board[r][c] || fading, sel=!fading&&selected&&selected.r===r&&selected.c===c, hp=!fading&&hintPair&&(hintPair.a.r===r&&hintPair.a.c===c||hintPair.b.r===r&&hintPair.b.c===c); html += '<button class="wb-link-tile '+(!v?'empty':v==='#'?'stone':fading?'gone':sel?'sel':hp?'hint':'')+'" data-r="'+r+'" data-c="'+c+'">'+(v&&v!=='#'?v:'')+'</button>'; } patchElementHTML(linkBoard, html); renderLinkLine(linkBoard); }
