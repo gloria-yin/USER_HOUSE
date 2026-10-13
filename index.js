@@ -13,12 +13,12 @@ let booted = false;
 let runtimePromise = null;
 let stylesPromise = null;
 let lastOpenAt = 0;
-const RUNTIME_URL = new URL('./src/runtime/wanban-app.js?v=4.3.4', import.meta.url).href;
-const STYLE_URL = new URL('./style.css?v=4.3.4', import.meta.url).href;
+const RUNTIME_URL = new URL('./src/runtime/wanban-app.js?v=4.3.5', import.meta.url).href;
+const STYLE_URL = new URL('./style.css?v=4.3.5', import.meta.url).href;
 const GAME_MODULE_URLS = [
-  new URL('./src/games/zuma.js?v=4.3.4', import.meta.url).href,
-  new URL('./src/games/water-sort.js?v=4.3.4', import.meta.url).href,
-  new URL('./src/games/flappy-bird.js?v=4.3.4', import.meta.url).href,
+  new URL('./src/games/zuma.js?v=4.3.5', import.meta.url).href,
+  new URL('./src/games/water-sort.js?v=4.3.5', import.meta.url).href,
+  new URL('./src/games/flappy-bird.js?v=4.3.5', import.meta.url).href,
 ];
 
 function hostDocuments() {

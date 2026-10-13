@@ -19,7 +19,11 @@ const requests = [];
 const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
 <div id="extensionsMenu"></div>
 <script>
-window.SillyTavern={getContext:()=>({})};
+window.__hostContext={};
+window.__hostEvents={};
+window.event_types={CHAT_CHANGED:'CHAT_CHANGED',CHARACTER_EDITED:'CHARACTER_EDITED',CHARACTER_UPDATED:'CHARACTER_UPDATED',CHARACTER_PAGE_LOADED:'CHARACTER_PAGE_LOADED'};
+window.eventSource={on:(name,callback)=>(window.__hostEvents[name]||(window.__hostEvents[name]=[])).push(callback)};
+window.SillyTavern={getContext:()=>window.__hostContext};
 window.requestIdleCallback=callback=>setTimeout(()=>callback({didTimeout:false,timeRemaining:()=>8}),1000);
 window.$=window.jQuery=(selector,root=document)=>({length:typeof selector==='string'?(root||document).querySelectorAll(selector).length:(selector?1:0)});
 window.__activeIntervals=new Set();
@@ -90,6 +94,18 @@ const server = createServer(async (request, response) => {
       response.end("import yaml from '/yaml/index.js';export {yaml};");
       return;
     }
+    if (pathname === '/api/worldinfo/get') {
+      let body = '';
+      for await (const chunk of request) body += chunk;
+      const name = JSON.parse(body || '{}').name || '测试世界书';
+      response.setHeader('Content-Type', 'application/json;charset=utf-8');
+      response.end(JSON.stringify({ entries:[
+        { uid:name + '-blue', comment:'蓝灯条目', content:name + '蓝灯内容', constant:true },
+        { uid:name + '-green', comment:'绿灯条目', content:name + '绿灯内容' },
+        { uid:name + '-chain', comment:'链式条目', content:name + '链式内容', vectorized:true },
+      ] }));
+      return;
+    }
     if (pathname.startsWith('/yaml/')) {
       const yamlPath = resolve(yamlBrowser, '.' + pathname.slice('/yaml'.length));
       if (!yamlPath.startsWith(yamlBrowser + sep)) throw new Error('Invalid YAML module path');
@@ -139,6 +155,7 @@ class CDP {
 }
 
 const sleep = ms => new Promise(resolveSleep => setTimeout(resolveSleep, ms));
+const smokeReturnMetrics = [];
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'wanban-startup-check-'));
 const profile = join(temporaryRoot, 'profile');
 await mkdir(profile);
@@ -210,8 +227,49 @@ async function smokeStartListedGame(game, tab, selector) {
   }
   const errors = await evaluate('window.__errors.slice()');
   assert.deepEqual(errors, [], game + ' startup errors: ' + JSON.stringify(errors));
-  await evaluate('document.querySelector("#wb-back").click()');
-  await waitFor('!!document.querySelector(".wb-cardgrid")');
+  const returnMetric = await evaluate(`(async()=>{
+    window.__storageWrites.length=0;
+    const longTasks=[];
+    const longObserver=globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')
+      ? new PerformanceObserver(list=>list.getEntries().forEach(entry=>longTasks.push({start:entry.startTime,duration:entry.duration})))
+      : null;
+    longObserver?.observe({type:'longtask',buffered:false});
+    const back=document.querySelector('#wb-back');
+    back.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',isPrimary:true}));
+    await new Promise(requestAnimationFrame);
+    const started=performance.now();
+    back.click();
+    const handler=performance.now()-started;
+    const body=document.querySelector('#wb-body');
+    const cards=document.querySelectorAll('.wb-game-card').length;
+    const expected=Number(document.querySelector('[data-tab="${tab}"] .wb-tab-count')?.textContent||0);
+    const readyStarted=performance.now();
+    await new Promise(requestAnimationFrame);
+    const readyFrame=performance.now()-readyStarted;
+    const frames=[],work=[];
+    for(let step=1;step<=12;step++){
+      const frameStarted=performance.now();
+      body.scrollTop=Math.max(0,body.scrollHeight-body.clientHeight)*step/12;
+      body.dispatchEvent(new Event('scroll'));
+      work.push(performance.now()-frameStarted);
+      await new Promise(requestAnimationFrame);
+      frames.push(performance.now()-frameStarted);
+    }
+    await new Promise(resolve=>setTimeout(resolve,0));
+    longObserver?.disconnect();
+    return {
+      handler,cards,expected,readyFrame,frames,work,maxFrame:Math.max(...frames),maxWork:Math.max(...work),longTasks,
+      writes:window.__storageWrites.filter(item=>item.key.startsWith('wanbanXiaowu_progress_v1')||item.key.startsWith('wanbanXiaowu_records_v1')).length,
+    };
+  })()`);
+  assert.equal(returnMetric.cards, returnMetric.expected, game + ' return did not render the complete ' + tab + ' list');
+  assert.equal(returnMetric.writes, 0, game + ' return storage writes competed with the first scroll frames');
+  assert.ok(returnMetric.handler < 80, game + ' return handler took ' + returnMetric.handler.toFixed(1) + 'ms');
+  assert.ok(returnMetric.readyFrame < 200, game + ' return list first paint took ' + returnMetric.readyFrame.toFixed(1) + 'ms');
+  assert.ok(returnMetric.maxWork < 30, game + ' return scroll handler took ' + returnMetric.maxWork.toFixed(1) + 'ms');
+  assert.ok(Math.max(0,...returnMetric.longTasks.map(task=>task.duration)) < 80, game + ' return produced a long task: ' + JSON.stringify(returnMetric.longTasks));
+  assert.ok(returnMetric.maxFrame < 160, game + ' return scroll frames took ' + returnMetric.frames.map(value=>value.toFixed(1)).join('/') + 'ms');
+  smokeReturnMetrics.push({ game, ...returnMetric });
 }
 
 try {
@@ -385,8 +443,91 @@ try {
     return performance.now()-started;
   })()`);
   assert.ok(secondSettingsSwitch < 60, 'cached settings switch took ' + secondSettingsSwitch.toFixed(1) + 'ms');
+  const transientStorageRetry = await evaluate(`(async()=>{
+    const messages=[];
+    const previousLog=console.log;
+    const previousSet=Storage.prototype.setItem;
+    let failedOnce=false;
+    console.log=(...args)=>{
+      const message=args.map(String).join(' ');
+      if(message.includes('数据暂未保存')||message.includes('保存失败：浏览器存储')) messages.push(message);
+      previousLog(...args);
+    };
+    Storage.prototype.setItem=function(key,value){
+      if(key==='wanbanXiaowu_settings_v1'&&!failedOnce){
+        failedOnce=true;
+        throw new DOMException('one temporary storage failure','QuotaExceededError');
+      }
+      return previousSet.call(this,key,value);
+    };
+    try {
+      const select=document.querySelector('#wb-theme');
+      const target=select.value==='day'?'arcade':'day';
+      select.value=target;
+      select.dispatchEvent(new Event('change',{bubbles:true}));
+      await new Promise(resolve=>setTimeout(resolve,1100));
+      const module=await import('/src/runtime/storage.js?transient-storage-retry');
+      return {failedOnce,messages,target,saved:module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1')).theme};
+    } finally {
+      Storage.prototype.setItem=previousSet;
+      console.log=previousLog;
+    }
+  })()`);
+  assert.equal(transientStorageRetry.failedOnce, true, 'transient storage test did not inject a failure');
+  assert.equal(transientStorageRetry.saved, transientStorageRetry.target, 'a transient settings write did not recover automatically');
+  assert.deepEqual(transientStorageRetry.messages, [], 'a recovered storage write showed a false backup warning');
   const readCounts = await evaluate(`Object.fromEntries(['wanbanXiaowu_apiPresets_v1','wanbanXiaowu_worldPresets_v1','wanbanXiaowu_summaries_v1','wanbanXiaowu_roleContexts_v2'].map(key=>[key,__storageReads[key]||0]))`);
   Object.entries(readCounts).forEach(([key,count]) => assert.ok(count <= 1, key + ' was decoded ' + count + ' times'));
+  await evaluate(`(()=>{
+    window.__hostCharacter={avatar:'current-role.png',data:{
+      name:'当前角色',description:'初始角色卡描述',personality:'沉稳可靠',scenario:'移动端测试场景',
+      extensions:{world:'角色绑定世界书'},
+      character_book:{entries:{
+        blue:{uid:'inline-blue',comment:'内嵌蓝灯',content:'角色内嵌蓝灯内容',constant:true},
+        green:{uid:'inline-green',comment:'内嵌绿灯',content:'角色内嵌绿灯内容'},
+        chain:{uid:'inline-chain',comment:'内嵌链式',content:'角色内嵌链式内容',vectorized:true}
+      }}
+    }};
+    window.__hostContext={characterId:'card-current',characters:[window.__hostCharacter],currentCharacter:window.__hostCharacter,name2:'当前角色',chatMetadata:{world_info:'聊天挂载世界书'}};
+    document.querySelector('#wb-reset-current-world-default').click();
+    document.querySelector('#wb-confirm-ok').click();
+  })()`);
+  await waitFor(`document.querySelector('#wb-char-desc-preview')?.textContent.includes('初始角色卡描述')`);
+  const restoredRole = await evaluate(`import('/src/runtime/storage.js?role-default-check').then(module=>{
+    const saved=module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1'));
+    return {name:saved.charName,cardId:saved.cardId,description:saved.charDescriptionSnapshot,snapshotName:saved.characterCardSnapshot?.name};
+  })`);
+  assert.equal(restoredRole.name, '当前角色', 'restoring defaults did not bind the open character name');
+  assert.equal(restoredRole.cardId, 'avatar:current-role.png', 'restoring defaults did not bind the open character card');
+  assert.equal(restoredRole.snapshotName, '当前角色', 'restoring defaults did not save the open character card snapshot');
+  assert.ok(restoredRole.description.includes('初始角色卡描述'), 'restoring defaults did not read the character description');
+  await evaluate(`(()=>{
+    window.__hostCharacter.data.description='编辑后的角色卡描述';
+    (window.__hostEvents.CHARACTER_UPDATED||[]).forEach(callback=>callback());
+  })()`);
+  await waitFor(`document.querySelector('#wb-char-desc-preview')?.textContent.includes('编辑后的角色卡描述')`);
+  await evaluate(`(()=>{
+    const lazy=document.querySelector('#wb-lazy-world-inject');
+    lazy.checked=true;
+    lazy.dispatchEvent(new Event('change',{bubbles:true}));
+  })()`);
+  await sleep(1000);
+  const lazyWorld = await evaluate(`import('/src/runtime/storage.js?lazy-world-check').then(module=>{
+    const saved=module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1'));
+    const visible=Array.from(document.querySelectorAll('#wb-worldbook-list .wb-tag.active')).map(tag=>tag.dataset.content);
+    return {lazy:saved.lazyWorldInject,mode:saved.worldAutoMountMode,count:saved.selectedWorldEntries?.length||0,visible,names:document.querySelector('#wb-mounted-worldbook-names')?.textContent||'',preview:document.querySelector('#wb-char-desc-preview')?.textContent||'',list:document.querySelector('#wb-worldbook-list')?.innerText||'',checked:document.querySelector('#wb-lazy-world-inject')?.checked||false};
+  })`);
+  assert.equal(lazyWorld.lazy, true, 'lazy mode was not persisted');
+  assert.equal(lazyWorld.mode, 'bluegreen', 'lazy mode did not enable blue and green worldbook mounting');
+  assert.equal(lazyWorld.count, 6, 'lazy mode did not save every selected character and chat worldbook entry: ' + JSON.stringify(lazyWorld));
+  assert.ok(lazyWorld.names.includes('角色绑定世界书') && lazyWorld.names.includes('聊天挂载世界书'), 'mounted character or chat worldbook names were missing');
+  for (const content of ['角色绑定世界书蓝灯内容','角色绑定世界书绿灯内容','聊天挂载世界书蓝灯内容','聊天挂载世界书绿灯内容','角色内嵌蓝灯内容','角色内嵌绿灯内容']) assert.ok(lazyWorld.visible.includes(content), content);
+  assert.equal(lazyWorld.visible.some(content=>content.includes('链式内容')), false, 'lazy mode must exclude chain/vector worldbook entries');
+  assert.ok(lazyWorld.preview.includes('编辑后的角色卡描述'), 'lazy mode lost the latest character card description');
+  assert.ok(requests.filter(path=>path==='/api/worldinfo/get').length >= 2, 'lazy mode did not request character and chat worldbooks');
+  await evaluate(`document.querySelector('#wb-save-current-avatar').click()`);
+  const savedAvatar = await evaluate(`import('/src/runtime/storage.js?current-avatar-check').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1')).avatarUrl)`);
+  assert.equal(savedAvatar, '/thumbnail?type=avatar&file=current-role.png', 'save avatar did not use the currently open character card');
   const backdropCloseMs = await evaluate(`(()=>{
     const input=document.querySelector('#wb-break-limit-prompt');
     input.value='遮罩关闭保存验证';
@@ -421,7 +562,7 @@ try {
   await evaluate('document.querySelector("[data-tab=settings]").click()');
   await waitFor('document.querySelectorAll(".wb-settings-grid > .wb-panel").length===6');
   const reopenedReadCounts = await evaluate(`Object.fromEntries(['wanbanXiaowu_apiPresets_v1','wanbanXiaowu_worldPresets_v1','wanbanXiaowu_summaries_v1','wanbanXiaowu_roleContexts_v2'].map(key=>[key,__storageReads[key]||0]))`);
-  Object.entries(reopenedReadCounts).forEach(([key,count]) => assert.equal(count, (releasedReadCounts[key] || 0) + 1, key + ' cache was not released exactly once: ' + count));
+  Object.entries(reopenedReadCounts).forEach(([key,count]) => assert.equal(count, releasedReadCounts[key] || 0, key + ' was decoded again after reopening: ' + count));
   await evaluate('document.querySelector("[data-tab=single]").click()');
   for (let i = 0; i < 8 && !(await evaluate('!!document.querySelector("[data-game=shuerte]")')); i++) {
     await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
@@ -435,22 +576,47 @@ try {
   })()`);
   assert.ok(progressPromptMs < 80, 'saved progress prompt waited ' + progressPromptMs.toFixed(1) + 'ms');
   assert.ok(await evaluate('!!document.querySelector("#wb-progress-continue")'), 'saved progress prompt must appear without an idle callback');
-  await evaluate('window.__continueStarted=performance.now();document.querySelector("#wb-progress-continue").click()');
+  await evaluate(`(()=>{
+    window.__continueStarted=performance.now();
+    window.__continueDigits=[];
+    document.querySelector('#wb-progress-continue').click();
+    const number=document.querySelector('#wb-progress-count');
+    if(number){
+      window.__continueDigits.push(number.textContent);
+      window.__continueDigitObserver=new MutationObserver(()=>{
+        const value=number.textContent;
+        if(window.__continueDigits.at(-1)!==value) window.__continueDigits.push(value);
+      });
+      window.__continueDigitObserver.observe(number,{childList:true,characterData:true,subtree:true});
+    }
+  })()`);
   await waitFor('document.querySelector("#wb-shuerte-target")?.textContent==="目标：9"');
   const continueResumeMs = await evaluate('performance.now()-window.__continueStarted');
-  assert.ok(continueResumeMs < 1350, 'saved game resume took ' + continueResumeMs.toFixed(1) + 'ms');
+  const continueDigits = await evaluate('window.__continueDigitObserver?.disconnect();window.__continueDigits.filter(value=>/^\\d$/.test(value))');
+  assert.deepEqual(continueDigits, ['3','2','1'], 'saved game countdown must display 3, 2 and 1 once in order');
+  assert.ok(continueResumeMs >= 2900 && continueResumeMs < 3350, 'saved game resume countdown drifted: ' + continueResumeMs.toFixed(1) + 'ms');
   assert.equal(await evaluate('!!document.querySelector("#wb-pause-overlay")'), false, 'continued game must leave the pause state after its countdown');
   const pauseResumeMs = await evaluate(`(async()=>{
     document.querySelector('#wb-pause').click();
     await new Promise(requestAnimationFrame);
     const started=performance.now();
     document.querySelector('#wb-pause').click();
-    while((document.querySelector('#wb-resume-mask')||document.querySelector('#wb-pause-overlay'))&&performance.now()-started<1800){
+    const number=document.querySelector('#wb-resume-count');
+    window.__pauseResumeDigits=number?[number.textContent]:[];
+    const observer=number?new MutationObserver(()=>{
+      const value=number.textContent;
+      if(window.__pauseResumeDigits.at(-1)!==value) window.__pauseResumeDigits.push(value);
+    }):null;
+    observer?.observe(number,{childList:true,characterData:true,subtree:true});
+    while((document.querySelector('#wb-resume-mask')||document.querySelector('#wb-pause-overlay'))&&performance.now()-started<3800){
       await new Promise(requestAnimationFrame);
     }
+    observer?.disconnect();
     return performance.now()-started;
   })()`);
-  assert.ok(pauseResumeMs < 1350, 'pause resume countdown took ' + pauseResumeMs.toFixed(1) + 'ms');
+  const pauseResumeDigits = await evaluate('window.__pauseResumeDigits.filter(value=>/^\\d$/.test(value))');
+  assert.deepEqual(pauseResumeDigits, ['3','2','1'], 'pause countdown must display 3, 2 and 1 once in order');
+  assert.ok(pauseResumeMs >= 2900 && pauseResumeMs < 3350, 'pause resume countdown drifted: ' + pauseResumeMs.toFixed(1) + 'ms');
   await evaluate(`(()=>{
     const button=Array.from(document.querySelectorAll('.wb-shuerte-cell')).find(cell=>cell.querySelector('.wb-shuerte-number')?.textContent==='9');
     button.click();
@@ -458,7 +624,7 @@ try {
     window.__progressConsoleLog=console.log;
     console.log=(...args)=>{
       const message=args.map(String).join(' ');
-      if(message.includes('保存失败：浏览器存储空间不足或不可用')) window.__progressStorageMessages.push(message);
+      if(message.includes('数据暂未保存')||message.includes('保存失败：浏览器存储')) window.__progressStorageMessages.push(message);
       window.__progressConsoleLog(...args);
     };
     window.__nativeStorageSet=Storage.prototype.setItem;
@@ -522,8 +688,16 @@ try {
   await waitFor('!!document.querySelector("#wb-generate-log:not([disabled])")');
   await evaluate('document.querySelector("#wb-generate-log").click()');
   await waitFor('document.querySelector("#wb-generate-log")?.textContent==="查看日志"');
-  await waitFor(`import('/src/runtime/storage.js?record-wait').then(module=>!!module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_records_v1'))?.shuerte?.[0]?.log)`);
-  assert.equal(await evaluate(`import('/src/runtime/storage.js?record-check').then(module=>!!module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_records_v1')).shuerte?.[0]?.log)`), true, 'generated game log must be stored with its record');
+  await waitFor(`import('/src/runtime/storage.js?record-wait').then(module=>{
+    const shard=localStorage.getItem('wanbanXiaowu_records_v1__shuerte');
+    const aggregate=localStorage.getItem('wanbanXiaowu_records_v1');
+    return !!(shard?module.decodeStoredJSON(shard)?.[0]?.log:module.decodeStoredJSON(aggregate)?.shuerte?.[0]?.log);
+  })`);
+  assert.equal(await evaluate(`import('/src/runtime/storage.js?record-check').then(module=>{
+    const shard=localStorage.getItem('wanbanXiaowu_records_v1__shuerte');
+    const aggregate=localStorage.getItem('wanbanXiaowu_records_v1');
+    return !!(shard?module.decodeStoredJSON(shard)?.[0]?.log:module.decodeStoredJSON(aggregate)?.shuerte?.[0]?.log);
+  })`), true, 'generated game log must be stored with its record');
   await waitFor(`import('/src/runtime/storage.js?pet-reward-wait').then(module=>{
     const saved=module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_petState_v1__test_mobile_pet_story'))?.state;
     return Number(saved?.growth||0)>=4&&Object.values(saved?.days||{}).some(day=>Number(day?.play||0)>=1);
@@ -882,12 +1056,14 @@ try {
   assert.equal(waterSortInteraction.firstStarted && waterSortInteraction.secondStarted, true, 'every water sort pour must start both bottle animations');
   assert.equal(waterSortInteraction.firstCleared && waterSortInteraction.secondCleared, true, 'water sort pour classes must clear after every animation');
   assert.ok(waterSortInteraction.handler < 30, 'water sort selection handler took ' + waterSortInteraction.handler.toFixed(1) + 'ms');
-  const waterSortBackMs = await evaluate(`(()=>{window.__storageWrites.length=0;const started=performance.now();document.querySelector('#wb-back').click();return performance.now()-started})()`);
+  const waterSortBackMs = await evaluate(`(()=>{window.__storageWrites.length=0;window.__waterBackStarted=performance.now();document.querySelector('#wb-back').click();return performance.now()-window.__waterBackStarted})()`);
   assert.ok(waterSortBackMs < 30, 'water sort back handler took ' + waterSortBackMs.toFixed(1) + 'ms');
   assert.ok(await evaluate('!!document.querySelector(".wb-cardgrid")'), 'water sort back must render the game list synchronously');
+  await sleep(450);
   const returnListScroll = await evaluate(`(async()=>{
     const body=document.querySelector('#wb-body');
     const shell=document.querySelector('#wanbanXiaowu-shell');
+    const scrollStarted=performance.now();
     const maxScroll=Math.max(0,body.scrollHeight-body.clientHeight);
     const frames=[],work=[];
     window.__returnLongTasks=[];
@@ -899,28 +1075,29 @@ try {
       const started=performance.now();
       body.scrollTop=maxScroll*step/12;
       body.dispatchEvent(new Event('scroll'));
+      body.dispatchEvent(new Event('touchmove',{bubbles:true}));
       document.elementFromPoint(body.clientWidth/2,Math.min(innerHeight-2,body.getBoundingClientRect().bottom-2));
       work.push(performance.now()-started);
       await new Promise(requestAnimationFrame);
       frames.push(performance.now()-started);
     }
     observer?.disconnect();
-    const competingWrites=window.__storageWrites.filter(item=>item.key==='wanbanXiaowu_progress_v1__watersort'||item.key==='wanbanXiaowu_records_v1');
+    const competingWrites=window.__storageWrites.filter(item=>item.key==='wanbanXiaowu_progress_v1__watersort'||item.key.startsWith('wanbanXiaowu_records_v1'));
     return {
       maxFrame:Math.max(...frames),maxWork:Math.max(...work),maxLongTask:Math.max(0,...window.__returnLongTasks),
-      competingWrites:competingWrites.length,bodyScrollable:maxScroll>0,
+      competingWrites:competingWrites.length,writeDetails:competingWrites,backStarted:window.__waterBackStarted,scrollStarted,scrollEnded:performance.now(),bodyScrollable:maxScroll>0,
       shellScrollable:shell.scrollHeight>shell.clientHeight+1,popupHeight:document.querySelector('#wanbanXiaowu-popup').clientHeight,shellHeight:shell.clientHeight,
     };
   })()`);
   assert.equal(returnListScroll.bodyScrollable, true, 'returned game list must remain scrollable');
   assert.equal(returnListScroll.shellScrollable, false, 'mobile house must not create a competing outer scroll container');
-  assert.equal(returnListScroll.competingWrites, 0, 'progress or record storage writes competed with return-list scrolling');
+  assert.equal(returnListScroll.competingWrites, 0, 'progress or record storage writes competed with return-list scrolling: ' + JSON.stringify(returnListScroll));
   assert.ok(returnListScroll.maxWork < 30, 'return-list scroll work took ' + returnListScroll.maxWork.toFixed(1) + 'ms');
   assert.ok(returnListScroll.maxLongTask < 80, 'return-list scroll produced a ' + returnListScroll.maxLongTask.toFixed(1) + 'ms long task');
   assert.ok(returnListScroll.maxFrame < 80, 'return-list scroll frame took ' + returnListScroll.maxFrame.toFixed(1) + 'ms');
   await sleep(900);
   assert.equal(await evaluate(`window.__storageWrites.some(item=>item.key==='wanbanXiaowu_progress_v1__watersort')`), true, 'water sort progress did not flush after scrolling stopped');
-  assert.equal(await evaluate(`window.__storageWrites.some(item=>item.key==='wanbanXiaowu_records_v1')`), true, 'water sort record did not flush after scrolling stopped');
+  assert.equal(await evaluate(`window.__storageWrites.some(item=>item.key==='wanbanXiaowu_records_v1__watersort')`), true, 'water sort record did not flush after scrolling stopped');
   assert.ok(await evaluate('!!localStorage.getItem("wanbanXiaowu_progress_v1__watersort")'), 'water sort back must flush its deferred snapshot');
   for (let i = 0; i < 10 && !(await evaluate('!!document.querySelector("[data-game=watersort]")')); i++) {
     await evaluate('document.querySelector("#wb-body").scrollTop=document.querySelector("#wb-body").scrollHeight');
@@ -1221,6 +1398,10 @@ try {
     ['guessnumber','double','#wb-num-guess'], ['wordguess','double','#wb-word-input'], ['tictactoe','double','.wb-board3'],
   ];
   for (const [game, tab, selector] of startupSmokes) await smokeStartListedGame(game, tab, selector);
+  for (const modulePath of ['/src/games/zuma.js', '/src/games/water-sort.js', '/src/games/flappy-bird.js']) {
+    assert.equal(requests.filter(path => path === modulePath).length, 1, modulePath + ' must stay cached after its first load');
+  }
+  assert.equal(smokeReturnMetrics.length, startupSmokes.length, 'every smoke-tested game must verify its return path');
   assert.deepEqual(await evaluate('window.__errors'), []);
   console.log('PASS: mobile first open ' + openMs.toFixed(1) + 'ms; tabs single/double/intimacy ' + tabSwitches.single.toFixed(1) + '/' + tabSwitches.double.toFixed(1) + '/' + tabSwitches.intimacy.toFixed(1) + 'ms; reopened list+icons ' + reopenedList.ready.toFixed(1) + 'ms; game entry ' + gameEntryMs.toFixed(1) + 'ms/progress prompt ' + progressPromptMs.toFixed(1) + 'ms/save ' + progressAutoSaveMs.toFixed(1) + 'ms/resume ' + continueResumeMs.toFixed(1) + 'ms/pause resume ' + pauseResumeMs.toFixed(1) + 'ms; Schulte ' + interaction.maxHandler.toFixed(1) + 'ms; game over ' + gameOverInteraction.maxHandler.toFixed(1) + 'ms/theater close ' + theaterCloseMs.toFixed(1) + 'ms; water sort ' + waterSortInteraction.handler.toFixed(1) + 'ms/back ' + waterSortBackMs.toFixed(1) + 'ms/return scroll ' + returnListScroll.maxFrame.toFixed(1) + 'ms; 2048 ' + game2048Interaction.handler.toFixed(1) + 'ms; U ' + uyangleInteraction.handler.toFixed(1) + 'ms; Pop Star ' + popstarInteraction.handler.toFixed(1) + 'ms; Gomoku+AI ' + gomokuInteraction.handler.toFixed(1) + 'ms; Ludo ' + ludoRoll.toFixed(1) + 'ms; settings switch ' + settingsSwitch.elapsed.toFixed(1) + 'ms (cached ' + secondSettingsSwitch.toFixed(1) + 'ms); home switch ' + homeSwitch.elapsed.toFixed(1) + 'ms; 6x6 klotski ' + klotski390.board.width.toFixed(1) + 'px at 390px and ' + klotski320.board.width.toFixed(1) + 'px at 320px.');
 } finally {

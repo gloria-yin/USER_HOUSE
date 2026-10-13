@@ -4,10 +4,10 @@ import { yaml } from '../../../../../../lib.js';
 import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 import { NUMBER_KLOTSKI_BEST_STORAGE_KEY, createNumberKlotskiGame, isNumberKlotskiSolved, isSolvableNumberKlotskiBoard } from '../games/number-klotski.js';
-import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../games/spider-rules.js?v=4.3.4';
+import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../games/spider-rules.js?v=4.3.5';
 import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js';
 import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
-import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.3.4';
+import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.3.5';
 import { parsePetInfo, parsePetStoryLines, assertPetInfo } from './pet-info.js';
 import { petStoryMemoryText } from './pet-memory.js';
 import { parseGeneratedJson } from './generated-json.js';
@@ -110,6 +110,7 @@ export async function initWanbanXiaowu(options = {}) {
   const STORAGE_PROGRESS_SHARD_PREFIX = STORAGE_PROGRESS + '__';
   const STORAGE_SUDOKU_STATE = SCRIPT_ID + '_sudokuState_v1';
   const STORAGE_RECORDS = SCRIPT_ID + '_records_v1';
+  const STORAGE_RECORDS_SHARD_PREFIX = STORAGE_RECORDS + '__';
   const STORAGE_PET_TEST = SCRIPT_ID + '_petTest_v1';
   const STORAGE_PET_FULL = SCRIPT_ID + '_petFull_v1';
   const STORAGE_PET_ACTIVE_CARETAKER = SCRIPT_ID + '_petActiveCaretaker_v1';
@@ -145,12 +146,14 @@ export async function initWanbanXiaowu(options = {}) {
   let gameIconObserver = null;
   let gameListLoadObserver = null;
   const modularGameFactoryLoaders = {
-    zuma:() => import('../games/zuma.js?v=4.3.4').then(module => module.createZumaGame),
-    watersort:() => import('../games/water-sort.js?v=4.3.4').then(module => module.createWaterSortGame),
-    flappybird:() => import('../games/flappy-bird.js?v=4.3.4').then(module => module.createFlappyBirdGame),
+    zuma:() => import('../games/zuma.js?v=4.3.5').then(module => module.createZumaGame),
+    watersort:() => import('../games/water-sort.js?v=4.3.5').then(module => module.createWaterSortGame),
+    flappybird:() => import('../games/flappy-bird.js?v=4.3.5').then(module => module.createFlappyBirdGame),
   };
   const modularGameFactoryPromises = new Map();
   const decodedGameIconCache = new Map();
+  const gameListViewCache = new Map();
+  const gameListScrollCache = new Map();
   const cardScoreDisplayCache = new Map();
   let gameIconWarmupHandle = null;
   function loadModularGameFactory(id) {
@@ -211,6 +214,7 @@ export async function initWanbanXiaowu(options = {}) {
   const progressDeleteCache = new Set();
   let pendingRecords = null;
   let recordsCache = null;
+  const pendingRecordGames = new Set();
   let recordsSaveTimer = null;
   let recordsSaveStartedAt = 0;
   let progressCache = null;
@@ -256,6 +260,7 @@ export async function initWanbanXiaowu(options = {}) {
   let lineGenerationFailures = {};
   let theaterGenerationFailures = {};
   let batchGenerationDebug = [];
+  const pendingStorageRetries = new Map();
   let mainSwipeAnimation = '';
   let roleContextEventsBound = false;
   let roleContextRefreshTimer = 0;
@@ -269,7 +274,7 @@ export async function initWanbanXiaowu(options = {}) {
   let pendingWindowState = null;
 
   const GAME_ICON_BASE = new URL('../../assets/game-icons/', import.meta.url).href;
-  const gameCardIcon = filename => GAME_ICON_BASE + filename + '?v=4.3.4';
+  const gameCardIcon = filename => GAME_ICON_BASE + filename + '?v=4.3.5';
   const PET_ASSET_BASE = new URL('../../assets/pets/', import.meta.url).href;
   const PET_EGG_OPTIONS = Object.freeze([
     { id:'blue', label:'蓝色蛋' },
@@ -634,15 +639,64 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function loadJSON(key, fallback) { try { const v = localStorage.getItem(key); return v ? decodeStoredJSON(v) : fallback; } catch(e) { console.warn('[玩伴小屋] saved data read failed:', key, e); return fallback; } }
   function clearStorageFailure(key) {
+    const pending = pendingStorageRetries.get(key);
+    if (pending?.timer != null) getHostWindow().clearTimeout(pending.timer);
+    pendingStorageRetries.delete(key);
     failedStorageKeys.delete(key);
     if (failedStorageKeys.size) return;
     storageFailureWarned = false;
     lastStorageWriteError = '';
   }
-  function warnStorageFailure() {
+  function isStorageQuotaFailure(error) {
+    const message = String(error?.message || '');
+    return error?.name === 'QuotaExceededError' || error?.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+      || error?.code === 22 || error?.code === 1014 || /quota|storage.{0,12}(full|limit)|空间不足/i.test(message);
+  }
+  function isStorageUnavailableFailure(error) {
+    const message = String(error?.message || '');
+    return error?.name === 'SecurityError' || error?.name === 'NotAllowedError' || error?.code === 18
+      || /denied|disabled|not available|unavailable|access.{0,12}storage/i.test(message);
+  }
+  function storageFailureMessage(error) {
+    if (isStorageQuotaFailure(error)) return '数据暂未保存：浏览器为当前网页分配的存储空间可能已满。当前数据仍保留在本页面，请勿刷新或关闭；可在设置中导出备份后清理旧记录。';
+    if (isStorageUnavailableFailure(error)) return '数据暂未保存：浏览器当前无法使用本地存储，请检查隐私模式或站点存储权限。当前数据仍保留在本页面；也可先在设置中导出备份。';
+    return '数据暂未保存：浏览器本地存储连续写入失败。当前数据仍保留在本页面，稍后操作时会再次尝试；如持续出现，请在设置中导出备份后再关闭页面。';
+  }
+  function warnStorageFailure(error) {
+    // The first failed write gets a quiet retry. Only a confirmed failure should interrupt play.
+    if (!error && Array.from(pendingStorageRetries.values()).some(entry => entry.attempts === 0)) return;
     if (storageFailureWarned) return;
     storageFailureWarned = true;
-    toast('保存失败：浏览器存储空间不足或不可用。请先导出备份；未保存的数据会留在当前页面并自动重试。');
+    toast(storageFailureMessage(error));
+  }
+  function scheduleStorageRetry(key, value, writeOptions, error) {
+    const previous = pendingStorageRetries.get(key);
+    const entry = previous || { attempts:0, timer:null, value:null, writeOptions:null, error:null };
+    entry.value = value;
+    entry.writeOptions = Object.assign({}, writeOptions || {});
+    entry.error = error;
+    pendingStorageRetries.set(key, entry);
+    if (entry.timer != null) return;
+    const delay = entry.attempts === 0 ? 400 : Math.min(5000, 1000 * (entry.attempts + 1));
+    entry.timer = getHostWindow().setTimeout(() => {
+      entry.timer = null;
+      if (shouldDeferPersistenceWrite(Date.now())) {
+        scheduleStorageRetry(key, entry.value, entry.writeOptions, entry.error);
+        return;
+      }
+      try {
+        writeStoredJSON(localStorage, key, entry.value, entry.writeOptions);
+        clearStorageFailure(key);
+        if (key.startsWith(STORAGE_RECORDS_SHARD_PREFIX)) refreshRecordSaveStatus();
+      } catch (retryError) {
+        entry.error = retryError;
+        entry.attempts += 1;
+        lastStorageWriteError = retryError?.message || '浏览器本地存储写入失败';
+        console.warn('[玩伴小屋] local storage retry failed:', key, retryError);
+        warnStorageFailure(retryError);
+        if (key.startsWith(STORAGE_RECORDS_SHARD_PREFIX)) refreshRecordSaveStatus();
+      }
+    }, delay);
   }
   function saveJSON(key, value, options) {
     const writeOptions = Object.assign({}, options || {});
@@ -656,6 +710,7 @@ export async function initWanbanXiaowu(options = {}) {
       lastStorageWriteError = e && e.message ? e.message : '浏览器本地存储写入失败';
       failedStorageKeys.add(key);
       console.warn('[玩伴小屋] local storage write failed:', key, e);
+      scheduleStorageRetry(key, value, writeOptions, e);
       if (!suppressWarning) warnStorageFailure();
       return false;
     }
@@ -686,10 +741,10 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function setSettings(next) {
     const merged = Object.assign({}, settings(), next);
-    if (saveJSON(STORAGE_SETTINGS, merged)) {
-      settingsCache = merged;
-      if (Object.prototype.hasOwnProperty.call(next || {}, 'theme')) canvasPaletteCache = null;
-    }
+    saveJSON(STORAGE_SETTINGS, merged);
+    // Keep the current page consistent while a failed browser write waits for its retry.
+    settingsCache = merged;
+    if (Object.prototype.hasOwnProperty.call(next || {}, 'theme')) canvasPaletteCache = null;
     return merged;
   }
   function setSettingsIfChanged(next) {
@@ -1139,13 +1194,14 @@ export async function initWanbanXiaowu(options = {}) {
   function activateCompanionRole(source, { pinned = false, makeDefault = false } = {}) {
     const role = captureRoleContext(source, source.charName || source.name);
     role.roleKey = roleKeyOf(source) || role.charName;
+    role.selectedWorldPresetName = role.roleKey;
     saveRoleContext(role);
     if (makeDefault && role.cardId) {
       const defaults = cardRoles();
       defaults[role.cardId] = { roleKey:role.roleKey, cardName:role.cardName };
       saveCardRoles(defaults);
     }
-    setSettings(Object.assign({}, role, { companionRolePinned:pinned, lastHostCardId:characterCardId(currentHostCharacter()), selectedWorldPresetName:role.roleKey }));
+    setSettings(Object.assign({}, role, { companionRolePinned:pinned, lastHostCardId:characterCardId(currentHostCharacter()) }));
     applyRoleToAllGames(role.roleKey);
     if (gameStarted && currentGame) currentRoundRoleContext = isolatedRole(role);
     refreshGameCompanionPanel();
@@ -1158,8 +1214,10 @@ export async function initWanbanXiaowu(options = {}) {
     return role;
   }
   function worldRoleUsesCurrentCard() {
+    const current = currentHostCharacter();
+    if (!current) return false;
     const cfg = settings();
-    return roleNameFromWorldUI() !== cfg.charName || !cfg.cardId || cfg.cardId === characterCardId(currentHostCharacter());
+    return roleNameFromWorldUI() !== cfg.charName || !cfg.cardId || cfg.cardId === characterCardId(current);
   }
   function roleBindingForCard(card = currentHostCharacter()) {
     return { cardId:characterCardId(card), cardName:characterNameValue(card), characterAvatar:characterAvatarValue(card) };
@@ -1219,8 +1277,21 @@ export async function initWanbanXiaowu(options = {}) {
   function currentHostCharacter() {
     const ctx = getHostContext() || {};
     if (ctx.groupId) return null;
+    const direct = [ctx.character, ctx.currentCharacter, ctx.selectedCharacter]
+      .find(character => character && typeof character === 'object');
+    if (direct) return direct;
     const id = Number(ctx.characterId);
-    return (Number.isInteger(id) && id >= 0 ? ctx.characters?.[id] : null) || ctx.character || null;
+    if (Number.isInteger(id) && id >= 0 && ctx.characters?.[id]) return ctx.characters[id];
+    const rawId = String(ctx.characterId ?? '').trim();
+    if (rawId) {
+      const identified = safeArray(ctx.characters).find(character => [
+        character?.id, character?.data?.id, characterAvatarValue(character)
+      ].some(value => String(value ?? '') === rawId));
+      if (identified) return identified;
+    }
+    const hostName = String(ctx.name2 || '').trim();
+    const matches = hostName ? safeArray(ctx.characters).filter(character => characterNameValue(character) === hostName) : [];
+    return matches.length === 1 ? matches[0] : null;
   }
   function hostCharacterForRole(name, avatar) {
     const ctx = getHostContext() || {};
@@ -1258,9 +1329,9 @@ export async function initWanbanXiaowu(options = {}) {
     const current = currentHostCharacter();
     if (current) setBoundedMapValue(roleAvatarCacheVersions, roleAvatarCacheKey(characterNameValue(current), current), Date.now(), 48);
   }
-  function captureRoleContext(source, name) {
+  function captureRoleContext(source, name, explicitCard) {
     const role = isolatedRole(source, name);
-    const card = cardForRole(role);
+    const card = explicitCard || cardForRole(role);
     const isCurrent = !!card && characterCardId(card) === characterCardId(currentHostCharacter()) && !getHostContext()?.groupId;
     if (card) {
       role.cardId = characterCardId(card);
@@ -1330,9 +1401,13 @@ export async function initWanbanXiaowu(options = {}) {
       roleContextRefreshTimer = 0;
       const cardChanged = settings().lastHostCardId !== characterCardId(currentHostCharacter());
       if (cardChanged && wbAutoSaveTimer) { clearTimeout(wbAutoSaveTimer); wbAutoSaveTimer = null; }
-      syncCurrentHostRoleContext();
-      if (cardChanged && currentTab === 'settings' && !currentGame && qs('#wb-char-name') && !petGenerationLeaveGuard) renderSettings();
+      const contextChanged = syncCurrentHostRoleContext();
+      if (contextChanged && currentTab === 'settings' && !currentGame && qs('#wb-char-name') && !petGenerationLeaveGuard) renderSettings();
     }, 80);
+  }
+  function syncVisibleSettingsRoleContext() {
+    const contextChanged = syncCurrentHostRoleContext();
+    if (contextChanged && currentTab === 'settings' && !currentGame && qs('#wb-char-name') && !petGenerationLeaveGuard) renderSettings();
   }
   function bindRoleContextEvents() {
     if (roleContextEventsBound) return;
@@ -1361,14 +1436,25 @@ export async function initWanbanXiaowu(options = {}) {
     const name = normalizePresetName(roleName || companionRoleKey());
     return worldPresets().find(x => roleKeyOf(x) === name) || null;
   }
-  function rolePromptConfig(roleName, baseCfg, extra) {
+  function roleContextSnapshot(roleName, extra) {
     const role = normalizePresetName(roleName || companionRoleKey());
-    const base = baseCfg || settings();
     const source = (extra && extra.name ? extra : null)
       || (gameStarted && roleKeyOf(currentRoundRoleContext) === role ? currentRoundRoleContext : null)
-      || savedRole(role) || (role === companionRoleKey() ? base : {});
-    const snapshot = captureRoleContext(source, source.charName || source.name || role);
+      || savedRole(role) || (role === companionRoleKey() ? settings() : {});
+    const hasCardSnapshot = !!source.characterCardSnapshot && typeof source.characterCardSnapshot === 'object';
+    const hasDescriptionSnapshot = !!String(source.charDescriptionSnapshot || '').trim();
+    const canReuse = source.roleContextVersion === 2
+      && (source.charDescMode === 'manual' || source.injectCharDesc === false || hasCardSnapshot || hasDescriptionSnapshot);
+    // Complete snapshots avoid cloning a large character card again when a game starts.
+    const snapshot = canReuse
+      ? isolatedRole(source, source.charName || source.name || role)
+      : captureRoleContext(source, source.charName || source.name || role);
     snapshot.roleKey = roleKeyOf(source) || role;
+    return snapshot;
+  }
+  function rolePromptConfig(roleName, baseCfg, extra) {
+    const base = baseCfg || settings();
+    const snapshot = roleContextSnapshot(roleName, extra);
     const cfg = withRoleContext(base, snapshot);
     return extra && extra.name ? cfg : Object.assign(cfg, extra || {}, { charName:snapshot.charName, roleKey:snapshot.roleKey, roleContextVersion:2 });
   }
@@ -1405,9 +1491,8 @@ export async function initWanbanXiaowu(options = {}) {
   function summaryReq() { return localStorage.getItem(STORAGE_SUMMARY_REQ) || ''; }
   function saveSummaryReq(v) { try { localStorage.setItem(STORAGE_SUMMARY_REQ, String(v || '')); } catch(e) {} }
   const PROGRESS_SAVE_DELAY = 300;
-  const PROGRESS_SAVE_MAX_DELAY = 5000;
-  const PROGRESS_EXIT_SAVE_DELAY = 280;
-  const PERSISTENCE_INPUT_GRACE = 220;
+  const PROGRESS_EXIT_SAVE_DELAY = 800;
+  const PERSISTENCE_INPUT_GRACE = 500;
   const PERSISTENCE_RETRY_DELAY = 120;
   function progressShardKey(game) { return STORAGE_PROGRESS_SHARD_PREFIX + String(game || ''); }
   function progressShardKeys() {
@@ -1531,7 +1616,7 @@ export async function initWanbanXiaowu(options = {}) {
   function shouldDeferPersistenceWrite(startedAt) {
     const win = getHostWindow();
     const doc = getHostDocument();
-    if (doc.hidden || !startedAt || Date.now() - startedAt >= PROGRESS_SAVE_MAX_DELAY) return false;
+    if (doc.hidden || !startedAt) return false;
     const inputPending = !!win.navigator?.scheduling?.isInputPending?.({ includeContinuous:true });
     return inputPending || !!qs('.wb-countdown', doc) || Date.now() - lastPersistenceInputAt < PERSISTENCE_INPUT_GRACE;
   }
@@ -1540,7 +1625,6 @@ export async function initWanbanXiaowu(options = {}) {
     const now = Date.now();
     if (!progressSaveStartedAt[game]) progressSaveStartedAt[game] = now;
     if (progressSaveTimers[game]) clearTimeout(progressSaveTimers[game]);
-    const maxRemaining = Math.max(0, PROGRESS_SAVE_MAX_DELAY - (now - progressSaveStartedAt[game]));
     progressSaveTimers[game] = getHostWindow().setTimeout(() => {
       delete progressSaveTimers[game];
       if (shouldDeferPersistenceWrite(progressSaveStartedAt[game])) {
@@ -1548,7 +1632,7 @@ export async function initWanbanXiaowu(options = {}) {
         return;
       }
       flushProgressSave(game);
-    }, Math.min(Math.max(0, delay), maxRemaining));
+    }, Math.max(0, delay));
   }
   function flushProgressDelete(game) {
     if (!game || !progressDeleteCache.has(game)) return;
@@ -1865,8 +1949,23 @@ export async function initWanbanXiaowu(options = {}) {
     if (game === 'tetris') return !!state.score || (Array.isArray(state.board) && state.board.some(row => row.some(Boolean))) || !!(state.piece && (Number(state.piece.y) > 0 || Number(state.piece.x) !== 3));
     return true;
   }
+  function recordShardKey(game) { return STORAGE_RECORDS_SHARD_PREFIX + encodeURIComponent(String(game || '')); }
+  function recordShardKeys() {
+    try {
+      return Array.from({ length:localStorage.length }, (_, index) => localStorage.key(index))
+        .filter(key => key && key.startsWith(STORAGE_RECORDS_SHARD_PREFIX));
+    } catch (_) { return []; }
+  }
+  function mergeRecordShards(all) {
+    recordShardKeys().forEach(key => {
+      const game = decodeURIComponent(key.slice(STORAGE_RECORDS_SHARD_PREFIX.length));
+      const shard = loadJSON(key, null);
+      if (game && Array.isArray(shard)) all[game] = shard;
+    });
+    return all;
+  }
   function records() {
-    const all = safeObject(pendingRecords || recordsCache || loadJSON(STORAGE_RECORDS, {}));
+    const all = safeObject(pendingRecords || recordsCache || mergeRecordShards(safeObject(loadJSON(STORAGE_RECORDS, {}))));
     recordsCache = all;
     let changed = false;
     Object.keys(all).forEach(game => {
@@ -1881,12 +1980,15 @@ export async function initWanbanXiaowu(options = {}) {
         if (r.log == null) { r.log = ''; changed = true; }
       });
     });
-    if (changed) saveRecords(all);
+    if (changed) saveRecords(all, Object.keys(all));
     return all;
   }
   function refreshRecordSaveStatus() {
     const status = qs('#wb-record-save-status');
-    const failed = !!(pendingRecords && failedStorageKeys.has(STORAGE_RECORDS));
+    const failed = !!(pendingRecords && Array.from(pendingRecordGames).some(game => {
+      const key = recordShardKey(game);
+      return failedStorageKeys.has(key) && Number(pendingStorageRetries.get(key)?.attempts || 0) > 0;
+    }));
     if (status) status.textContent = failed
       ? '游戏记录尚未写入本地，暂存在当前页面。请重试保存或导出备份；刷新或关闭网页会丢失未保存内容。'
       : '';
@@ -1902,7 +2004,13 @@ export async function initWanbanXiaowu(options = {}) {
       recordsSaveTimer = null;
     }
     recordsSaveStartedAt = 0;
-    if (pendingRecords && saveJSON(STORAGE_RECORDS, pendingRecords)) pendingRecords = null;
+    if (pendingRecords) {
+      if (!pendingRecordGames.size) Object.keys(pendingRecords).forEach(game => pendingRecordGames.add(game));
+      Array.from(pendingRecordGames).forEach(game => {
+        if (saveJSON(recordShardKey(game), safeArray(pendingRecords[game]))) pendingRecordGames.delete(game);
+      });
+      if (!pendingRecordGames.size) pendingRecords = null;
+    }
     refreshRecordSaveStatus();
     return !pendingRecords;
   }
@@ -1910,7 +2018,6 @@ export async function initWanbanXiaowu(options = {}) {
     if (!pendingRecords) return;
     if (!recordsSaveStartedAt) recordsSaveStartedAt = Date.now();
     if (recordsSaveTimer != null) getHostWindow().clearTimeout(recordsSaveTimer);
-    const maxRemaining = Math.max(0, PROGRESS_SAVE_MAX_DELAY - (Date.now() - recordsSaveStartedAt));
     recordsSaveTimer = getHostWindow().setTimeout(() => {
       recordsSaveTimer = null;
       if (shouldDeferPersistenceWrite(recordsSaveStartedAt)) {
@@ -1918,22 +2025,25 @@ export async function initWanbanXiaowu(options = {}) {
         return;
       }
       flushRecordsSave();
-    }, Math.min(Math.max(0, delay), maxRemaining));
+    }, Math.max(0, delay));
   }
-  function stageRecordsSave(v) {
+  function stageRecordsSave(v, games) {
     recordsCache = safeObject(v);
     pendingRecords = recordsCache;
+    const changedGames = Array.isArray(games) ? games : [games];
+    changedGames.filter(Boolean).forEach(game => pendingRecordGames.add(game));
+    if (!pendingRecordGames.size) Object.keys(recordsCache).forEach(game => pendingRecordGames.add(game));
     cardScoreDisplayCache.clear();
     refreshRecordSaveStatus();
     scheduleRecordsSaveSoon();
     scheduleDeferredPersistenceFlush();
     return recordsCache;
   }
-  function saveRecords(v) {
-    stageRecordsSave(v);
+  function saveRecords(v, games) {
+    stageRecordsSave(v, games);
     return flushRecordsSave();
   }
-  function companionName() { const cfg = settings(); const ctx = getHostContext(); const char = ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null); const charData = char?.data || char || {}; return (cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}'); }
+  function companionName() { const cfg = settings(); const ctx = getHostContext(); const char = currentHostCharacter(); const charData = char?.data || char || {}; return (cfg.charName && cfg.charName !== '{{char}}') ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}'); }
   function displayCharNameForGame(game) { return settings().companion ? activeGameRoleName(game) : 'TA'; }
   function displayCharName() { return displayCharNameForGame(currentGame); }
   function displayCharTextForGame(text, game) {
@@ -2101,7 +2211,9 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function scheduleGameIconWarmup() {
     if (gameIconWarmupHandle !== null) return;
-    const urls = Array.from(new Set(Object.values(GAME_META).map(game => game.iconImage).filter(Boolean)));
+    const urls = Array.from(new Set(Object.values(GAME_META).map(game => game.iconImage).filter(Boolean).concat([
+      JUMP_STAND_URL, JUMP_DOWN_URL, PLANK_STAND_URL, PLANK_WALK_URL
+    ])));
     if (urls.every(url => decodedGameIconCache.has(url))) return;
     const view = getHostWindow();
     const warm = () => {
@@ -2119,7 +2231,9 @@ export async function initWanbanXiaowu(options = {}) {
   function gameIconHTML(g) {
     const fallback = '<span>' + esc(g.icon || '') + '</span>';
     if (!g.iconImage) return '<div class="wb-game-icon">' + fallback + '</div>';
-    return '<div class="wb-game-icon"><img data-src="' + esc(g.iconImage) + '" alt="" loading="eager" decoding="async">' + fallback + '</div>';
+    const cached = decodedGameIconCache.get(String(g.iconImage));
+    const ready = !!(cached?.image?.complete && cached.image.naturalWidth > 0);
+    return '<div class="wb-game-icon' + (ready ? ' has-image' : '') + '"><img ' + (ready ? 'src' : 'data-src') + '="' + esc(g.iconImage) + '" alt="" loading="eager" decoding="async">' + (ready ? '<span style="display:none;">' + esc(g.icon || '') + '</span>' : fallback) + '</div>';
   }
   function loadGameCardIcon(icon) {
     const img = icon?.querySelector('img[data-src]');
@@ -2185,10 +2299,10 @@ export async function initWanbanXiaowu(options = {}) {
     const all = records(); const g = GAME_META[game] || { name: game, mode: 'single' }; const result = explicitResult || inferResult(game, title, scoreText);
     const id = snap.progressRecordId || currentRoundProgressRecordId || ('rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
     const existing = (all[game] || []).find(record => record.id === id);
-    const item = { id, playedAt:existing?.playedAt || snap.playedAt || new Date().toLocaleString(), savedAt:Date.now(), durationMs:Number.isFinite(snap.durationMs) ? snap.durationMs : currentGameDurationMs(), game:g.name, result, scoreText:snap.scoreText || displayCharTextForGame(scoreText || '', game), companion:snap.companion || displayCharNameForGame(game), details:meta && meta.details ? meta.details : null, log:existing?.log || '', roleContext:snap.roleContext ? isolatedRole(snap.roleContext) : (currentRoundRoleContext ? isolatedRole(currentRoundRoleContext) : null) };
+    const item = { id, playedAt:existing?.playedAt || snap.playedAt || new Date().toLocaleString(), savedAt:Date.now(), durationMs:Number.isFinite(snap.durationMs) ? snap.durationMs : currentGameDurationMs(), game:g.name, result, scoreText:snap.scoreText || displayCharTextForGame(scoreText || '', game), companion:snap.companion || displayCharNameForGame(game), details:meta && meta.details ? meta.details : null, log:existing?.log || '', roleContext:snap.roleContext || currentRoundRoleContext || null };
     if (!all[game]) all[game] = [];
     all[game] = [item].concat(all[game].filter(record => record.id !== id)).slice(0, 100);
-    if (!deferSave) saveRecords(all);
+    if (!deferSave) saveRecords(all, game);
     if (!snapshot) currentRoundProgressRecordId = '';
     const reward = () => {
       try {
@@ -2239,13 +2353,13 @@ export async function initWanbanXiaowu(options = {}) {
       details,
       log:existing?.log || '',
       lineEvents:currentRoundLineEvents.slice(-120),
-      roleContext:currentRoundRoleContext ? isolatedRole(currentRoundRoleContext) : null,
+      roleContext:currentRoundRoleContext || null,
     };
     if (!all[game]) all[game] = [];
     all[game] = [item].concat(all[game].filter(record => record.id !== id)).slice(0, 100);
     if (deferWrite) {
-      stageRecordsSave(all);
-    } else saveRecords(all);
+      stageRecordsSave(all, game);
+    } else saveRecords(all, game);
     currentRoundProgressRecordId = id;
     progressSaveCache[game] = Object.assign({}, state, { progressRecordId:id, savedAt:Date.now() });
     if (deferWrite) scheduleDeferredPersistenceFlush();
@@ -2518,33 +2632,12 @@ export async function initWanbanXiaowu(options = {}) {
     return html;
   }
   function releaseTransientCaches() {
-    const backgroundUsesSettings = !!(settingsCache?.messageNotify || settingsCache?.petDesktopEnabled || settingsCache?.floatingBallEnabled);
-    if (!pendingRecords) recordsCache = null;
-    if (!Object.keys(progressSaveCache).length && !progressDeleteCache.size) progressCache = null;
-    linesCache = null;
-    roleLinesCache = null;
-    linePresetSelectionCache = null;
-    apiPresetsCache = null;
-    worldPresetsCache = null;
-    summariesCache = null;
-    roleContextsCache = null;
-    cardRolesCache = null;
-    theaterCache = null;
-    canvasPaletteCache = null;
+    // Persistent data stays parsed so reopening the house never repeats large decompression work.
     markdownCache.clear();
     markdownCacheCharacters = 0;
     petStoryPageCache.clear();
     petStoryPageCacheCharacters = 0;
     petStoryMeasureContext = null;
-    if (!settingsCache?.petDesktopEnabled) {
-      petTestInfoCache = null;
-      petTestInfoSource = '';
-      petFullDataCache = null;
-      petTrialDataCache = null;
-      petStateShardCache.clear();
-      petStoryCursorCache.clear();
-    }
-    if (!backgroundUsesSettings) settingsCache = null;
     clearStoredJSONCache();
   }
   function cancelTransientCacheCleanup() {
@@ -2594,11 +2687,11 @@ export async function initWanbanXiaowu(options = {}) {
     if (idx < 0) return null;
     arr[idx] = Object.assign({}, arr[idx], patch || {});
     all[game] = arr;
-    if (deferSave) stageRecordsSave(all);
-    else saveRecords(all);
+    if (deferSave) stageRecordsSave(all, game);
+    else saveRecords(all, game);
     return arr[idx];
   }
-  function deleteRecord(game, id) { const all = records(); all[game] = (all[game] || []).filter(r => r.id !== id); saveRecords(all); }
+  function deleteRecord(game, id) { const all = records(); all[game] = (all[game] || []).filter(r => r.id !== id); saveRecords(all, game); }
   function recentGameLogs(game, companion) {
     const key = companion || companionRoleKey();
     const who = roleDisplayName(key);
@@ -3754,6 +3847,7 @@ export async function initWanbanXiaowu(options = {}) {
     cancelGameEntryPrompt();
     qs('#wb-message-notify-mask')?.remove();
     const opts = Object.assign({ save:true, record:true, deferWrites:false }, options || {});
+    if (opts.deferWrites) lastPersistenceInputAt = Date.now();
     const stoppedGame = currentGame;
     const wasStarted = !!(gameStarted && stoppedGame);
     const previousDeferWrites = deferImmediateProgressWrites;
@@ -5852,9 +5946,9 @@ export async function initWanbanXiaowu(options = {}) {
       scheduleWindowStateSave(currentTab, '');
     } else restoreWindowState();
     render();
-    if (shouldSyncRole) afterNextPaint(() => {
+    if (shouldSyncRole || currentTab === 'settings') afterNextPaint(() => {
       const visibleShell = qs('#' + SHELL_ID, getHostDocument());
-      if (visibleShell?.classList.contains('wb-shell-visible')) syncCurrentHostRoleContext();
+      if (visibleShell?.classList.contains('wb-shell-visible')) syncVisibleSettingsRoleContext();
     });
   }
   function closePopupShell() {
@@ -5932,6 +6026,9 @@ export async function initWanbanXiaowu(options = {}) {
     if (swipeAnimation) mainSwipeAnimation = swipeAnimation;
     scheduleWindowStateSave(currentTab, '');
     render();
+    if (nextTab === 'settings') afterNextPaint(() => {
+      if (currentTab === 'settings' && !currentGame) syncVisibleSettingsRoleContext();
+    });
   }
   function render() {
     if (confirmPetGenerationLeave(render)) return;
@@ -8827,36 +8924,50 @@ export async function initWanbanXiaowu(options = {}) {
     const body = qs('#wb-body'); body.className = 'wb-body';
     const ids = Object.values(GAME_META).filter(g => g.mode === mode).map(g => g.id);
     const scoreSnapshot = scores();
-    body.innerHTML = '<div class="wb-cardgrid">' + ids.map(id => {
-      const g = GAME_META[id];
-      return '<div class="wb-game-card" data-game="' + id + '">' + gameIconHTML(g) + '<div class="wb-game-info"><div class="wb-game-name">' + esc(g.name) + '</div><div class="wb-muted" data-game-score="' + id + '">' + esc(immediateCardScoreDisplay(id, scoreSnapshot)) + '</div></div></div>';
-    }).join('') + '</div>';
-    const grid = qs('.wb-cardgrid', body);
-    const cardFromEvent = event => event.target?.closest?.('.wb-game-card');
-    const prepareFromEvent = event => {
-      const card = cardFromEvent(event);
-      if (card && grid.contains(card)) prepareGameEntry(card.dataset.game);
-    };
-    grid.addEventListener('pointerover', event => {
-      if (event.pointerType === 'mouse') prepareFromEvent(event);
-    }, { passive:true });
-    grid.addEventListener('focusin', prepareFromEvent, { passive:true });
-    grid.addEventListener('click', event => {
-      const card = cardFromEvent(event);
-      if (!card || !grid.contains(card)) return;
-      cancelGameListRendering();
-      currentGame = card.dataset.game;
-      if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode;
-      scheduleWindowStateSave(currentTab, currentGame);
-      const saved = gameProgress(currentGame);
-      renderGame(currentGame, saved);
-    });
+    let grid = gameListViewCache.get(mode);
+    if (!grid) {
+      body.innerHTML = '<div class="wb-cardgrid">' + ids.map(id => {
+        const g = GAME_META[id];
+        return '<div class="wb-game-card" data-game="' + id + '">' + gameIconHTML(g) + '<div class="wb-game-info"><div class="wb-game-name">' + esc(g.name) + '</div><div class="wb-muted" data-game-score="' + id + '">' + esc(immediateCardScoreDisplay(id, scoreSnapshot)) + '</div></div></div>';
+      }).join('') + '</div>';
+      grid = qs('.wb-cardgrid', body);
+      gameListViewCache.set(mode, grid);
+      const cardFromEvent = event => event.target?.closest?.('.wb-game-card');
+      const prepareFromEvent = event => {
+        const card = cardFromEvent(event);
+        if (card && grid.contains(card)) prepareGameEntry(card.dataset.game);
+      };
+      grid.addEventListener('pointerover', event => {
+        if (event.pointerType === 'mouse') prepareFromEvent(event);
+      }, { passive:true });
+      grid.addEventListener('focusin', prepareFromEvent, { passive:true });
+      grid.addEventListener('click', event => {
+        const card = cardFromEvent(event);
+        if (!card || !grid.contains(card)) return;
+        const listBody = qs('#wb-body');
+        if (listBody) gameListScrollCache.set(mode, listBody.scrollTop);
+        cancelGameListRendering();
+        currentGame = card.dataset.game;
+        if (GAME_META[currentGame]) currentTab = GAME_META[currentGame].mode;
+        scheduleWindowStateSave(currentTab, currentGame);
+        const saved = gameProgress(currentGame);
+        renderGame(currentGame, saved);
+      });
+    } else {
+      if (grid.parentElement !== body) body.replaceChildren(grid);
+      ids.forEach(id => {
+        const target = qs('[data-game-score="' + id + '"]', grid);
+        if (target) target.textContent = immediateCardScoreDisplay(id, scoreSnapshot);
+      });
+    }
+    body.scrollTop = Math.max(0, Number(gameListScrollCache.get(mode)) || 0);
     observeGameCardIcons(grid, true);
     const pendingStats = mode === 'double' ? ids.slice() : [];
     const fillStats = () => {
       if (renderToken !== gameListRenderToken || !grid?.isConnected || currentGame) return;
       const inputPending = !!getHostWindow().navigator?.scheduling?.isInputPending?.({ includeContinuous:true });
-      if (!inputPending && pendingStats.length) {
+      const recentInput = Date.now() - lastPersistenceInputAt < PERSISTENCE_INPUT_GRACE;
+      if (!inputPending && !recentInput && pendingStats.length) {
         const id = pendingStats.shift();
         const target = qs('[data-game-score="' + id + '"]', grid);
         if (target) target.textContent = cardScoreDisplay(id);
@@ -8864,7 +8975,7 @@ export async function initWanbanXiaowu(options = {}) {
       if (!pendingStats.length || renderToken !== gameListRenderToken || currentGame) return;
       const view = getHostWindow();
       if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(fillStats, { timeout:1200 });
-      else view.setTimeout(fillStats, inputPending ? 64 : 24);
+      else view.setTimeout(fillStats, inputPending || recentInput ? PERSISTENCE_RETRY_DELAY : 24);
     };
     afterNextPaint(() => {
       if (renderToken !== gameListRenderToken || !grid?.isConnected) return;
@@ -9325,7 +9436,17 @@ export async function initWanbanXiaowu(options = {}) {
       const quota = e && (e.name === 'QuotaExceededError' || e.code === 22 || /quota/i.test(e.message || ''));
       throw new Error(quota ? '手机端本地存储空间不足，已放弃导入并保留原数据。' : ('写入失败，已放弃导入并保留原数据：' + (e && e.message ? e.message : e)));
     }
-    if (Object.hasOwn(plan, STORAGE_RECORDS)) { pendingRecords = null; recordsCache = null; recordsSaveStartedAt = 0; cardScoreDisplayCache.clear(); }
+    if (Object.hasOwn(plan, STORAGE_RECORDS)) {
+      recordShardKeys().forEach(key => {
+        clearStorageFailure(key);
+        try { localStorage.removeItem(key); } catch (_) {}
+      });
+      pendingRecordGames.clear();
+      pendingRecords = null;
+      recordsCache = null;
+      recordsSaveStartedAt = 0;
+      cardScoreDisplayCache.clear();
+    }
     if (Object.hasOwn(plan, STORAGE_SCORES)) { scoresCache = null; cardScoreDisplayCache.clear(); }
     if (Object.hasOwn(plan, STORAGE_LINES)) linesCache = null;
     if (Object.hasOwn(plan, STORAGE_ROLE_LINES)) roleLinesCache = null;
@@ -9680,7 +9801,9 @@ export async function initWanbanXiaowu(options = {}) {
     const names = [];
     const doc = getHostDocument();
     // SillyTavern stores the real book name in option text; option value is often just an index.
-    qsa('.character_world_info_selector option:selected, .character_extra_world_info_selector option:selected', doc).forEach(opt => addWorldName(names, opt.textContent || opt.label || opt.value));
+    qsa('.character_world_info_selector, .character_extra_world_info_selector', doc).forEach(select => {
+      Array.from(select.selectedOptions || []).forEach(opt => addWorldName(names, opt.textContent || opt.label || opt.value));
+    });
     try {
       const $ = getHostWindow().jQuery || getHostWindow().$ || window.jQuery || window.$;
       if ($) {
@@ -9694,8 +9817,7 @@ export async function initWanbanXiaowu(options = {}) {
       const mod = await import('/scripts/world-info.js');
       const names = [];
       const wi = mod.getWorldInfoSettings ? mod.getWorldInfoSettings()?.world_info : (mod.world_info || {});
-      const ctx = getHostContext();
-      const char = ctx?.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : null;
+      const char = currentHostCharacter();
       if (char) {
         addWorldName(names, char.data?.extensions?.world);
         const fileName = String(char.avatar || '').replace(/\.[^/.]+$/, '');
@@ -9714,7 +9836,7 @@ export async function initWanbanXiaowu(options = {}) {
     try {
       const ctx = getHostContext();
       if (!ctx) return names;
-      const char = ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx.character || null);
+      const char = currentHostCharacter();
       const charData = char?.data || char || {};
       add([charData?.extensions?.world, charData?.world, charData?.character_book?.name]);
       const avatar = charData?.avatar || char?.avatar;
@@ -9731,6 +9853,7 @@ export async function initWanbanXiaowu(options = {}) {
   }
   async function getCurrentWorldBookNamesAsync() {
     const names = getCurrentWorldBookNames();
+    addWorldName(names, getMountedWorldNamesFromDom());
     addWorldName(names, await getMountedWorldNamesFromModule());
     return names;
   }
@@ -9751,7 +9874,7 @@ export async function initWanbanXiaowu(options = {}) {
     try {
       const ctx = getHostContext();
       if (!ctx) return results;
-      const char = ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx.character || null);
+      const char = currentHostCharacter();
       const charData = char?.data || char || {};
       for (const name of await getCurrentWorldBookNamesAsync()) {
         if (!name || checked.has(name)) continue;
@@ -9760,7 +9883,8 @@ export async function initWanbanXiaowu(options = {}) {
         catch(e) { console.warn('[玩伴小屋] 世界书加载失败:', name, e); }
       }
       const inlineBook = charData?.character_book;
-      if (inlineBook && Array.isArray(inlineBook.entries)) inlineBook.entries.forEach((e, i) => pushEntry('角色内嵌', e, i));
+      const inlineEntries = Array.isArray(inlineBook?.entries) ? inlineBook.entries : Object.values(inlineBook?.entries || {});
+      inlineEntries.forEach((e, i) => pushEntry('角色内嵌', e, i));
     } catch(e) { console.warn('[玩伴小屋] getActiveWorldbookEntries failed:', e); }
     return results.filter(e => e.content || e.label);
   }
@@ -9781,12 +9905,14 @@ export async function initWanbanXiaowu(options = {}) {
     if (cfg.injectCharDesc === false) return '不注入';
     if (cfg.charDescMode === 'manual') return String(cfg.manualCharPersona || '').trim() || '未填写手动角色描述';
     if (cfg.charDescriptionSnapshot && String(cfg.charDescriptionSnapshot).trim()) return String(cfg.charDescriptionSnapshot).trim();
-    if (cfg.roleContextVersion === 2) return characterCardText(cfg.characterCardSnapshot) || '未填写该角色描述';
+    const savedCardText = characterCardText(cfg.characterCardSnapshot);
+    if (savedCardText) return savedCardText;
     const ctx = getHostContext();
-    const char = cfg.charName && cfg.charName !== '{{char}}' ? cardForRole(cfg) : (ctx && ctx.characters && ctx.characterId >= 0 ? ctx.characters[ctx.characterId] : (ctx && ctx.character ? ctx.character : null));
+    const char = cfg.charName && cfg.charName !== '{{char}}' ? cardForRole(cfg) : currentHostCharacter();
     const charData = char?.data || char || {};
     const name = cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}');
     const desc = characterCardText(char);
+    if (cfg.roleContextVersion === 2) return desc || '未填写该角色描述';
     return name + '：' + (desc || '未读取到当前角色描述');
   }
   function summaryPreview(id) { const s = summaries().find(x => x.id === id); if (!s) return '当前不注入大总结。'; const txt = (s.content || '').replace(/\s+/g, ' ').slice(0, 140); return '[' + (s.name || '大总结') + '] ' + txt + ((s.content || '').length > 140 ? '...' : ''); }
@@ -10090,9 +10216,9 @@ export async function initWanbanXiaowu(options = {}) {
 
   function startContinueCountdown(mask, game, state) {
     const modal = qs('.wb-modal', mask) || mask;
-    const countdownEndsAt = Date.now() + 1000;
+    const countdownEndsAt = Date.now() + 3000;
     modal.innerHTML = '<div class="wb-modal-title">准备继续</div>'
-      + '<div class="wb-countdown"><div class="wb-countdown-num" id="wb-progress-count">1</div><div class="wb-muted">秒后继续上次进度</div></div>'
+      + '<div class="wb-countdown"><div class="wb-countdown-num" id="wb-progress-count">3</div><div class="wb-muted">秒后继续上次进度</div></div>'
       + '<div class="wb-actions"><button class="wb-btn" id="wb-count-cancel">取消</button></div>';
     const cancel = qs('#wb-count-cancel', mask);
     let timer = null;
@@ -10129,9 +10255,9 @@ export async function initWanbanXiaowu(options = {}) {
     const mask = doc.createElement('div');
     mask.className = modalMaskClass();
     mask.id = 'wb-resume-mask';
-    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">准备继续</div><div class="wb-countdown"><div class="wb-countdown-num" id="wb-resume-count">1</div><div class="wb-muted">秒后继续当前游戏</div></div><div class="wb-actions"><button class="wb-btn" id="wb-resume-cancel">取消</button></div></div>';
+    mask.innerHTML = '<div class="wb-modal"><div class="wb-modal-title">准备继续</div><div class="wb-countdown"><div class="wb-countdown-num" id="wb-resume-count">3</div><div class="wb-muted">秒后继续当前游戏</div></div><div class="wb-actions"><button class="wb-btn" id="wb-resume-cancel">取消</button></div></div>';
     appendModalMask(mask);
-    const countdownEndsAt = Date.now() + 1000;
+    const countdownEndsAt = Date.now() + 3000;
     let timer = null;
     let finished = false;
     const pbtn = qs('#wb-pause');
@@ -10683,7 +10809,7 @@ export async function initWanbanXiaowu(options = {}) {
   function startJump(state) {
     const box = qs('#wb-gamebox');
     box.innerHTML = '<div class="wb-jump-shell"><canvas class="wb-canvas wb-jump-canvas" id="wb-jump" width="520" height="640"></canvas><div class="wb-jump-help" data-label="长按空格/屏幕蓄力" aria-label="长按空格/屏幕蓄力"></div></div>';
-    const c = qs('#wb-jump'), shell = qs('.wb-jump-shell', box), ctx = c.getContext('2d');
+    const c = qs('#wb-jump'), shell = qs('.wb-jump-shell', box), ctx = c.getContext('2d', { alpha:false, desynchronized:true }) || c.getContext('2d');
     preventLongPressSelection(shell);
     const W = 520, H = 640;
     let score = state?.score || 0;
@@ -10707,7 +10833,14 @@ export async function initWanbanXiaowu(options = {}) {
     setScore('jump', score);
     if (!seen.start) { seen.start = 1; }
     function standY(p) { return p.y - 8; }
-    function loadJumpHero(src){ const img = new Image(); img.onload = draw; img.src = src; return img; }
+    function loadJumpHero(src){
+      const cached = decodedGameIconCache.get(String(src))?.image;
+      if (cached?.complete && cached.naturalWidth > 0) return cached;
+      const img = new Image();
+      img.onload = () => { if (save.isActive?.()) draw(); };
+      img.src = src;
+      return img;
+    }
     function makePlatform(x, y, i) {
       const colors = themePlatformColors();
       return { x, y, r: 38 + Math.floor(Math.random() * 18), h: 46 + Math.floor(Math.random() * 22), c: colors[i % colors.length], kind: i % colors.length };
@@ -10729,7 +10862,11 @@ export async function initWanbanXiaowu(options = {}) {
     function save() {
       if (!dead) saveProgress('jump', { score, platforms, player, seen, details });
     }
-    save = registerLegacyGameSave('jump', save);
+    save = registerLegacyGameSave('jump', save, () => {
+      heroStand.onload = null;
+      heroDown.onload = null;
+      jumpBgCache = null;
+    });
     function pointerDown(e) {
       if (dead || gamePaused || flight || transition || charging) return;
       e.preventDefault();
@@ -11349,19 +11486,26 @@ export async function initWanbanXiaowu(options = {}) {
     renderSettings();
   }
   function resetCurrentWorldDefaultFromUI() {
-    const name = normalizePresetName(hostRoleName() || companionName());
+    const initialCard = currentHostCharacter();
+    if (!initialCard) { toast('未读取到酒馆当前角色卡，请确认当前不是群聊'); return; }
+    if (wbAutoSaveTimer) { clearTimeout(wbAutoSaveTimer); wbAutoSaveTimer = null; }
+    const name = normalizePresetName(characterNameValue(initialCard) || hostRoleName() || companionName());
     showConfirm('恢复当前角色卡默认', '将读取酒馆当前角色“' + name + '”的默认设定。其他角色的独立配置和已保存预设会保留。', () => {
+      const currentCard = currentHostCharacter();
+      if (!currentCard) { toast('未读取到酒馆当前角色卡，请确认当前不是群聊'); return; }
+      const currentName = normalizePresetName(characterNameValue(currentCard) || hostRoleName() || name);
+      const currentCardId = characterCardId(currentCard);
       const role = captureRoleContext({
-        ...roleBindingForCard(),
-        roleKey:roleKeyOf(roleForCardAndName(characterCardId(currentHostCharacter()), name)) || newRoleKey(),
+        ...roleBindingForCard(currentCard),
+        roleKey:roleKeyOf(roleForCardAndName(currentCardId, currentName)) || newRoleKey(),
         roleUpdatedAt:Date.now(),
-        charName:name,
+        charName:currentName,
         userDescSource:'auto',
-        breakLimitPrompt:name === companionName() ? (qs('#wb-break-limit-prompt')?.value || '') : ''
-      }, name);
+        breakLimitPrompt:currentName === companionName() ? (qs('#wb-break-limit-prompt')?.value || '') : ''
+      }, currentName, currentCard);
       activateCompanionRole(role, { makeDefault:true });
       renderSettings();
-      toast('已恢复对应角色卡的默认设定');
+      toast('已恢复当前角色卡“' + currentName + '”的默认设定');
     });
   }
   async function loadWorldPresetFromUI() {
@@ -11429,7 +11573,14 @@ export async function initWanbanXiaowu(options = {}) {
     prepareGameEntry(id);
     primeMessageNotifyBaseline();
     gameStarted = false; gamePaused = true;
-    qs('#wb-back').onclick = () => {
+    const backButton = qs('#wb-back');
+    const prepareGameLeave = () => qs('#wb-gamebox')?.classList.add('wb-game-leaving');
+    backButton.onpointerdown = prepareGameLeave;
+    backButton.onpointercancel = () => qs('#wb-gamebox')?.classList.remove('wb-game-leaving');
+    backButton.onpointerup = () => getHostWindow().setTimeout(() => {
+      if (currentGame === id) qs('#wb-gamebox')?.classList.remove('wb-game-leaving');
+    }, 0);
+    backButton.onclick = () => {
       stopGame({ deferWrites:true });
       currentGame = null;
       syncPopupModeClass();
@@ -11538,7 +11689,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (!resumeState) clearProgress(id);
     cancelGameEntryPrompt();
     currentRoundRoleContext = !savedRole(companionRoleKey()) && resumeState?.roleContext
-      ? isolatedRole(resumeState.roleContext) : isolatedRole(rolePromptConfig(currentLinePreset(id)));
+      ? isolatedRole(resumeState.roleContext) : roleContextSnapshot(currentLinePreset(id));
     currentRoundProgressRecordId = String(resumeState?.progressRecordId || ('rec_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
     setCurrentLinePreset(id, roleKeyOf(currentRoundRoleContext));
     gameStarted = true;
@@ -12013,7 +12164,7 @@ function showGameRecords(game, page) {
     const gameOverSettings = settings();
     const durationMs = currentGameDurationMs();
     const companion = displayCharNameForGame(game);
-    const roleContext = currentRoundRoleContext ? isolatedRole(currentRoundRoleContext) : null;
+    const roleContext = currentRoundRoleContext || null;
     const settlement = {
       game, title, scoreText, result:inferred, meta:meta || {}, durationMs,
       companion, roleContext, roleKey:roleKeyOf(roleContext) || activeGameRoleKey(game),
@@ -12082,7 +12233,7 @@ function showGameRecords(game, page) {
         : { special:'', title:'无', condition:gameOverSettings.companion && gameOverSettings.theaterEnabled ? (allowDrawTheater ? '本局未触发小剧场。普通小剧场仅有60%概率触发；特殊小剧场未命中。' : '本局为平局，当前游戏不触发平局小剧场。') : '小剧场未开启。', allRules:gameTheaterConditionRules(game, rec.companion) };
       rec.lineEvents = settlement.lineEvents;
       rec.theaterInfo = theaterInfo;
-      stageRecordsSave(recorded.all);
+      stageRecordsSave(recorded.all, game);
       if (!gameStarted && currentGame === game) currentRoundTheaterInfo = theaterInfo;
       queuePendingGameReward(recorded.reward);
       refreshRecordSaveStatus();
@@ -15288,7 +15439,7 @@ function showGameRecords(game, page) {
   function startPlank(state) {
     const box = qs('#wb-gamebox');
     box.innerHTML = '<div class="wb-plank-shell"><canvas class="wb-canvas wb-plank-canvas" id="wb-plank" width="520" height="360"></canvas><div class="wb-jump-help" data-label="长按空格/屏幕生成木板" aria-label="长按空格/屏幕生成木板"></div></div>';
-    const c = qs('#wb-plank'), shell = qs('.wb-plank-shell', box), ctx = c.getContext('2d');
+    const c = qs('#wb-plank'), shell = qs('.wb-plank-shell', box), ctx = c.getContext('2d', { alpha:false, desynchronized:true }) || c.getContext('2d');
     preventLongPressSelection(shell);
     let score = state?.score || 0, bridge = state?.bridge || 0, charging = false, over = false, seen = state?.seen || {}, perfectStreak = state?.perfectStreak || 0, bestPerfectStreak = state?.bestPerfectStreak || state?.perfectStreak || 0;
     let phase = 'ready', angle = 0, walk = 0, drop = 0, scroll = 0, failMode = '';
@@ -15300,9 +15451,20 @@ function showGameRecords(game, page) {
     const heroStand = loadPlankHero(PLANK_STAND_URL), heroWalk = loadPlankHero(PLANK_WALK_URL);
     setScore('plank', score); draw(); save();
     function rand(a,b){ return Math.floor(a + Math.random() * (b - a)); }
-    function loadPlankHero(src){ const img = new Image(); img.onload = draw; img.src = src; return img; }
+    function loadPlankHero(src){
+      const cached = decodedGameIconCache.get(String(src))?.image;
+      if (cached?.complete && cached.naturalWidth > 0) return cached;
+      const img = new Image();
+      img.onload = () => { if (save.isActive?.()) draw(); };
+      img.src = src;
+      return img;
+    }
     function save(){ if(!over) saveProgress('plank', { score, bridge: phase === 'ready' || charging ? bridge : 0, gap, rightW, nextGap, nextW, seen, perfectStreak, bestPerfectStreak, details }); }
-    save = registerLegacyGameSave('plank', save);
+    save = registerLegacyGameSave('plank', save, () => {
+      heroStand.onload = null;
+      heroWalk.onload = null;
+      plankSkyCache = null;
+    });
     function startCharge(){ if(gamePaused||over||charging||phase!=='ready') return; charging=true; bridge=0; schedulePlankLoop(); }
     function endCharge(){ if(!charging||gamePaused||over) return; charging=false; if(!seen.gameover && (bridge < gap || bridge > gap + rightW)){ seen.gameover=1; speak('plank','gameover'); } phase='falling'; angle=0; }
     function nextPillar(){ score++; setScore('plank', score); if(score===10) speak('plank','score_10'); if(score===20) speak('plank','score_20'); if(score===30) speak('plank','score_30'); if(score===40) speak('plank','score_40'); if(score>=50&&score%10===0) speak('plank','score_50_plus'); if(Math.abs(bridge-gap-rightW/2)<10){ details.perfects++; perfectStreak++; bestPerfectStreak=Math.max(bestPerfectStreak, perfectStreak); speak('plank','perfect'); if(perfectStreak>=3 && !seen.perfectStreak){ seen.perfectStreak=1; speak('plank','perfect_streak'); } } else perfectStreak=0; gap=nextGap; rightW=nextW; nextGap=rand(80,190); nextW=rand(55,95); bridge=0; angle=0; walk=0; drop=0; scroll=0; phase='ready'; save(); }
@@ -16798,7 +16960,7 @@ function showGameRecords(game, page) {
     box.innerHTML = '<div class="wb-screw-panel"><div class="wb-screw-top"><div class="wb-screw-boxes" id="wb-screw-boxes"></div><div class="wb-screw-tools"><div class="wb-screw-progress"><div id="wb-screw-progress-fill"></div><span id="wb-screw-progress-text">0%</span></div><div class="wb-screw-tray" id="wb-screw-tray"></div><button type="button" class="wb-btn wb-screw-addbox" id="wb-screw-addbox">增加盒子 <span id="wb-screw-addbox-left">3</span></button></div></div><canvas class="wb-canvas wb-screw-canvas" id="wb-screw-canvas" width="420" height="560"></canvas></div>';
     const choice = choiceForState('screw', state);
     const endless = choice.id === 'endless';
-    const c = qs('#wb-screw-canvas'), ctx = c.getContext('2d'), W=420, H=560;
+    const c = qs('#wb-screw-canvas'), ctx = c.getContext('2d', { alpha:false, desynchronized:true }) || c.getContext('2d'), W=420, H=560;
     const colors = [
       { id:'red', hex:'#ef3030' }, { id:'cyan', hex:'#20cce3' }, { id:'green', hex:'#9df043' },
       { id:'purple', hex:'#9b45ec' }, { id:'pink', hex:'#ec4eb2' }, { id:'brown', hex:'#8b5337' }, { id:'gray', hex:'#9b9b9b' },

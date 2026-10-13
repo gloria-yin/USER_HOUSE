@@ -616,6 +616,7 @@
 .wb-pill { background:var(--wb-soft); border:1px solid var(--wb-border); border-radius:0; padding:5px 9px; font-size:12px; font-weight:700; }
 #wb-score.target-met { color:#fff; border-color:#16a34a; background:linear-gradient(135deg,#16a34a,#22c55e); box-shadow:0 0 16px rgba(34,197,94,.35); }
 .wb-board-wrap { position:relative; flex:1 1 auto; min-height:0; width:100%; display:grid; place-items:center; background:var(--wb-board); border:1px solid var(--wb-border); border-radius:0; padding:8px; touch-action:none; overflow:hidden; container-type:size; }
+.wb-board-wrap.wb-game-leaving canvas { visibility:hidden!important; }
 .wb-pause-overlay { position:absolute; inset:8px; z-index:6; display:grid; place-items:center; background:rgba(0,0,0,.42); color:#fff; font-size:clamp(34px, 9vh, 84px); font-weight:900; letter-spacing:0; pointer-events:none; text-shadow:0 3px 18px rgba(0,0,0,.45); }
 .wb-pause-overlay span { padding:8px 18px; border:2px solid rgba(255,255,255,.55); background:rgba(0,0,0,.18); }
 .wb-canvas { display:block; max-width:min(100%, 100cqw); max-height:min(100%, 100cqh); width:auto; height:auto; object-fit:contain; background:#151515; border-radius:0; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
@@ -3425,9 +3426,7 @@
   min-height:92px;
   padding:13px;
   gap:11px;
-  content-visibility:auto;
-  contain:layout paint style;
-  contain-intrinsic-size:auto 92px;
+  contain:layout style;
 }
 .wb-game-icon { width:54px; height:54px; }
 .wb-game-name { font-size:18px; }
@@ -3435,6 +3434,32 @@
 #wanbanXiaowu-popup.wb-arcade .wb-game-icon { width:46px; height:46px; padding:3px; }
 .wb-game-list-sentinel { width:100%; height:1px; grid-column:1 / -1; pointer-events:none; }
 @media (max-width:768px) {
+  #wanbanXiaowu-popup .wb-cardgrid { gap:6px; }
+  #wanbanXiaowu-popup .wb-game-card,
+  #wanbanXiaowu-popup.wb-night .wb-game-card,
+  #wanbanXiaowu-popup.wb-spring .wb-game-card,
+  #wanbanXiaowu-popup.wb-cyber .wb-game-card,
+  #wanbanXiaowu-popup.wb-arcade .wb-game-card,
+  #wanbanXiaowu-popup.wb-cardtheater .wb-game-card,
+  #wanbanXiaowu-popup.wb-mono .wb-game-card {
+    min-height:82px;
+    padding:10px;
+    gap:10px;
+    overflow:hidden;
+    border:1px solid var(--wb-border);
+    background:var(--wb-panel);
+    box-shadow:none;
+  }
+  #wanbanXiaowu-popup .wb-game-card::before,
+  #wanbanXiaowu-popup .wb-game-card::after { content:none!important; display:none!important; }
+  #wanbanXiaowu-popup .wb-game-icon,
+  #wanbanXiaowu-popup.wb-arcade .wb-game-icon {
+    width:48px;
+    height:48px;
+    padding:0;
+    transform:none;
+    box-shadow:none;
+  }
   .wb-settings-grid > .wb-panel {
     content-visibility:auto;
     contain-intrinsic-size:auto 300px;
