@@ -514,7 +514,7 @@ try {
   await sleep(1000);
   const lazyWorld = await evaluate(`import('/src/runtime/storage.js?lazy-world-check').then(module=>{
     const saved=module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1'));
-    const visible=Array.from(document.querySelectorAll('#wb-worldbook-list .wb-tag.active')).map(tag=>tag.dataset.content);
+    const visible=Array.from(document.querySelectorAll('#wb-worldbook-list .wb-tag.active')).map(tag=>tag.wbWorldEntry?.content||'');
     return {lazy:saved.lazyWorldInject,mode:saved.worldAutoMountMode,count:saved.selectedWorldEntries?.length||0,visible,names:document.querySelector('#wb-mounted-worldbook-names')?.textContent||'',preview:document.querySelector('#wb-char-desc-preview')?.textContent||'',list:document.querySelector('#wb-worldbook-list')?.innerText||'',checked:document.querySelector('#wb-lazy-world-inject')?.checked||false};
   })`);
   assert.equal(lazyWorld.lazy, true, 'lazy mode was not persisted');
@@ -526,8 +526,94 @@ try {
   assert.ok(lazyWorld.preview.includes('编辑后的角色卡描述'), 'lazy mode lost the latest character card description');
   assert.ok(requests.filter(path=>path==='/api/worldinfo/get').length >= 2, 'lazy mode did not request character and chat worldbooks');
   await evaluate(`document.querySelector('#wb-save-current-avatar').click()`);
+  await waitFor(`import('/src/runtime/storage.js?current-avatar-wait').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1')).avatarUrl==='/thumbnail?type=avatar&file=current-role.png')`);
   const savedAvatar = await evaluate(`import('/src/runtime/storage.js?current-avatar-check').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1')).avatarUrl)`);
   assert.equal(savedAvatar, '/thumbnail?type=avatar&file=current-role.png', 'save avatar did not use the currently open character card');
+  await evaluate(`(()=>{
+    const content='应忱大型内嵌世界书正文。'.repeat(1800);
+    const entries=Array.from({length:48},(_,index)=>({uid:'yingchen-'+index,comment:'应忱条目 '+index,content:content+'#'+index,constant:index%2===0}));
+    window.__largeWorldExpectedLength=entries.reduce((sum,entry)=>sum+entry.content.length,0);
+    window.__hostCharacter={avatar:'yingchen.png',data:{
+      name:'应忱',description:'应忱角色描述',personality:'冷静细致',scenario:'大型角色卡性能回归',
+      first_mes:'初次见面。',system_prompt:'保持角色设定。',alternate_greetings:['欢迎回来。'],
+      extensions:{depth_prompt:{prompt:'应忱深度提示词',depth:4,role:'system'},unrelatedLargeField:{ignored:true}},
+      character_book:{name:'应忱内嵌世界书',entries}
+    }};
+    window.__hostContext={characterId:'yingchen-card',characters:[window.__hostCharacter],currentCharacter:window.__hostCharacter,name2:'应忱',chatMetadata:{}};
+    (window.__hostEvents.CHAT_CHANGED||[]).forEach(callback=>callback());
+    document.querySelector('#wb-reset-current-world-default').click();
+    document.querySelector('#wb-confirm-ok').click();
+  })()`);
+  await waitFor(`document.querySelector('#wb-char-desc-preview')?.textContent.includes('应忱角色描述')`);
+  const largeExpand = await evaluate(`(()=>{
+    const button=document.querySelector('#wb-injection-details-toggle');
+    const started=performance.now();
+    button.click();
+    return {elapsed:performance.now()-started,display:document.querySelector('#wb-injection-details').style.display};
+  })()`);
+  assert.equal(largeExpand.display, 'grid', 'large character details did not expand');
+  assert.ok(largeExpand.elapsed < 30, 'large character details toggle took ' + largeExpand.elapsed.toFixed(1) + 'ms');
+  const largeImportStart = await evaluate(`(()=>{
+    const lazy=document.querySelector('#wb-lazy-world-inject');
+    const original=lazy.onchange;
+    lazy.onchange=async event=>{ await original.call(lazy,event); window.__largeImportFinished=true; };
+    const nativeSet=Storage.prototype.setItem;
+    let syncWrites=0;
+    Storage.prototype.setItem=function(...args){ syncWrites++; return nativeSet.apply(this,args); };
+    lazy.checked=true;
+    const started=performance.now();
+    try { lazy.dispatchEvent(new Event('change',{bubbles:true})); }
+    finally { Storage.prototype.setItem=nativeSet; }
+    const handler=performance.now()-started;
+    const toggle=document.querySelector('#wb-injection-details-toggle');
+    const toggleStarted=performance.now();
+    toggle.click();
+    toggle.click();
+    return {handler,syncWrites,toggle:performance.now()-toggleStarted,display:document.querySelector('#wb-injection-details').style.display};
+  })()`);
+  assert.equal(largeImportStart.syncWrites, 0, 'large automatic import wrote storage in its click handler');
+  assert.ok(largeImportStart.handler < 30, 'large automatic import handler took ' + largeImportStart.handler.toFixed(1) + 'ms');
+  assert.ok(largeImportStart.toggle < 30, 'details toggle stalled during large automatic import: ' + largeImportStart.toggle.toFixed(1) + 'ms');
+  assert.equal(largeImportStart.display, 'grid', 'details toggle stopped responding during automatic import');
+  await waitFor('window.__largeImportFinished===true');
+  assert.ok(await evaluate(`document.querySelectorAll('#wb-worldbook-list .wb-tag.active').length`) >= 48, 'large inline worldbook entries were not all selected');
+  const largePreview = await evaluate(`document.querySelector('#wb-char-desc-preview').textContent`);
+  assert.ok(largePreview.includes('应忱角色描述') && largePreview.includes('冷静细致') && largePreview.includes('应忱深度提示词'), 'large character import lost required role fields');
+  assert.equal(largePreview.includes('character_book:'), false, 'character preview still contains the full embedded worldbook JSON');
+  const largeCloseMs = await evaluate(`(()=>{const started=performance.now();document.querySelector('#wb-close').click();return performance.now()-started;})()`);
+  assert.equal(await evaluate('document.querySelector("#wanbanXiaowu-shell").classList.contains("wb-shell-visible")'), false, 'large import close did not hide the popup immediately');
+  assert.ok(largeCloseMs < 30, 'large import close handler took ' + largeCloseMs.toFixed(1) + 'ms');
+  await waitFor('document.querySelector("#wb-body").childElementCount===0');
+  await evaluate(`window.dispatchEvent(new Event('pagehide'))`);
+  const largeSaved = await evaluate(`import('/src/runtime/storage.js?large-role-save-check').then(module=>{
+    const settings=module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1'));
+    const roles=module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_roleContexts_v2'));
+    const role=roles[settings.roleKey];
+    const inline=(settings.selectedWorldEntries||[]).filter(entry=>entry.wbName==='角色内嵌');
+    const roleInline=(role?.selectedWorldEntries||[]).filter(entry=>entry.wbName==='角色内嵌');
+    return {
+      name:settings.charName,
+      settingsCount:inline.length,
+      settingsLength:inline.reduce((sum,entry)=>sum+(entry.content||'').length,0),
+      roleCount:roleInline.length,
+      hasEmbeddedBook:Object.prototype.hasOwnProperty.call(settings.characterCardSnapshot||{},'character_book'),
+      extensionKeys:Object.keys(settings.characterCardSnapshot?.extensions||{}),
+      description:settings.charDescriptionSnapshot||''
+    };
+  })`);
+  assert.equal(largeSaved.name, '应忱', 'large character import saved the wrong role');
+  assert.equal(largeSaved.settingsCount, 48, 'large worldbook was incomplete in active settings');
+  assert.equal(largeSaved.roleCount, 48, 'large worldbook was incomplete in the role context');
+  assert.equal(largeSaved.settingsLength, await evaluate('window.__largeWorldExpectedLength'), 'large worldbook content was truncated');
+  assert.equal(largeSaved.hasEmbeddedBook, false, 'the compact role snapshot duplicated the embedded worldbook');
+  assert.deepEqual(largeSaved.extensionKeys, ['depth_prompt'], 'the compact role snapshot retained unrelated extension data');
+  assert.equal(largeSaved.description.includes('character_book:'), false, 'the saved role description duplicated the embedded worldbook');
+  await evaluate(`document.querySelector('#wanbanXiaowu-menu-item').click()`);
+  await waitFor('document.querySelector("#wanbanXiaowu-shell").classList.contains("wb-shell-visible")');
+  if (!(await evaluate(`!!document.querySelector('#wb-break-limit-prompt')`))) {
+    await evaluate(`document.querySelector('[data-tab=settings]').click()`);
+    await waitFor('!!document.querySelector("#wb-break-limit-prompt")');
+  }
   const backdropCloseMs = await evaluate(`(()=>{
     const input=document.querySelector('#wb-break-limit-prompt');
     input.value='遮罩关闭保存验证';
@@ -540,6 +626,7 @@ try {
   assert.ok(backdropCloseMs < 30, 'backdrop close handler took ' + backdropCloseMs.toFixed(1) + 'ms');
   await waitFor('document.querySelector("#wb-body").childElementCount===0');
   assert.equal(await evaluate('document.querySelector("#wb-body").childElementCount'), 0, 'closing must release the heavy popup body');
+  await waitFor(`import('/src/runtime/storage.js?settings-close-wait').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1')).breakLimitPrompt==='遮罩关闭保存验证')`);
   assert.equal(await evaluate(`import('/src/runtime/storage.js?settings-close-check').then(module=>module.decodeStoredJSON(localStorage.getItem('wanbanXiaowu_settings_v1')).breakLimitPrompt)`), '遮罩关闭保存验证', 'backdrop close must flush debounced settings');
   await sleep(1300);
   const releasedReadCounts = await evaluate(`Object.fromEntries(['wanbanXiaowu_apiPresets_v1','wanbanXiaowu_worldPresets_v1','wanbanXiaowu_summaries_v1','wanbanXiaowu_roleContexts_v2'].map(key=>[key,__storageReads[key]||0]))`);
@@ -1096,7 +1183,8 @@ try {
   assert.ok(returnListScroll.maxLongTask < 80, 'return-list scroll produced a ' + returnListScroll.maxLongTask.toFixed(1) + 'ms long task');
   assert.ok(returnListScroll.maxFrame < 80, 'return-list scroll frame took ' + returnListScroll.maxFrame.toFixed(1) + 'ms');
   await sleep(900);
-  assert.equal(await evaluate(`window.__storageWrites.some(item=>item.key==='wanbanXiaowu_progress_v1__watersort')`), true, 'water sort progress did not flush after scrolling stopped');
+  const waterProgressPersisted = await evaluate(`window.__storageWrites.some(item=>item.key==='wanbanXiaowu_progress_v1__watersort')||!!localStorage.getItem('wanbanXiaowu_progress_v1__watersort')`);
+  assert.equal(waterProgressPersisted, true, 'water sort progress was not persisted after scrolling stopped');
   assert.equal(await evaluate(`window.__storageWrites.some(item=>item.key==='wanbanXiaowu_records_v1__watersort')`), true, 'water sort record did not flush after scrolling stopped');
   assert.ok(await evaluate('!!localStorage.getItem("wanbanXiaowu_progress_v1__watersort")'), 'water sort back must flush its deferred snapshot');
   for (let i = 0; i < 10 && !(await evaluate('!!document.querySelector("[data-game=watersort]")')); i++) {

@@ -13,14 +13,22 @@ export const ROLE_DEFAULTS = {
   builtinPetCaretaker:'', roleContextVersion:2,
 };
 
+function cloneRoleValue(value) {
+  if (Array.isArray(value)) return value.map(cloneRoleValue);
+  if (!value || typeof value !== 'object') return value;
+  const copy = {};
+  for (const [key, item] of Object.entries(value)) copy[key] = cloneRoleValue(item);
+  return copy;
+}
+
 export function isolatedRole(source = {}, name = '') {
   const role = {};
   for (const [key, fallback] of Object.entries(ROLE_DEFAULTS)) {
-    role[key] = source[key] === undefined ? fallback : source[key];
+    role[key] = cloneRoleValue(source[key] === undefined ? fallback : source[key]);
   }
   role.charName = name || source.charName || source.name || '';
   role.roleContextVersion = 2;
-  return JSON.parse(JSON.stringify(role));
+  return role;
 }
 
 export function withRoleContext(shared, role) {

@@ -5,7 +5,7 @@ import { EXTENSION_VERSION } from '../core/metadata.js';
 import { DEFAULT_LINES, PROMPT_TEMPLATES } from './wanban-prompts.js';
 import { NUMBER_KLOTSKI_BEST_STORAGE_KEY, createNumberKlotskiGame, isNumberKlotskiSolved, isSolvableNumberKlotskiBoard } from '../games/number-klotski.js';
 import { canSpiderDeal, spiderAutoDealState, spiderCardLayout, spiderDealColumns } from '../games/spider-rules.js?v=4.3.5';
-import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js';
+import { ROLE_DEFAULTS, isolatedRole, withRoleContext, characterCardText } from './role-context.js?v=4.3.5-memory';
 import { playPetFrames, transferPetFrames, queuePetAppearance } from './pet-animation.js';
 import { decodeStoredJSON, writeStoredJSON, compactLegacyStorage, clearStoredJSONCache } from './storage.js?v=4.3.5';
 import { parsePetInfo, parsePetStoryLines, assertPetInfo } from './pet-info.js';
@@ -232,6 +232,7 @@ export async function initWanbanXiaowu(options = {}) {
   let theaterCache = null;
   // Game render loops read settings frequently; avoid decoding localStorage on every call.
   let settingsCache = null;
+  const pendingDataWrites = new Map();
   let canvasPaletteCache = null;
   let lastMenuOpenAt = 0;
   let floatingBallResizeBound = false;
@@ -699,6 +700,8 @@ export async function initWanbanXiaowu(options = {}) {
     }, delay);
   }
   function saveJSON(key, value, options) {
+    // A newer immediate write supersedes any older value waiting for an idle flush.
+    pendingDataWrites.delete(key);
     const writeOptions = Object.assign({}, options || {});
     const suppressWarning = !!writeOptions.suppressWarning;
     delete writeOptions.suppressWarning;
@@ -713,6 +716,23 @@ export async function initWanbanXiaowu(options = {}) {
       scheduleStorageRetry(key, value, writeOptions, e);
       if (!suppressWarning) warnStorageFailure();
       return false;
+    }
+  }
+  function stageJSONSave(key, value, options) {
+    clearStorageFailure(key);
+    pendingDataWrites.set(key, { value, options:Object.assign({}, options || {}) });
+    scheduleDeferredPersistenceFlush();
+    return true;
+  }
+  function flushPendingDataWrites(limit = Infinity) {
+    let flushed = 0;
+    const ordered = [];
+    if (pendingDataWrites.has(STORAGE_SETTINGS)) ordered.push([STORAGE_SETTINGS, pendingDataWrites.get(STORAGE_SETTINGS)]);
+    for (const item of pendingDataWrites) if (item[0] !== STORAGE_SETTINGS) ordered.push(item);
+    for (const [key, entry] of ordered) {
+      if (saveJSON(key, entry.value, entry.options)) pendingDataWrites.delete(key);
+      flushed += 1;
+      if (flushed >= limit) break;
     }
   }
   function isPlainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -739,18 +759,19 @@ export async function initWanbanXiaowu(options = {}) {
     if (!settingsCache) settingsCache = Object.assign({}, DEFAULT_SETTINGS, safeObject(loadJSON(STORAGE_SETTINGS, {})));
     return Object.assign({}, settingsCache);
   }
-  function setSettings(next) {
+  function setSettings(next, options) {
     const merged = Object.assign({}, settings(), next);
-    saveJSON(STORAGE_SETTINGS, merged);
+    if (options?.deferWrite) stageJSONSave(STORAGE_SETTINGS, merged);
+    else saveJSON(STORAGE_SETTINGS, merged);
     // Keep the current page consistent while a failed browser write waits for its retry.
     settingsCache = merged;
     if (Object.prototype.hasOwnProperty.call(next || {}, 'theme')) canvasPaletteCache = null;
     return merged;
   }
-  function setSettingsIfChanged(next) {
+  function setSettingsIfChanged(next, options) {
     const current = settings();
     const changed = Object.keys(next || {}).some(key => current[key] !== next[key]);
-    return changed ? setSettings(next) : current;
+    return changed ? setSettings(next, options) : current;
   }
   function currentTheme() {
     if (!settingsCache) settings();
@@ -1129,8 +1150,9 @@ export async function initWanbanXiaowu(options = {}) {
     if (!roleContextsCache) roleContextsCache = safeObject(loadJSON(STORAGE_ROLE_CONTEXTS, {}));
     return Object.assign({}, roleContextsCache);
   }
-  function saveRoleContexts(v) {
-    if (!saveJSON(STORAGE_ROLE_CONTEXTS, v)) return false;
+  function saveRoleContexts(v, options) {
+    const saved = options?.deferWrite ? stageJSONSave(STORAGE_ROLE_CONTEXTS, v) : saveJSON(STORAGE_ROLE_CONTEXTS, v);
+    if (!saved) return false;
     roleContextsCache = safeObject(v);
     return true;
   }
@@ -1138,8 +1160,9 @@ export async function initWanbanXiaowu(options = {}) {
     if (!cardRolesCache) cardRolesCache = safeObject(loadJSON(STORAGE_CARD_ROLES, {}));
     return Object.assign({}, cardRolesCache);
   }
-  function saveCardRoles(v) {
-    if (!saveJSON(STORAGE_CARD_ROLES, v)) return false;
+  function saveCardRoles(v, options) {
+    const saved = options?.deferWrite ? stageJSONSave(STORAGE_CARD_ROLES, v) : saveJSON(STORAGE_CARD_ROLES, v);
+    if (!saved) return false;
     cardRolesCache = safeObject(v);
     return true;
   }
@@ -1191,17 +1214,17 @@ export async function initWanbanXiaowu(options = {}) {
     return roles.filter(role => characterCardId(cardForRole(role)) === cardId)
       .sort((a,b) => Number(b.roleUpdatedAt || 0) - Number(a.roleUpdatedAt || 0))[0] || null;
   }
-  function activateCompanionRole(source, { pinned = false, makeDefault = false } = {}) {
-    const role = captureRoleContext(source, source.charName || source.name);
+  function activateCompanionRole(source, { pinned = false, makeDefault = false, captured = false, deferWrites = false } = {}) {
+    const role = captured ? source : captureRoleContext(source, source.charName || source.name);
     role.roleKey = roleKeyOf(source) || role.charName;
     role.selectedWorldPresetName = role.roleKey;
-    saveRoleContext(role);
+    saveRoleContext(role, { deferWrite:deferWrites, isolated:captured });
     if (makeDefault && role.cardId) {
       const defaults = cardRoles();
       defaults[role.cardId] = { roleKey:role.roleKey, cardName:role.cardName };
-      saveCardRoles(defaults);
+      saveCardRoles(defaults, { deferWrite:deferWrites });
     }
-    setSettings(Object.assign({}, role, { companionRolePinned:pinned, lastHostCardId:characterCardId(currentHostCharacter()) }));
+    setSettings(Object.assign({}, role, { companionRolePinned:pinned, lastHostCardId:characterCardId(currentHostCharacter()) }), { deferWrite:deferWrites });
     applyRoleToAllGames(role.roleKey);
     if (gameStarted && currentGame) currentRoundRoleContext = isolatedRole(role);
     refreshGameCompanionPanel();
@@ -1250,21 +1273,23 @@ export async function initWanbanXiaowu(options = {}) {
     return Array.isArray(bank) || !bank[sourceKey] || bank[targetKey]
       ? true : saveWordGuessBank(bank[sourceKey], targetKey);
   }
-  function saveWorldPresets(v) {
+  function saveWorldPresets(v, options) {
     const previous = worldPresets();
-    const snapshots = v.map(pr => Object.assign({}, pr, captureRoleContext(pr, pr.charName || pr.name)));
-    if (!saveJSON(STORAGE_WORLD_PRESETS, snapshots)) return false;
+    const snapshots = options?.snapshotsReady ? v : v.map(pr => Object.assign({}, pr, captureRoleContext(pr, pr.charName || pr.name)));
+    const saved = options?.deferWrite ? stageJSONSave(STORAGE_WORLD_PRESETS, snapshots) : saveJSON(STORAGE_WORLD_PRESETS, snapshots);
+    if (!saved) return false;
     worldPresetsCache = snapshots;
-    snapshots.forEach((pr, index) => {
+    if (options?.syncRoles === false) return true;
+    snapshots.forEach(pr => {
       const old = previous.find(item => roleKeyOf(item) === roleKeyOf(pr));
-      if (!old || JSON.stringify(old) !== JSON.stringify(v[index])) saveRoleContext(pr);
+      if (!old || Number(old.roleUpdatedAt || 0) !== Number(pr.roleUpdatedAt || 0)) saveRoleContext(pr, { deferWrite:!!options?.deferWrite });
     });
     return true;
   }
-  function saveRoleContext(role) {
+  function saveRoleContext(role, options) {
     const all = roleContexts();
-    all[roleKeyOf(role)] = isolatedRole(role);
-    return saveRoleContexts(all);
+    all[roleKeyOf(role)] = options?.isolated ? role : isolatedRole(role);
+    return saveRoleContexts(all, options);
   }
   function characterNameValue(character) {
     const data = character?.data || character || {};
@@ -1273,6 +1298,41 @@ export async function initWanbanXiaowu(options = {}) {
   function characterAvatarValue(character) {
     const data = character?.data || character || {};
     return String(character?.avatar || data.avatar || character?.avatar_url || data.avatar_url || character?.avatarUrl || data.avatarUrl || '');
+  }
+  const ROLE_CARD_CONTEXT_FIELDS = ['name', 'description', 'personality', 'scenario', 'first_mes',
+    'mes_example', 'system_prompt', 'post_history_instructions', 'alternate_greetings', 'creator_notes'];
+  function roleCardContextData(character) {
+    const data = character?.data || character || {};
+    const snapshot = {};
+    ROLE_CARD_CONTEXT_FIELDS.forEach(key => {
+      if (data[key] !== undefined && data[key] !== '') snapshot[key] = data[key];
+    });
+    const depthPrompt = data.extensions?.depth_prompt;
+    if (depthPrompt && (depthPrompt.prompt || depthPrompt.text)) {
+      snapshot.extensions = { depth_prompt:{
+        prompt:String(depthPrompt.prompt || depthPrompt.text || ''),
+        depth:Number(depthPrompt.depth || 0) || 0,
+        role:String(depthPrompt.role || '')
+      } };
+    }
+    return snapshot;
+  }
+  function compactRoleCardSnapshot(character) {
+    return JSON.parse(JSON.stringify(roleCardContextData(character)));
+  }
+  function roleCardDescriptionText(character) {
+    return characterCardText(roleCardContextData(character));
+  }
+  function roleCardContextSignature(character) {
+    return JSON.stringify(roleCardContextData(character));
+  }
+  function hasLegacyFullCardSnapshot(role) {
+    const card = role?.characterCardSnapshot;
+    const data = card?.data || card || {};
+    const extensions = data.extensions;
+    return Object.prototype.hasOwnProperty.call(data, 'character_book')
+      || (extensions && Object.keys(extensions).some(key => key !== 'depth_prompt'))
+      || /(?:^|\n\n)character_book\s*:/i.test(String(role?.charDescriptionSnapshot || ''));
   }
   function currentHostCharacter() {
     const ctx = getHostContext() || {};
@@ -1342,8 +1402,8 @@ export async function initWanbanXiaowu(options = {}) {
       if (role.avatarUrl && (role.avatarUrl === previousDefaultAvatar || isHostAvatarUrl(role.avatarUrl))) {
         role.avatarUrl = role.defaultAvatarUrl;
       }
-      role.characterCardSnapshot = JSON.parse(JSON.stringify(card.data || card));
-      if (role.charDescMode !== 'manual') role.charDescriptionSnapshot = characterCardText(card);
+      role.characterCardSnapshot = compactRoleCardSnapshot(card);
+      if (role.charDescMode !== 'manual') role.charDescriptionSnapshot = roleCardDescriptionText(card);
     }
     if (source.roleContextVersion !== 2) {
       role.userDescriptionSnapshot = role.userDescSource === 'auto' && isCurrent
@@ -1369,16 +1429,28 @@ export async function initWanbanXiaowu(options = {}) {
     if (!cardId) return false;
     const cfg = settings();
     const hostRoleChanged = cfg.lastHostCardId !== cardId;
+    const liveCardChanged = cfg.cardId === cardId && (
+      cfg.characterAvatar !== characterAvatarValue(current)
+      || roleCardContextSignature(cfg.characterCardSnapshot) !== roleCardContextSignature(current)
+      || hasLegacyFullCardSnapshot(cfg)
+    );
+    if (!hostRoleChanged && !liveCardChanged) return false;
     const source = hostRoleChanged ? defaultRoleForCard(current) : savedRole(companionRoleKey());
-    if (hostRoleChanged) setSettings({ lastHostCardId:cardId });
-    if (!source) return false;
+    if (!source) {
+      setSettings({ lastHostCardId:cardId }, { deferWrite:true });
+      return false;
+    }
     const snapshot = captureRoleContext(source, source.charName || source.name);
     snapshot.roleKey = roleKeyOf(source);
-    const changed = JSON.stringify(isolatedRole(cfg)) !== JSON.stringify(snapshot);
-    if (hostRoleChanged) activateCompanionRole(snapshot);
-    else if (changed) { saveRoleContext(snapshot); setSettings(snapshot); }
-    if (!hostRoleChanged && !changed) return false;
+    if (hostRoleChanged) activateCompanionRole(snapshot, { captured:true, deferWrites:true });
+    else {
+      saveRoleContext(snapshot, { deferWrite:true, isolated:true });
+      setSettings(snapshot, { deferWrite:true });
+    }
 
+    const avatarChanged = cfg.characterAvatar !== snapshot.characterAvatar
+      || cfg.avatarUrl !== snapshot.avatarUrl || cfg.defaultAvatarUrl !== snapshot.defaultAvatarUrl;
+    if (!avatarChanged) return true;
     const petData = petFullData();
     let petChanged = false;
     const liveAvatar = String(snapshot.avatarUrl || snapshot.defaultAvatarUrl || '').trim();
@@ -1392,7 +1464,7 @@ export async function initWanbanXiaowu(options = {}) {
       }
     });
     if (petChanged) savePetFullData(petData);
-    return changed || petChanged || hostRoleChanged;
+    return true;
   }
   function queueCurrentHostRoleSync() {
     if (roleContextRefreshTimer) clearTimeout(roleContextRefreshTimer);
@@ -1445,7 +1517,7 @@ export async function initWanbanXiaowu(options = {}) {
     const hasDescriptionSnapshot = !!String(source.charDescriptionSnapshot || '').trim();
     const canReuse = source.roleContextVersion === 2
       && (source.charDescMode === 'manual' || source.injectCharDesc === false || hasCardSnapshot || hasDescriptionSnapshot);
-    // Complete snapshots avoid cloning a large character card again when a game starts.
+    // Reuse the saved prompt snapshot instead of reading the host card again at game start.
     const snapshot = canReuse
       ? isolatedRole(source, source.charName || source.name || role)
       : captureRoleContext(source, source.charName || source.name || role);
@@ -1652,7 +1724,7 @@ export async function initWanbanXiaowu(options = {}) {
     deferredPersistenceHandle = null;
     deferredPersistenceUsesIdleCallback = false;
   }
-  function scheduleDeferredPersistenceFlush() {
+  function scheduleDeferredPersistenceFlush(continuePending = false) {
     if (deferredPersistenceHandle != null) return;
     const win = getHostWindow();
     const run = () => {
@@ -1670,6 +1742,8 @@ export async function initWanbanXiaowu(options = {}) {
     };
     if (persistenceRetryNeeded && persistenceRetryDelay > 0) {
       deferredPersistenceHandle = win.setTimeout(run, persistenceRetryDelay);
+    } else if (continuePending) {
+      deferredPersistenceHandle = win.setTimeout(run, 0);
     } else if (typeof win.requestIdleCallback === 'function') {
       deferredPersistenceUsesIdleCallback = true;
       deferredPersistenceHandle = win.requestIdleCallback(run, { timeout:2500 });
@@ -1697,9 +1771,12 @@ export async function initWanbanXiaowu(options = {}) {
     Object.keys(progressSaveCache).forEach(flushProgressSave);
     flushRecordsSave();
     flushPetStateSaves();
+    // Idle flushes serialize at most one potentially large role store per task. Page hide/export
+    // still force every pending value so navigation cannot lose the latest configuration.
+    flushPendingDataWrites(forcePendingUiWork ? Infinity : 1);
     persistenceRetryNeeded = !!(Object.keys(progressSaveCache).length || progressDeleteCache.size || pendingRecords || pendingPetStates.size);
     persistenceRetryDelay = persistenceRetryNeeded ? Math.min(30000, persistenceRetryDelay ? persistenceRetryDelay * 2 : 5000) : 0;
-    if (persistenceRetryNeeded) scheduleDeferredPersistenceFlush();
+    if (persistenceRetryNeeded || pendingDataWrites.size) scheduleDeferredPersistenceFlush(!persistenceRetryNeeded && pendingDataWrites.size > 0);
   }
   function gameProgress(game) {
     if (progressDeleteCache.has(game)) return null;
@@ -5946,7 +6023,7 @@ export async function initWanbanXiaowu(options = {}) {
       scheduleWindowStateSave(currentTab, '');
     } else restoreWindowState();
     render();
-    if (shouldSyncRole || currentTab === 'settings') afterNextPaint(() => {
+    if (shouldSyncRole) afterNextPaint(() => {
       const visibleShell = qs('#' + SHELL_ID, getHostDocument());
       if (visibleShell?.classList.contains('wb-shell-visible')) syncVisibleSettingsRoleContext();
     });
@@ -6026,7 +6103,7 @@ export async function initWanbanXiaowu(options = {}) {
     if (swipeAnimation) mainSwipeAnimation = swipeAnimation;
     scheduleWindowStateSave(currentTab, '');
     render();
-    if (nextTab === 'settings') afterNextPaint(() => {
+    if (nextTab === 'settings' && settings().lastHostCardId !== characterCardId(currentHostCharacter())) afterNextPaint(() => {
       if (currentTab === 'settings' && !currentGame) syncVisibleSettingsRoleContext();
     });
   }
@@ -6141,8 +6218,8 @@ export async function initWanbanXiaowu(options = {}) {
       ...worldPresets().map((source, i) => ({ source, id:roleKeyOf(source) || 'world_' + i, name:roleChoiceLabel(source), kind:'existing-world' }))];
     if (liveCard && liveCardId) {
       const cfg = isolatedRole(settings(), characterNameValue(liveCard));
-      Object.assign(cfg, { cardId:liveCardId, characterCardSnapshot:JSON.parse(JSON.stringify(liveCard.data || liveCard)),
-        charDescriptionSnapshot:characterCardText(liveCard) });
+      Object.assign(cfg, { cardId:liveCardId, characterCardSnapshot:compactRoleCardSnapshot(liveCard),
+        charDescriptionSnapshot:roleCardDescriptionText(liveCard) });
       if (cfg.userDescSource === 'auto') { cfg.userDescriptionSnapshot = formatAutoUserPersona(user.persona); cfg.userName = user.name; }
       sources.splice(1, 0, { source:cfg, id:'current-card:' + liveCardId, name:'当前角色卡：' + characterNameValue(liveCard), kind:'current-card' });
     }
@@ -6167,7 +6244,7 @@ export async function initWanbanXiaowu(options = {}) {
     const card = currentHostCharacter(), cardId = characterCardId(card);
     if (part === 'user') return heartUserSource();
     if (part === 'chat') return recentChatText(8);
-    const character = { name:characterNameValue(card), description:characterCardText(card), cardId,
+    const character = { name:characterNameValue(card), description:roleCardDescriptionText(card), cardId,
       avatar:avatarUrlFromValue(characterAvatarValue(card)) };
     if (part === 'character') {
       if (!cardId) throw new Error('请先在酒馆打开要导入的角色卡。');
@@ -7481,8 +7558,8 @@ export async function initWanbanXiaowu(options = {}) {
     const system = '你是宠物剧情素材生成器。一次性输出完整的<pet_info> YAML，包含15个主线、全部分支、6个支线和全部语录。遵守当前角色身份，不输出解释或占位内容。';
     const maxTokens = Math.max(4096, Math.min(65536, Number(form.max_tokens) || 32768));
     const raw = onDelta || signal
-      ? await callApiTextStream(cfg, prompt, system, maxTokens, onDelta, signal)
-      : await callApiText(cfg, prompt, system, maxTokens);
+      ? await callApiTextStream(cfg, prompt, system, maxTokens, onDelta, signal, { includeRoleContext:false })
+      : await callApiText(cfg, prompt, system, maxTokens, undefined, { includeRoleContext:false });
     signal?.throwIfAborted();
     const parsed = parsePetInfoText(raw, { allowLegacy:false });
     if ((parsed.parseWarnings || []).length || !parsed.pet_card?.pet_name || parsed.main_story.length < 15 || parsed.side_story.length < 6) {
@@ -7550,7 +7627,7 @@ export async function initWanbanXiaowu(options = {}) {
       '本只宠物往期日志：\n' + (previousLogs || '无'),
       '用户补充做了什么：\n' + (note || '无')
     ].filter(Boolean).join('\n\n');
-    const raw = await callApiText(cfg, prompt, '你是宠物陪伴游戏的日志写作助手。必须只输出可解析JSON。', 4096);
+    const raw = await callApiText(cfg, prompt, '你是宠物陪伴游戏的日志写作助手。必须只输出可解析JSON。', 4096, undefined, { includeRoleContext:false });
     const data = normalizePetLogData(raw, today);
     return data.body ? data : fallback;
   }
@@ -9170,7 +9247,10 @@ export async function initWanbanXiaowu(options = {}) {
       injectionDetailsToggle.textContent = open ? '收起详细配置' : '展开详细配置';
     };
     const refreshWorldbook = qs('#wb-refresh-worldbook'); if (refreshWorldbook) refreshWorldbook.onclick = refreshWorldbookList;
-    const lazyWorldInject = qs('#wb-lazy-world-inject'); if (lazyWorldInject) lazyWorldInject.onchange = async () => { autoSaveInjectionSettingsFromUI(); if (lazyWorldInject.checked) await applyLazyWorldInject(); };
+    const lazyWorldInject = qs('#wb-lazy-world-inject'); if (lazyWorldInject) lazyWorldInject.onchange = async () => {
+      if (lazyWorldInject.checked) await applyLazyWorldInject();
+      else autoSaveInjectionSettingsFromUI();
+    };
     const userDescSource = qs('#wb-user-desc-source'); if (userDescSource) userDescSource.onchange = () => { if (userDescSource.value === 'auto') { if (!worldRoleUsesCurrentCard()) { userDescSource.value = 'manual'; toast('请先在酒馆打开对应角色，再导入其 User 设定'); return; } const persona = readCurrentUserPersonaFromST(); const input = qs('#wb-user-persona'); if (input) input.value = formatAutoUserPersona(persona); toast(persona ? '已自动导入当前User人设' : '未读取到当前User人设，可手动补充'); } autoSaveInjectionSettingsFromUI(); };
     const worldAutoMountBtn = qs('#wb-world-auto-mount-btn'); if (worldAutoMountBtn) worldAutoMountBtn.onclick = openWorldAutoMountModal;
     const worldAutoMount = qs('#wb-world-auto-mount'); if (worldAutoMount) worldAutoMount.onchange = async () => { await applyWorldAutoMount(worldAutoMount.value || '', true); };
@@ -9261,14 +9341,19 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function rememberInjectionUI() {
     const form = qs('#wb-injection-details');
-    if (form) form.wbSavedInput = JSON.stringify(collectInjectionSettingsFromUI());
+    if (form) form.wbSavedInput = injectionUIFingerprint(collectInjectionSettingsFromUI());
+  }
+  function injectionUIFingerprint(input) {
+    return JSON.stringify(Object.assign({}, input, {
+      selectedWorldEntries:safeArray(input?.selectedWorldEntries).map(entry => [entry.wbName || '', entry.uid || '', entry.label || ''])
+    }));
   }
   function autoSaveInjectionSettingsFromUI(edited = true) {
     if (!qs('#wb-inject-user-desc')) return;
     const previous = settings();
     if (!edited && !savedRole(companionRoleKey())) return;
     const input = collectInjectionSettingsFromUI();
-    if (JSON.stringify(input) === qs('#wb-injection-details')?.wbSavedInput) return;
+    if (injectionUIFingerprint(input) === qs('#wb-injection-details')?.wbSavedInput) return;
     const enteredName = input.charName;
     const binding = previous.charName === enteredName && previous.cardId ? roleBindingForCard(cardForRole(previous)) : roleBindingForCard();
     if (!binding.cardId) Object.assign(binding, { cardId:previous.cardId, cardName:previous.cardName, characterAvatar:previous.characterAvatar });
@@ -9288,9 +9373,9 @@ export async function initWanbanXiaowu(options = {}) {
     const presetIndex = presets.findIndex(role => roleKeyOf(role) === snapshot.roleKey);
     if (presetIndex >= 0) {
       presets[presetIndex] = Object.assign({}, presets[presetIndex], snapshot, { name:enteredName });
-      saveWorldPresets(presets);
+      saveWorldPresets(presets, { snapshotsReady:true, deferWrite:true, syncRoles:false });
     }
-    activateCompanionRole(snapshot, { pinned:previous.companionRolePinned, makeDefault:true });
+    activateCompanionRole(snapshot, { pinned:previous.companionRolePinned, makeDefault:true, captured:true, deferWrites:true });
     rememberInjectionUI();
   }
   function debounceAutoSaveInjection() { if (wbAutoSaveTimer) clearTimeout(wbAutoSaveTimer); wbAutoSaveTimer = setTimeout(autoSaveInjectionSettingsFromUI, 250); }
@@ -9423,6 +9508,8 @@ export async function initWanbanXiaowu(options = {}) {
     Object.keys(plan).forEach(key => { originals[key] = localStorage.getItem(key); });
     try {
       Object.keys(plan).forEach(key => {
+        pendingDataWrites.delete(key);
+        clearStorageFailure(key);
         if (key === STORAGE_SUMMARY_REQ) localStorage.setItem(key, String(plan[key] || ''));
         else writeStoredJSON(localStorage, key, plan[key]);
       });
@@ -9532,6 +9619,8 @@ export async function initWanbanXiaowu(options = {}) {
         const st = qs('#wb-import-export-status'); if (st) st.textContent = '已读取备份：' + (file.name || '备份文件') + '，等待确认导入。';
         showConfirm('导入备份', '导入前会先校验并修复可恢复的数据；如果手机存储空间不足或写入失败，会放弃导入并保留当前数据。当前 API 配置和 API 预设会保留，不会被覆盖。确定要继续导入吗？', () => {
           try {
+            flushSettingsProgress();
+            flushAllProgressSaves(true);
             commitImportPlan(plan);
           } catch(importErr) {
             const failStatus = qs('#wb-import-export-status'); if (failStatus) failStatus.textContent = '导入失败：' + (importErr && importErr.message ? importErr.message : importErr);
@@ -9566,15 +9655,35 @@ export async function initWanbanXiaowu(options = {}) {
   }
   function loadApiPresetFromUI() { const idx = parseInt(qs('#wb-api-preset').value, 10); const pr = apiPresets()[idx]; if (!pr) return; qs('#wb-api-url').value=pr.apiUrl||''; qs('#wb-api-key').value=pr.apiKey||''; populateModelSelect(pr.apiModel||''); updateApiStatusUI(); toast('API 预设已载入'); }
   function deleteApiPresetFromUI() { const idx = parseInt(qs('#wb-api-preset').value, 10); const arr = apiPresets(); if (!arr[idx]) return; showConfirm('删除 API 预设','确定删除这个 API 预设吗？',()=>{ arr.splice(idx,1); saveApiPresets(arr); renderSettings(); }); }
-  function selectedWorldEntriesFromUI() { return qsa('#wb-worldbook-list .wb-tag.active').map(x => ({ label: x.dataset.label || x.textContent, content: x.dataset.content || '', wbName: x.dataset.wbName || '', uid: x.dataset.uid || '' })); }
+  function selectedWorldEntriesFromUI() {
+    const list = qs('#wb-worldbook-list');
+    if (list?.dataset.loading === '1') return safeArray(settings().selectedWorldEntries);
+    return qsa('#wb-worldbook-list .wb-tag.active').map(x => {
+      const entry = x.wbWorldEntry || {};
+      return { label:entry.label || x.dataset.label || x.textContent, content:entry.content || '', wbName:entry.wbName || x.dataset.wbName || '', uid:entry.uid ?? x.dataset.uid ?? '' };
+    });
+  }
   function selectedWorldText(cfg) { const entries = (cfg.selectedWorldEntries || []).filter(x => x && (x.content || x.label)); return entries.map(x => '[' + (x.label || '世界书条目') + ']\n' + (x.content || '')).join('\n\n'); }
   function selectedSummaryText(cfg) { if (cfg.summarySnapshot && (cfg.summarySnapshot.content || cfg.summarySnapshot.name)) return '[' + (cfg.summarySnapshot.name || '大总结') + ']\n' + (cfg.summarySnapshot.content || ''); if (cfg.roleContextVersion === 2 || !cfg.summaryId) return ''; const s = summaries().find(x => x.id === cfg.summaryId); return s ? ('[' + (s.name || '大总结') + ']\n' + (s.content || '')) : ''; }
   function restoreSelectedWorldEntries() { const cfg = settings(); if (cfg.selectedWorldEntries && cfg.selectedWorldEntries.length) renderWorldbookTags(cfg.selectedWorldEntries, true); }
   function renderWorldbookTags(entries, activeAll) {
     const list = qs('#wb-worldbook-list'); if (!list) return;
     if (!entries || !entries.length) { list.innerHTML = '<span class="wb-muted">当前未发现可读取的世界书条目</span>'; return; }
-    list.innerHTML = '';
-    entries.forEach(e => { const b = getHostDocument().createElement('button'); b.type='button'; b.className='wb-tag' + (activeAll ? ' active' : ''); b.textContent=e.label||'世界书条目'; b.dataset.label=e.label||'世界书条目'; b.dataset.content=e.content||''; b.dataset.wbName=e.wbName||''; b.dataset.uid=e.uid||''; b.title=(e.content||'').slice(0,160); b.onclick=()=>{ b.classList.toggle('active'); autoSaveInjectionSettingsFromUI(); }; list.appendChild(b); });
+    const fragment = getHostDocument().createDocumentFragment();
+    entries.forEach(e => {
+      const b = getHostDocument().createElement('button');
+      b.type = 'button';
+      b.className = 'wb-tag' + (activeAll ? ' active' : '');
+      b.textContent = e.label || '世界书条目';
+      b.dataset.label = e.label || '世界书条目';
+      b.dataset.wbName = e.wbName || '';
+      b.dataset.uid = e.uid || '';
+      b.wbWorldEntry = e;
+      b.title = (e.content || '').slice(0, 160);
+      b.onclick = () => { b.classList.toggle('active'); autoSaveInjectionSettingsFromUI(); };
+      fragment.appendChild(b);
+    });
+    list.replaceChildren(fragment);
   }
   function setWorldAutoMountControlText() {
     const btn = qs('#wb-world-auto-mount-btn');
@@ -9625,17 +9734,19 @@ export async function initWanbanXiaowu(options = {}) {
       setWorldAutoMountControlText();
       manualMode = true;
     }
-    const list = qs('#wb-worldbook-list'); if (list) list.innerHTML = '<span class="wb-muted">正在读取挂载条目...</span>';
+    const list = qs('#wb-worldbook-list');
+    if (list) { list.dataset.loading = '1'; list.innerHTML = '<span class="wb-muted">正在读取挂载条目...</span>'; }
     try {
       const out = await getWorldbookEntriesByMode('');
-      if (roleNameFromWorldUI() !== target || !worldRoleUsesCurrentCard() || characterCardId(currentHostCharacter()) !== targetCardId) return;
+      if (!list?.isConnected || qs('#wb-worldbook-list') !== list || roleNameFromWorldUI() !== target || !worldRoleUsesCurrentCard() || characterCardId(currentHostCharacter()) !== targetCardId) return;
+      delete list.dataset.loading;
       renderWorldbookTags(out, false);
       autoSaveInjectionSettingsFromUI();
       await updateMountedWorldbookNamesAsync();
       if (roleNameFromWorldUI() === target) toast(manualMode ? '进入手动挂载世界书模式' : (out.length ? ('已刷新 ' + out.length + ' 个世界书条目，可自行选择') : '当前未发现可读取的世界书条目'));
-    } catch(e) { if (list) list.innerHTML = '<span class="wb-muted">读取失败：当前环境未暴露世界书接口</span>'; toast('世界书读取失败'); }
+    } catch(e) { if (list?.isConnected) { delete list.dataset.loading; list.innerHTML = '<span class="wb-muted">读取失败：当前环境未暴露世界书接口</span>'; } toast('世界书读取失败'); }
   }
-  async function applyWorldAutoMount(mode, announce) {
+  async function applyWorldAutoMount(mode, announce, options) {
     const target = roleNameFromWorldUI();
     const targetCardId = characterCardId(currentHostCharacter());
     if (!worldRoleUsesCurrentCard()) {
@@ -9646,16 +9757,18 @@ export async function initWanbanXiaowu(options = {}) {
     if (auto) auto.value = mode || '';
     setWorldAutoMountControlText();
     updateMountedWorldbookNames();
-    if (!mode) { autoSaveInjectionSettingsFromUI(); if (announce) toast('已关闭自动挂载，可自由选择世界书条目'); return; }
-    const list = qs('#wb-worldbook-list'); if (list) list.innerHTML = '<span class="wb-muted">正在自动挂载世界书...</span>';
+    if (!mode) { if (options?.save !== false) autoSaveInjectionSettingsFromUI(); if (announce) toast('已关闭自动挂载，可自由选择世界书条目'); return; }
+    const list = qs('#wb-worldbook-list');
+    if (list) { list.dataset.loading = '1'; list.innerHTML = '<span class="wb-muted">正在自动挂载世界书...</span>'; }
     try {
       const out = await getWorldbookEntriesByMode(mode);
-      if (roleNameFromWorldUI() !== target || !worldRoleUsesCurrentCard() || characterCardId(currentHostCharacter()) !== targetCardId) return;
+      if (!list?.isConnected || qs('#wb-worldbook-list') !== list || roleNameFromWorldUI() !== target || !worldRoleUsesCurrentCard() || characterCardId(currentHostCharacter()) !== targetCardId) return;
+      delete list.dataset.loading;
       renderWorldbookTags(out, true);
-      autoSaveInjectionSettingsFromUI();
+      if (options?.save !== false) autoSaveInjectionSettingsFromUI();
       await updateMountedWorldbookNamesAsync();
       if (announce) toast(out.length ? ('已自动挂载 ' + out.length + ' 个世界书条目') : '当前没有符合灯色的世界书条目');
-    } catch(e) { if (list) list.innerHTML = '<span class="wb-muted">自动挂载失败</span>'; toast('自动挂载失败'); }
+    } catch(e) { if (list?.isConnected) { delete list.dataset.loading; list.innerHTML = '<span class="wb-muted">自动挂载失败</span>'; } toast('自动挂载失败'); }
   }
   async function applyLazyWorldInject() {
     if (!worldRoleUsesCurrentCard()) { toast('请先在酒馆打开对应角色，再自动导入设定'); return; }
@@ -9669,7 +9782,7 @@ export async function initWanbanXiaowu(options = {}) {
     const cn = qs('#wb-char-name'); if (cn && !cn.value.trim()) cn.value = companionName();
     const preview = qs('#wb-char-desc-preview'); if (preview) preview.textContent = currentCharDescription(Object.assign({}, settings(), { injectCharDesc:true, charDescMode:'auto', charName:cn?.value || '{{char}}' }));
     const auto = qs('#wb-world-auto-mount'); if (auto) auto.value = 'bluegreen';
-    await applyWorldAutoMount('bluegreen', false);
+    await applyWorldAutoMount('bluegreen', false, { save:false });
     autoSaveInjectionSettingsFromUI();
     toast('懒人模式已自动导入当前配置');
   }
@@ -9863,10 +9976,12 @@ export async function initWanbanXiaowu(options = {}) {
     const seen = new Set();
     const pushEntry = (source, e, i) => {
       if (!worldEntryAllowed(e, mode)) return;
-      const content = String(e.content || '').trim();
+      const content = String(e.content || '');
       const labelCore = e.comment || e.name || (Array.isArray(e.key) ? e.key[0] : e.key) || e.uid || e.id || ('条目' + (i + 1));
       const uid = e.uid ?? e.id ?? '';
-      const dedupeKey = content ? ('c:' + content.replace(/\s+/g, ' ').slice(0, 500)) : ('k:' + source + ':' + uid + ':' + labelCore);
+      const dedupeKey = uid !== '' ? ('u:' + source + ':' + uid)
+        : content ? ('c:' + content.length + ':' + content.slice(0, 500).replace(/\s+/g, ' '))
+          : ('k:' + source + ':' + labelCore);
       if (seen.has(dedupeKey)) return;
       seen.add(dedupeKey);
       results.push({ label: '[' + source + '] ' + labelCore, content, wbName: source, uid });
@@ -9904,14 +10019,14 @@ export async function initWanbanXiaowu(options = {}) {
   function currentCharDescription(cfg) {
     if (cfg.injectCharDesc === false) return '不注入';
     if (cfg.charDescMode === 'manual') return String(cfg.manualCharPersona || '').trim() || '未填写手动角色描述';
-    if (cfg.charDescriptionSnapshot && String(cfg.charDescriptionSnapshot).trim()) return String(cfg.charDescriptionSnapshot).trim();
-    const savedCardText = characterCardText(cfg.characterCardSnapshot);
+    const savedCardText = roleCardDescriptionText(cfg.characterCardSnapshot);
     if (savedCardText) return savedCardText;
+    if (cfg.charDescriptionSnapshot && String(cfg.charDescriptionSnapshot).trim()) return String(cfg.charDescriptionSnapshot).trim();
     const ctx = getHostContext();
     const char = cfg.charName && cfg.charName !== '{{char}}' ? cardForRole(cfg) : currentHostCharacter();
     const charData = char?.data || char || {};
     const name = cfg.charName && cfg.charName !== '{{char}}' ? cfg.charName : (charData.name || ctx?.name2 || '{{char}}');
-    const desc = characterCardText(char);
+    const desc = roleCardDescriptionText(char);
     if (cfg.roleContextVersion === 2) return desc || '未填写该角色描述';
     return name + '：' + (desc || '未读取到当前角色描述');
   }
@@ -9990,8 +10105,8 @@ export async function initWanbanXiaowu(options = {}) {
     if (!text.trim()) throw new Error('API没有返回正文内容' + (choice.finish_reason ? '（结束原因：' + choice.finish_reason + '）' : ''));
     return text;
   }
-  async function callApiText(cfg, prompt, systemPrompt, maxTokens, debugMeta) {
-    prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
+  async function callApiText(cfg, prompt, systemPrompt, maxTokens, debugMeta, options) {
+    if (options?.includeRoleContext !== false) prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
     const url = apiChatUrl(cfg.apiUrl);
     if (!url) throw new Error('请先配置API基础URL');
     if (!cfg.apiModel) throw new Error('请先选择模型');
@@ -10015,9 +10130,9 @@ export async function initWanbanXiaowu(options = {}) {
     }
   }
 
-  async function callApiTextStream(cfg, prompt, systemPrompt, maxTokens, onDelta, signal, { preserveFormat = false, exactInput = false } = {}) {
+  async function callApiTextStream(cfg, prompt, systemPrompt, maxTokens, onDelta, signal, { preserveFormat = false, exactInput = false, includeRoleContext = true } = {}) {
     signal?.throwIfAborted();
-    if (!exactInput) prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
+    if (!exactInput && includeRoleContext) prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
     const url = apiChatUrl(cfg.apiUrl);
     if (!url) throw new Error('请先配置API基础URL');
     if (!cfg.apiModel) throw new Error('请先选择模型');
@@ -10147,7 +10262,7 @@ export async function initWanbanXiaowu(options = {}) {
       } catch(e) { toast('获取失败：' + (e && e.message ? e.message : e)); }
     };
     qs('#wb-aisum-req', modal).oninput = e => saveSummaryReq(e.target.value);
-    qs('#wb-aisum-generate', modal).onclick = async () => { const content = qs('#wb-aisum-content', modal).value.trim(); const req = qs('#wb-aisum-req', modal).value.trim(); if (!content) { toast('请先输入主线内容'); return; } if (!req) { toast('请填写总结要求'); return; } const prompt = '你现在的任务是：对当前主线内容进行结构化“大总结”。\n【核心要求】\n* 必须严格按照“填写要求”来控制总结粒度和内容\n* 只输出总结结果，不要解释，不要寒暄，不要任何额外说明\n* 每一条必须是独立信息点，信息密度高，避免空话\n* 所有总结必须来源于主线内容，不允许编造\n* 禁止出现任何markdown符号\n────────────────\n【填写要求】\n' + req + '\n────────────────\n【主线内容】\n' + content + '\n────────────────\n现在开始生成大总结。'; const btn = qs('#wb-aisum-generate', modal); btn.disabled = true; btn.textContent = '生成中...'; try { const result = await callApiText(workCfg, prompt, '你是剧情总结助手。只输出总结正文，不要解释。'); qs('#wb-aisum-result', modal).value = result; qs('#wb-aisum-result-wrap', modal).style.display = ''; qs('#wb-aisum-save', modal).style.display = ''; if (!qs('#wb-aisum-name', modal).value.trim()) qs('#wb-aisum-name', modal).value = 'AI大总结 ' + new Date().toLocaleString(); toast('大总结生成完成，请检查后保存'); } catch(e) { toast('生成失败：' + (e && e.message ? e.message : e)); } finally { btn.disabled = false; btn.textContent = '重新生成'; } };
+    qs('#wb-aisum-generate', modal).onclick = async () => { const content = qs('#wb-aisum-content', modal).value.trim(); const req = qs('#wb-aisum-req', modal).value.trim(); if (!content) { toast('请先输入主线内容'); return; } if (!req) { toast('请填写总结要求'); return; } const prompt = '你现在的任务是：对当前主线内容进行结构化“大总结”。\n【核心要求】\n* 必须严格按照“填写要求”来控制总结粒度和内容\n* 只输出总结结果，不要解释，不要寒暄，不要任何额外说明\n* 每一条必须是独立信息点，信息密度高，避免空话\n* 所有总结必须来源于主线内容，不允许编造\n* 禁止出现任何markdown符号\n────────────────\n【填写要求】\n' + req + '\n────────────────\n【主线内容】\n' + content + '\n────────────────\n现在开始生成大总结。'; const btn = qs('#wb-aisum-generate', modal); btn.disabled = true; btn.textContent = '生成中...'; try { const result = await callApiText(workCfg, prompt, '你是剧情总结助手。只输出总结正文，不要解释。', undefined, undefined, { includeRoleContext:false }); qs('#wb-aisum-result', modal).value = result; qs('#wb-aisum-result-wrap', modal).style.display = ''; qs('#wb-aisum-save', modal).style.display = ''; if (!qs('#wb-aisum-name', modal).value.trim()) qs('#wb-aisum-name', modal).value = 'AI大总结 ' + new Date().toLocaleString(); toast('大总结生成完成，请检查后保存'); } catch(e) { toast('生成失败：' + (e && e.message ? e.message : e)); } finally { btn.disabled = false; btn.textContent = '重新生成'; } };
     qs('#wb-aisum-save', modal).onclick = () => { const name = qs('#wb-aisum-name', modal).value.trim(); const content = qs('#wb-aisum-result', modal).value.trim(); if (!name || !content) { toast('请输入保存标题并确认生成内容'); return; } const arr = summaries(); const saved = { id:'sum_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), name, content }; arr.unshift(saved); saveSummaries(arr); setSettings({ summaryId: saved.id }); refreshSummaryInjectionUI(saved.id); modal.remove(); renderSummaryManagerList(mask); toast('AI大总结已保存并导入'); };
     qs('#wb-aisum-cancel', modal).onclick = () => modal.remove();
   }
@@ -12082,7 +12197,7 @@ function showGameRecords(game, page) {
     const intimacyText = cfg.intimacyMode ? '开启。允许成年角色之间更亲近、更暧昧、更依赖，允许含蓄的NSFW暗示；禁止未成年人相关性内容、强迫、失控或违法内容。' : '关闭。保持自然陪伴和轻松亲近，禁止色情行为和露骨内容。';
     const prefix = (cfg.breakLimitPrompt || '').trim();
 	    const prompt = [prefix, specialLanguageRequirement('theater', cfg), ...(promptTemplates().theater || PROMPT_TEMPLATES.theater), '亲密氛围模式：' + intimacyText, '游戏：' + ((GAME_META[game] || {}).name || game), '结果：' + formatRecordResultForPrompt(outcome), '特殊触发：' + (special || '普通结算'), '分数/胜负：' + String(scoreText || '').replace(new RegExp('TA' + '赢', 'g'), '{{char}}赢').replace(/TA/g, '{{char}}'), '规则说明：如果结果里出现“{{char}}赢”，表示当前角色获胜，也就是原先的角色获胜。平局就是平局，不是user失败，也不是{{char}}失败；平局小剧场应写双方打平后的反应，例如想再来一场、嘴硬、不服气、松口气或谁也没赢的调侃。', '角色描述：' + currentCharDescription(cfg), '世界背景：' + (selectedWorldText(cfg) || '无'), '大总结：' + (selectedSummaryText(cfg) || '无')].filter(Boolean).join('\n');
-	    try { const txt = await callApiText(cfg, prompt, promptTemplates().systems.theater || PROMPT_TEMPLATES.systems.theater); const arr = JSON.parse(txt); if (Array.isArray(arr) && arr.length) return arr.map(normalizeTheaterItem).filter(x => x.length).slice(0,3); } catch(e) { console.warn('[玩伴小屋] theater failed:', e); }
+	    try { const txt = await callApiText(cfg, prompt, promptTemplates().systems.theater || PROMPT_TEMPLATES.systems.theater, undefined, undefined, { includeRoleContext:false }); const arr = JSON.parse(txt); if (Array.isArray(arr) && arr.length) return arr.map(normalizeTheaterItem).filter(x => x.length).slice(0,3); } catch(e) { console.warn('[玩伴小屋] theater failed:', e); }
     return fallback;
   }
 	  function showTheaterModal(title, lines, meta) {
@@ -12119,7 +12234,7 @@ function showGameRecords(game, page) {
 	    const normalizedScoreText = String(rec.scoreText || '').replace(new RegExp(String(roleName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '{{char}}').replace(new RegExp('TA' + '赢', 'g'), '{{char}}赢').replace(/TA/g, '{{char}}');
 	    const theaterText = String(theaterInfo.text || (rec.favoriteTheater && rec.favoriteTheater.text) || '').trim();
 	    const prompt = [(logCfg.breakLimitPrompt || '').trim(), specialLanguageRequirement('log', logCfg), ...(promptTemplates().gameLog || PROMPT_TEMPLATES.gameLog),'游戏：' + ((GAME_META[game] || {}).name || game),'','游戏情况（记录表字段，均为 user 视角）：\n' + gameLogSituation(game, rec) + '\n' + gameLogFieldRules(game, roleName),'','原始结算文本：\n' + normalizedScoreText,'','结果：\n' + formatRecordResultForPrompt(rec.result),'','用时：\n' + formatDuration(rec.durationMs),'','本局详细过程数据：\n' + gameLogDetailText(game, rec),'','本局触发过的角色语录：\n' + lineEventLogText(rec.lineEvents),'','本局触发的小剧场主题：\n' + (theaterInfo.title || '角色互动小剧场'),'','本局小剧场触发条件：\n' + (theaterInfo.condition || theaterConditionForSpecial(game, theaterInfo.special || '', roleName)),'','本局实际小剧场内容：\n' + (theaterText || '无'),'','当前游戏全部特殊小剧场规则：\n' + gameTheaterConditionRules(game, roleName),'','前几次同角色同游戏日志：\n' + (recentGameLogs(game, roleKeyOf(logCfg) || roleName) || '无'),'','陪伴者：\n' + roleName,'','角色描述：\n' + currentCharDescription(logCfg),'','世界背景：\n' + (selectedWorldText(logCfg) || '无'),'','大总结：\n' + (selectedSummaryText(logCfg) || '无')].filter(Boolean).join('\n');
-	    let log = fallback; try { log = await callApiText(logCfg, prompt, promptTemplates().systems.gameLog || PROMPT_TEMPLATES.systems.gameLog); } catch(e) { toast('日志生成失败，已使用本地日志'); } updateRecord(game, recordId, { log }, true); return log;
+	    let log = fallback; try { log = await callApiText(logCfg, prompt, promptTemplates().systems.gameLog || PROMPT_TEMPLATES.systems.gameLog, undefined, undefined, { includeRoleContext:false }); } catch(e) { toast('日志生成失败，已使用本地日志'); } updateRecord(game, recordId, { log }, true); return log;
   }
   function queuePendingGameReward(reward) {
     if (typeof reward !== 'function') return;
@@ -12333,7 +12448,7 @@ function showGameRecords(game, page) {
     const apiDebug = {};
     if (cfg.apiUrl && cfg.apiModel) {
       const prompt = buildTheaterPackPrompt(game, cfg, jobs);
-      try { if (onAiCall) onAiCall(GAME_META[game].name + '小剧场'); rawOutput = await callApiText(cfg, prompt, theaterPackSystemPrompt(jobs), generationMaxTokens(cfg, game, 'theater'), apiDebug); pack = normalizeTheaterPack(game, jobs, parseGeneratedJson(rawOutput)); }
+      try { if (onAiCall) onAiCall(GAME_META[game].name + '小剧场'); rawOutput = await callApiText(cfg, prompt, theaterPackSystemPrompt(jobs), generationMaxTokens(cfg, game, 'theater'), apiDebug, { includeRoleContext:false }); pack = normalizeTheaterPack(game, jobs, parseGeneratedJson(rawOutput)); }
       catch(e) { apiFailed = e && e.message ? e.message : '小剧场API失败'; rawOutput = rawOutput || (e && e.rawOutput ? e.rawOutput : ''); console.warn('[玩伴小屋] theater pack failed:', e); }
     }
     if (apiFailed) {
@@ -12587,7 +12702,6 @@ function showGameRecords(game, page) {
     });
   }
   async function callApi(cfg, prompt, debugMeta, maxTokens) {
-    prompt = [roleGenerationInput(cfg), prompt].filter(Boolean).join('\n\n');
     const url = apiChatUrl(cfg.apiUrl);
     if (!url) throw new Error('请先配置API基础URL');
     if (!cfg.apiModel) throw new Error('请先选择模型');
@@ -18333,7 +18447,7 @@ function showGameRecords(game, page) {
     const fallback = async () => selectWordGuessRounds((await defaultWordGuessBank()).map(normalize).filter(Boolean), Math.max(5, count || 5), scope);
     if (forceFallback || !cfg.apiUrl || !cfg.apiModel) return fallback();
 	    const prompt = [...(promptTemplates().wordGuess || PROMPT_TEMPLATES.wordGuess), scope ? ('题库生成内容和范围：' + scope + '\n请只围绕这个范围出题。') : '', '角色描述：'+currentCharDescription(cfg), '世界背景：'+(selectedWorldText(cfg)||'无'), '大总结：'+(selectedSummaryText(cfg)||'无')].filter(Boolean).join('\n');
-	    try { const txt = await callApiText(cfg, prompt, promptTemplates().systems.wordGuess || PROMPT_TEMPLATES.systems.wordGuess); const data = parseGeneratedJson(txt); const arr = Array.isArray(data) ? data : (Array.isArray(data?.rounds) ? data.rounds : []); const seenWords = {}; const rounds = arr.map(normalize).filter(Boolean).filter(r=>{ if(seenWords[r.word]) return false; seenWords[r.word]=1; return true; }); if(rounds.length>=5) return rounds; const fb = await fallback(); return rounds.concat(fb.filter(r=>!seenWords[r.word])).slice(0,5); } catch(e) { console.warn('[玩伴小屋] word rounds failed:', e); }
+	    try { const txt = await callApiText(cfg, prompt, promptTemplates().systems.wordGuess || PROMPT_TEMPLATES.systems.wordGuess, undefined, undefined, { includeRoleContext:false }); const data = parseGeneratedJson(txt); const arr = Array.isArray(data) ? data : (Array.isArray(data?.rounds) ? data.rounds : []); const seenWords = {}; const rounds = arr.map(normalize).filter(Boolean).filter(r=>{ if(seenWords[r.word]) return false; seenWords[r.word]=1; return true; }); if(rounds.length>=5) return rounds; const fb = await fallback(); return rounds.concat(fb.filter(r=>!seenWords[r.word])).slice(0,5); } catch(e) { console.warn('[玩伴小屋] word rounds failed:', e); }
     return fallback();
   }
 
